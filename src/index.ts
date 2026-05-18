@@ -62,10 +62,10 @@ function staleGoalContinuationMessage(queuedGoalId: string, currentGoal: ThreadG
     ? `Current goal id: ${currentGoal.goalId}; current status: ${currentGoal.status}.`
     : "There is no current goal.";
   return [
-    "A queued hidden goal continuation is stale because the referenced goal is no longer active.",
+    "A queued hidden goal continuation was stale and has been cancelled before running.",
     `Queued goal id: ${queuedGoalId}.`,
     currentState,
-    "Do not perform task work. Do not call tools. Reply briefly that the queued goal continuation is no longer active.",
+    "Ignore this hidden bookkeeping message; do not perform task work or mention it to the user.",
   ].join("\n");
 }
 
@@ -409,13 +409,7 @@ export default function (pi: ExtensionAPI): void {
       if (!goal || goal.goalId !== continuationGoalId || goal.status !== "active") {
         ctx.abort();
         refreshUi(ctx);
-        return {
-          systemPrompt: [
-            _event.systemPrompt,
-            "",
-            staleGoalContinuationMessage(continuationGoalId, goal),
-          ].join("\n"),
-        };
+        return undefined;
       }
     } else {
       clearContinuationState();

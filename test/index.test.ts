@@ -507,10 +507,9 @@ test("stale queued continuation aborts if the goal became complete before launch
     systemPromptOptions: {},
   });
 
-  const result = results[0] as { systemPrompt?: string } | undefined;
+  assert.equal(results[0], undefined);
   assert.equal(harness.snapshot().goal?.status, "complete");
   assert.equal(harness.abortCount, 1);
-  assert.match(result?.systemPrompt ?? "", /queued hidden goal continuation is stale/);
 });
 
 test("stale custom goal work messages are replaced before provider context", async () => {
@@ -542,7 +541,7 @@ test("stale custom goal work messages are replaced before provider context", asy
   const result = results[0] as { messages?: Array<{ content?: unknown; details?: unknown }> } | undefined;
   const replacedMessage = result?.messages?.[0];
   assert.equal(typeof replacedMessage?.content, "string");
-  assert.match(String(replacedMessage?.content), /queued hidden goal continuation is stale/);
+  assert.match(String(replacedMessage?.content), /queued hidden goal continuation was stale and has been cancelled/);
   assert.deepEqual(replacedMessage?.details, {
     kind: "stale_continuation",
     goalId: harness.snapshot().goal?.goalId,
