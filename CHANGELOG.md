@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.10 - 2026-05-18
+
+- Updated the local pi package baseline to `@earendil-works/*` `0.75.3` and refreshed the npm lockfile.
+- Removed tracked CueLoop runtime state from the package and ignored local `.cueloop/` artifacts.
+
+
 ## 0.1.9 - 2026-05-09
 
 - Escapes goal objectives in hidden continuation and budget-limit prompts before embedding them in XML-style untrusted blocks.

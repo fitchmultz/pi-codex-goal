@@ -27,6 +27,11 @@ interface QueuedGoalMessageDetails {
   goalId?: unknown;
 }
 
+interface TextMessagePart {
+  type?: unknown;
+  text?: unknown;
+}
+
 function usageChannelTokens(value: number): number {
   if (!Number.isFinite(value)) {
     return 0;
@@ -57,6 +62,34 @@ function isQueuedGoalMessageDetails(details: unknown): details is QueuedGoalMess
   return details !== null && typeof details === "object";
 }
 
+function textContentFromMessageContent(content: unknown): string | null {
+  if (typeof content === "string") {
+    return content;
+  }
+
+  if (!Array.isArray(content)) {
+    return null;
+  }
+
+  const textParts: string[] = [];
+  for (const part of content) {
+    if (part === null || typeof part !== "object") {
+      continue;
+    }
+    const textPart = part as TextMessagePart;
+    if (textPart.type === "text" && typeof textPart.text === "string") {
+      textParts.push(textPart.text);
+    }
+  }
+
+  return textParts.length > 0 ? textParts.join("\n") : null;
+}
+
+function continuationGoalIdFromMessageContent(content: unknown): string | null {
+  const text = textContentFromMessageContent(content);
+  return text === null ? null : continuationGoalIdFromPrompt(text);
+}
+
 function staleGoalContinuationMessage(queuedGoalId: string, currentGoal: ThreadGoal | null): string {
   const currentState = currentGoal
     ? `Current goal id: ${currentGoal.goalId}; current status: ${currentGoal.status}.`
@@ -65,7 +98,7 @@ function staleGoalContinuationMessage(queuedGoalId: string, currentGoal: ThreadG
     "A queued hidden goal continuation was stale and has been cancelled before running.",
     `Queued goal id: ${queuedGoalId}.`,
     currentState,
-    "Ignore this hidden bookkeeping message; do not perform task work or mention it to the user.",
+    "Ignore only this stale hidden bookkeeping message; do not perform work for the queued goal id above or mention this cancellation to the user.",
   ].join("\n");
 }
 
@@ -75,6 +108,10 @@ function queuedGoalWorkMessageId(message: {
   details?: unknown;
   content?: unknown;
 }): string | null {
+  if (message.role === "user") {
+    return continuationGoalIdFromMessageContent(message.content);
+  }
+
   if (message.role !== "custom" || message.customType !== CUSTOM_ENTRY_TYPE) {
     return null;
   }
@@ -86,11 +123,34 @@ function queuedGoalWorkMessageId(message: {
     }
   }
 
-  if (typeof message.content === "string") {
-    return continuationGoalIdFromPrompt(message.content);
+  return continuationGoalIdFromMessageContent(message.content);
+}
+
+function staleGoalContinuationContextMessage<TMessage extends { role: string; content?: unknown }>(
+  message: TMessage,
+  queuedGoalId: string,
+  currentGoal: ThreadGoal | null,
+): TMessage {
+  const content = staleGoalContinuationMessage(queuedGoalId, currentGoal);
+
+  if (message.role === "custom") {
+    return {
+      ...message,
+      content,
+      display: false,
+      details: {
+        kind: "stale_continuation",
+        goalId: queuedGoalId,
+        currentGoalId: currentGoal?.goalId ?? null,
+        currentStatus: currentGoal?.status ?? null,
+      },
+    } as TMessage;
   }
 
-  return null;
+  return {
+    ...message,
+    content: [{ type: "text", text: content }],
+  } as TMessage;
 }
 
 const CONTINUATION_RETRY_MS = 50;
@@ -102,6 +162,9 @@ export default function (pi: ExtensionAPI): void {
   let continuationTimer: ReturnType<typeof setTimeout> | null = null;
   let statusContext: StatusContext | null = null;
   let statusRefreshTimer: ReturnType<typeof setInterval> | null = null;
+  let staleQueuedGoalWorkTurnActive = false;
+  let startedStaleQueuedGoalWorkThisTurn = false;
+  let startedRunnableWorkThisTurn = false;
   const accounting: AccountingState = {
     activeGoalId: null,
     lastAccountedAt: null,
@@ -129,6 +192,28 @@ export default function (pi: ExtensionAPI): void {
   const clearContinuationState = (): void => {
     clearContinuationTimer();
     continuationQueuedFor = null;
+  };
+
+  const clearContinuationStateFor = (goalId: string): void => {
+    if (continuationQueuedFor === goalId) {
+      continuationQueuedFor = null;
+    }
+    if (continuationScheduledFor === goalId) {
+      clearContinuationTimer();
+    }
+  };
+
+  const isCurrentActiveGoalId = (goalId: string): boolean => {
+    return goal?.goalId === goalId && goal.status === "active";
+  };
+
+  const clearStaleQueuedGoalWorkTurn = (): void => {
+    staleQueuedGoalWorkTurnActive = false;
+  };
+
+  const clearStartedTurnWork = (): void => {
+    startedStaleQueuedGoalWorkThisTurn = false;
+    startedRunnableWorkThisTurn = false;
   };
 
   const clearActiveAccounting = (): void => {
@@ -357,7 +442,23 @@ export default function (pi: ExtensionAPI): void {
     },
   });
 
-  pi.on("context", async (event): Promise<{ messages: typeof event.messages } | undefined> => {
+  pi.on("input", async (event, ctx) => {
+    const continuationGoalId = continuationGoalIdFromPrompt(event.text);
+    if (continuationGoalId === null) {
+      return undefined;
+    }
+
+    clearStaleQueuedGoalWorkTurn();
+    clearContinuationStateFor(continuationGoalId);
+    if (isCurrentActiveGoalId(continuationGoalId)) {
+      return { action: "continue" } as const;
+    }
+
+    refreshUi(ctx);
+    return { action: "handled" } as const;
+  });
+
+  pi.on("context", async (event, ctx): Promise<{ messages: typeof event.messages } | undefined> => {
     let changed = false;
     const messages: typeof event.messages = event.messages.map((message) => {
       const queuedGoalId = queuedGoalWorkMessageId(message);
@@ -366,18 +467,15 @@ export default function (pi: ExtensionAPI): void {
       }
 
       changed = true;
-      return {
-        ...message,
-        content: staleGoalContinuationMessage(queuedGoalId, goal),
-        display: false,
-        details: {
-          kind: "stale_continuation",
-          goalId: queuedGoalId,
-          currentGoalId: goal?.goalId ?? null,
-          currentStatus: goal?.status ?? null,
-        },
-      } as typeof message;
+      return staleGoalContinuationContextMessage(message, queuedGoalId, goal);
     });
+
+    if (startedStaleQueuedGoalWorkThisTurn && !startedRunnableWorkThisTurn) {
+      staleQueuedGoalWorkTurnActive = true;
+      clearActiveAccounting();
+      ctx.abort();
+      refreshUi(ctx);
+    }
 
     return changed ? { messages } : undefined;
   });
@@ -404,29 +502,63 @@ export default function (pi: ExtensionAPI): void {
   pi.on("before_agent_start", async (_event, ctx) => {
     const continuationGoalId = continuationGoalIdFromPrompt(_event.prompt);
     if (continuationGoalId !== null) {
-      continuationQueuedFor = null;
-      clearContinuationTimer();
-      if (!goal || goal.goalId !== continuationGoalId || goal.status !== "active") {
-        ctx.abort();
+      clearContinuationStateFor(continuationGoalId);
+      if (!isCurrentActiveGoalId(continuationGoalId)) {
         refreshUi(ctx);
         return undefined;
       }
+      clearStaleQueuedGoalWorkTurn();
     } else {
+      clearStaleQueuedGoalWorkTurn();
       clearContinuationState();
     }
   });
 
+  pi.on("message_start", async (event) => {
+    const queuedGoalId = queuedGoalWorkMessageId(event.message);
+    if (queuedGoalId === null) {
+      if (event.message.role === "user" || event.message.role === "custom") {
+        startedRunnableWorkThisTurn = true;
+        clearContinuationState();
+      }
+      return;
+    }
+
+    clearContinuationStateFor(queuedGoalId);
+    if (isCurrentActiveGoalId(queuedGoalId)) {
+      startedRunnableWorkThisTurn = true;
+      return;
+    }
+
+    startedStaleQueuedGoalWorkThisTurn = true;
+  });
+
   pi.on("turn_start", async (_event, ctx) => {
-    clearContinuationState();
+    clearStartedTurnWork();
+    if (staleQueuedGoalWorkTurnActive) {
+      refreshUi(ctx);
+      return;
+    }
+
     beginAccounting();
     refreshUi(ctx);
   });
 
   pi.on("tool_execution_end", async (_event, ctx) => {
+    if (staleQueuedGoalWorkTurnActive) {
+      refreshUi(ctx);
+      return;
+    }
+
     accountProgress(ctx, true, 0, true);
   });
 
   pi.on("turn_end", async (_event, ctx) => {
+    if (staleQueuedGoalWorkTurnActive) {
+      refreshUi(ctx);
+      return;
+    }
+
     const completedTurnTokens = assistantTurnTokens(_event.message);
     accountProgress(ctx, true, completedTurnTokens);
     if (isAbortedAssistantMessage(_event.message)) {
@@ -439,6 +571,12 @@ export default function (pi: ExtensionAPI): void {
   });
 
   pi.on("agent_end", async (event, ctx) => {
+    if (staleQueuedGoalWorkTurnActive) {
+      clearStaleQueuedGoalWorkTurn();
+      refreshUi(ctx);
+      return;
+    }
+
     const abortedMessages = event.messages.filter(isAbortedAssistantMessage);
     const abortedTurnTokens = abortedMessages.reduce((sum, message) => {
       return sum + assistantTurnTokens(message);
