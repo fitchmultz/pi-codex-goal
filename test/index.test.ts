@@ -4,11 +4,13 @@ import test from "node:test";
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import goalExtension from "../src/index.js";
+import { formatFooterStatus } from "../src/format.js";
 import {
   compactContinuationPrompt,
   continuationGoalIdFromPrompt,
   continuationPrompt,
 } from "../src/prompts.js";
+import { recoveryAttentionMessage } from "../src/recovery.js";
 import { isGoalCustomEntry, reconstructGoal } from "../src/state.js";
 import { CUSTOM_ENTRY_TYPE } from "../src/types.js";
 
@@ -23,17 +25,28 @@ function createRuntimeHarness(options: {
   idle?: boolean;
   pendingMessages?: boolean;
   compactBehavior?: "success" | "error" | "unavailable";
+  compactCompletion?: "immediate" | "manual";
 } = {}) {
   const entries: ReturnType<ExtensionCommandContext["sessionManager"]["getBranch"]> = [];
   const handlers = new Map<string, EventHandler[]>();
   const sentMessages: SentMessage[] = [];
   const tools = new Map<string, (params: Record<string, unknown>) => Promise<unknown>>();
-  const compactCalls: Array<{ customInstructions?: string }> = [];
+  const compactCalls: Array<{
+    customInstructions?: string;
+    onComplete?: (result: {
+      summary: string;
+      tokensBefore: number;
+      firstKeptEntryId: string;
+    }) => void;
+    onError?: (error: Error) => void;
+  }> = [];
+  const footerStatuses: Array<string | undefined> = [];
   const runtime = {
     abortCount: 0,
     idle: options.idle ?? true,
     pendingMessages: options.pendingMessages ?? false,
     compactBehavior: options.compactBehavior ?? "success",
+    compactCompletion: options.compactCompletion ?? "immediate",
   };
   let commandHandler: ((args: string, ctx: ExtensionCommandContext) => void | Promise<void>) | null = null;
   let ctx: ExtensionCommandContext;
@@ -134,7 +147,9 @@ function createRuntimeHarness(options: {
     setFooter() {},
     setHeader() {},
     setHiddenThinkingLabel() {},
-    setStatus() {},
+    setStatus(_key, status) {
+      footerStatuses.push(status);
+    },
     setTheme: () => ({ success: false }),
     setTitle() {},
     setToolsExpanded() {},
@@ -171,20 +186,28 @@ function createRuntimeHarness(options: {
 
   if (runtime.compactBehavior !== "unavailable") {
     ctx.compact = (options) => {
+      const call: (typeof compactCalls)[number] = {};
       if (options?.customInstructions !== undefined) {
-        compactCalls.push({ customInstructions: options.customInstructions });
-      } else {
-        compactCalls.push({});
+        call.customInstructions = options.customInstructions;
       }
+      if (options?.onComplete) {
+        call.onComplete = (result) => options.onComplete?.(result);
+      }
+      if (options?.onError) {
+        call.onError = (error) => options.onError?.(error);
+      }
+      compactCalls.push(call);
       if (runtime.compactBehavior === "error") {
         options?.onError?.(new Error("compaction failed"));
         return;
       }
-      options?.onComplete?.({
-        summary: "compact summary",
-        tokensBefore: 100,
-        firstKeptEntryId: "entry-1",
-      });
+      if (runtime.compactCompletion === "immediate") {
+        options?.onComplete?.({
+          summary: "compact summary",
+          tokensBefore: 100,
+          firstKeptEntryId: "entry-1",
+        });
+      }
     };
   }
 
@@ -211,6 +234,7 @@ function createRuntimeHarness(options: {
 
   return {
     compactCalls,
+    footerStatuses,
     emit,
     entries,
     runCommand,
@@ -1838,10 +1862,38 @@ test("repeated context length errors pause after bounded compaction attempts", a
   assert.equal(harness.sentMessages.length, 0);
 });
 
+test("context overflow recovery preserves compaction attempts across session_compact", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  harness.sentMessages.length = 0;
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: attempt, timestamp: attempt + 1 });
+    await harness.emit("turn_end", {
+      type: "turn_end",
+      turnIndex: attempt,
+      message: assistantMessage("error", { input: 1, output: 1 }, "context_length_exceeded"),
+      toolResults: [],
+    });
+    await harness.emit("session_compact", {
+      type: "session_compact",
+      summary: "compact summary",
+      tokensBefore: 100,
+    });
+  }
+
+  assert.equal(harness.compactCalls.length, 3);
+  assert.equal(harness.snapshot().goal?.status, "paused");
+  assert.equal(harness.sentMessages.length, 0);
+});
+
 test("compaction failures pause with recoverable attention", async () => {
   const harness = createRuntimeHarness({ compactBehavior: "error" });
   await harness.runCommand("ship it");
+  const goal = harness.snapshot().goal;
+  assert.ok(goal);
   harness.sentMessages.length = 0;
+  harness.footerStatuses.length = 0;
 
   await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
   await harness.emit("turn_end", {
@@ -1854,6 +1906,13 @@ test("compaction failures pause with recoverable attention", async () => {
   assert.equal(harness.compactCalls.length, 1);
   assert.equal(harness.snapshot().goal?.status, "paused");
   assert.equal(harness.sentMessages.length, 0);
+  assert.equal(
+    harness.footerStatuses.at(-1),
+    formatFooterStatus(
+      { ...goal, status: "paused" },
+      recoveryAttentionMessage("context window exceeded: compaction failed"),
+    ),
+  );
 });
 
 test("repeated transient errors use bounded backoff before pausing", async () => {
@@ -1934,7 +1993,10 @@ test("successful turns reset transient error counters and continue active goals"
 test("unavailable compaction pauses with recoverable attention", async () => {
   const harness = createRuntimeHarness({ compactBehavior: "unavailable" });
   await harness.runCommand("ship it");
+  const goal = harness.snapshot().goal;
+  assert.ok(goal);
   harness.sentMessages.length = 0;
+  harness.footerStatuses.length = 0;
 
   await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
   await harness.emit("turn_end", {
@@ -1946,5 +2008,101 @@ test("unavailable compaction pauses with recoverable attention", async () => {
 
   assert.equal(harness.snapshot().goal?.status, "paused");
   assert.equal(harness.compactCalls.length, 0);
+  assert.equal(harness.sentMessages.length, 0);
+  assert.equal(
+    harness.footerStatuses.at(-1),
+    formatFooterStatus(
+      { ...goal, status: "paused" },
+      recoveryAttentionMessage("context window exceeded"),
+    ),
+  );
+});
+
+test("exhausted context overflow retries show recoverable attention in footer", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  const goal = harness.snapshot().goal;
+  assert.ok(goal);
+  harness.sentMessages.length = 0;
+  harness.footerStatuses.length = 0;
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: attempt, timestamp: attempt + 1 });
+    await harness.emit("turn_end", {
+      type: "turn_end",
+      turnIndex: attempt,
+      message: assistantMessage("error", { input: 1, output: 1 }, "context_length_exceeded"),
+      toolResults: [],
+    });
+    await harness.emit("session_compact", {
+      type: "session_compact",
+      summary: "compact summary",
+      tokensBefore: 100,
+    });
+  }
+
+  assert.equal(harness.snapshot().goal?.status, "paused");
+  assert.equal(
+    harness.footerStatuses.at(-1),
+    formatFooterStatus(
+      { ...goal, status: "paused" },
+      recoveryAttentionMessage("context window recovery failed after repeated compaction attempts"),
+    ),
+  );
+});
+
+test("turn_end and agent_end dedupe a single assistant error into one retry", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  harness.sentMessages.length = 0;
+
+  const errorMessage = assistantMessage("error", { input: 1, output: 1 }, "websocket closed");
+  await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+  await harness.emit("turn_end", {
+    type: "turn_end",
+    turnIndex: 0,
+    message: errorMessage,
+    toolResults: [],
+  });
+  await harness.emit("agent_end", {
+    type: "agent_end",
+    messages: [errorMessage],
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 1_100));
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 0);
+});
+
+test("stale compaction callbacks do not pause a replaced active goal", async () => {
+  const harness = createRuntimeHarness({ compactCompletion: "manual" });
+  await harness.runCommand("old goal");
+  const oldGoalId = harness.snapshot().goal?.goalId;
+  assert.ok(oldGoalId);
+  harness.sentMessages.length = 0;
+
+  await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+  await harness.emit("turn_end", {
+    type: "turn_end",
+    turnIndex: 0,
+    message: assistantMessage("error", { input: 1, output: 1 }, "context_length_exceeded"),
+    toolResults: [],
+  });
+  assert.equal(harness.compactCalls.length, 1);
+
+  await harness.runCommand("new goal");
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.notEqual(harness.snapshot().goal?.goalId, oldGoalId);
+  harness.sentMessages.length = 0;
+
+  const staleComplete = harness.compactCalls[0];
+  assert.ok(staleComplete);
+  harness.compactCalls[0]?.onComplete?.({
+    summary: "stale compact",
+    tokensBefore: 50,
+    firstKeptEntryId: "entry-1",
+  });
+
+  assert.equal(harness.snapshot().goal?.status, "active");
   assert.equal(harness.sentMessages.length, 0);
 });

@@ -10,6 +10,14 @@ import {
   isSuccessfulAssistantTurn,
   transientErrorBackoffMs,
 } from "../src/recovery.js";
+import {
+  bumpRecoveryGeneration,
+  createGoalRecoveryMachine,
+  isRecoveryCompactionScopeActive,
+  onRecoverySessionCompact,
+  planRecoveryForAssistantError,
+  shouldSkipDuplicateRecoveryErrorHandling,
+} from "../src/recovery-machine.js";
 
 test("detects context overflow error messages", () => {
   assert.equal(isContextOverflowError("context_length_exceeded: prompt too large"), true);
@@ -55,4 +63,49 @@ test("createErrorRecoveryCounters starts empty", () => {
     transientAttempts: 0,
     compactionAttempts: 0,
   });
+});
+
+test("recovery session compact preserves compaction attempts during recovery", () => {
+  const state = createGoalRecoveryMachine();
+  state.recoveryCompactionPending = true;
+  state.counters = {
+    signature: "context_length_exceeded",
+    transientAttempts: 2,
+    compactionAttempts: 2,
+  };
+
+  onRecoverySessionCompact(state);
+
+  assert.equal(state.counters.compactionAttempts, 2);
+  assert.equal(state.counters.transientAttempts, 0);
+  assert.equal(state.recoveryCompactionPending, false);
+});
+
+test("recovery compaction scope ignores stale generations", () => {
+  const state = createGoalRecoveryMachine();
+  const scope = { goalId: "goal-a", generation: state.generation };
+  bumpRecoveryGeneration(state);
+  assert.equal(isRecoveryCompactionScopeActive(state, scope, "goal-a"), false);
+});
+
+test("recovery plans pause after compaction cap even when compaction attempts are already exhausted", () => {
+  const state = createGoalRecoveryMachine();
+  state.counters = {
+    signature: "context_length_exceeded",
+    transientAttempts: 0,
+    compactionAttempts: 3,
+  };
+  const action = planRecoveryForAssistantError(
+    state,
+    { role: "assistant", stopReason: "error", errorMessage: "context_length_exceeded" },
+    "goal-a",
+  );
+  assert.equal(action.type, "pause");
+});
+
+test("duplicate agent_end error handling is skipped for the same turn", () => {
+  const state = createGoalRecoveryMachine();
+  state.lastHandledErrorTurnIndex = 4;
+  assert.equal(shouldSkipDuplicateRecoveryErrorHandling(state, 4), true);
+  assert.equal(shouldSkipDuplicateRecoveryErrorHandling(state, 5), false);
 });
