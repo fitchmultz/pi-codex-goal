@@ -1,18 +1,11 @@
-const CONTEXT_OVERFLOW_PATTERNS = [
-  /context_length_exceeded/i,
-  /context window/i,
-  /model_context_window_exceeded/i,
-  /prompt too long/i,
-  /max context length/i,
-  /maximum context/i,
-] as const;
+import { isContextOverflow } from "@earendil-works/pi-ai";
 
 export const CONTEXT_OVERFLOW_SIGNATURE = "context_overflow";
 
-export const MAX_TRANSIENT_ERROR_RETRIES = 5;
-export const MAX_CONTEXT_COMPACTION_RETRIES = 3;
-export const TRANSIENT_ERROR_BACKOFF_BASE_MS = 1_000;
-export const TRANSIENT_ERROR_BACKOFF_MAX_MS = 30_000;
+/** Host AgentSession performs one overflow compact-and-retry before giving up. */
+export const MAX_CONTEXT_COMPACTION_RETRIES = 1;
+/** Host default retry settings use maxRetries = 3 before final failure. */
+export const MAX_TRANSIENT_ERROR_RETRIES = 3;
 
 export interface AssistantErrorMessage {
   role: string;
@@ -46,8 +39,11 @@ export function isSuccessfulAssistantTurn(message: AssistantErrorMessage): boole
 }
 
 export function isContextOverflowError(errorMessage: string | undefined): boolean {
-  const message = errorMessage ?? "";
-  return CONTEXT_OVERFLOW_PATTERNS.some((pattern) => pattern.test(message));
+  return isContextOverflow({
+    role: "assistant",
+    stopReason: "error",
+    errorMessage: errorMessage ?? "",
+  } as Parameters<typeof isContextOverflow>[0]);
 }
 
 function normalizeTransientSignature(line: string): string {
@@ -65,11 +61,6 @@ export function failureSignature(errorMessage: string | undefined): string {
   const message = (errorMessage ?? "unknown_error").trim();
   const firstLine = message.split("\n")[0] ?? message;
   return normalizeTransientSignature(firstLine);
-}
-
-export function transientErrorBackoffMs(attempt: number): number {
-  const exponent = Math.max(0, attempt - 1);
-  return Math.min(TRANSIENT_ERROR_BACKOFF_BASE_MS * 2 ** exponent, TRANSIENT_ERROR_BACKOFF_MAX_MS);
 }
 
 export function countersForFailureSignature(

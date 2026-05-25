@@ -1850,7 +1850,7 @@ test("turn_end provider errors defer recovery to agent_end without hidden contin
   assert.equal(harness.snapshot().goal?.status, "active");
 });
 
-test("host session compaction continues active goals after overflow without extension compaction", async () => {
+test("host overflow session compaction does not queue extension continuation before host retry", async () => {
   const harness = createRuntimeHarness();
   await harness.runCommand("ship it");
   const queued = harness.sentMessages[0];
@@ -1870,6 +1870,10 @@ test("host session compaction continues active goals after overflow without exte
     message: errorMessage,
     toolResults: [],
   });
+  await harness.emit("agent_end", {
+    type: "agent_end",
+    messages: [errorMessage],
+  });
 
   assert.equal(harness.compactCalls.length, 0);
   assert.equal(harness.sentMessages.length, 0);
@@ -1880,21 +1884,55 @@ test("host session compaction continues active goals after overflow without exte
     tokensBefore: 100,
   });
 
-  const goal = harness.snapshot().goal;
-  assert.equal(goal?.status, "active");
-  assert.equal(harness.sentMessages.length, 1);
-  assert.deepEqual(harness.sentMessages[0]?.message.details, {
-    kind: "continuation",
-    goalId: goal?.goalId,
-  });
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 0);
 });
 
-test("repeated context length errors pause after bounded host recovery attempts", async () => {
+test("host overflow retry success resumes goal continuation after clearing recovery flag", async () => {
   const harness = createRuntimeHarness();
   await harness.runCommand("ship it");
   harness.sentMessages.length = 0;
 
-  for (let attempt = 0; attempt < 4; attempt += 1) {
+  const errorMessage = assistantMessage("error", { input: 30, output: 12 }, "context_length_exceeded");
+  await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+  await harness.emit("turn_end", {
+    type: "turn_end",
+    turnIndex: 0,
+    message: errorMessage,
+    toolResults: [],
+  });
+  await harness.emit("agent_end", {
+    type: "agent_end",
+    messages: [errorMessage],
+  });
+  await harness.emit("session_compact", {
+    type: "session_compact",
+    summary: "compact summary",
+    tokensBefore: 100,
+  });
+  assert.equal(harness.sentMessages.length, 0);
+
+  await harness.emit("before_agent_start", {
+    type: "before_agent_start",
+    prompt: "host retry",
+    systemPrompt: "",
+    systemPromptOptions: {},
+  });
+  await harness.emit("agent_end", {
+    type: "agent_end",
+    messages: [assistantMessage("stop", { input: 1, output: 1 })],
+  });
+
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 1);
+});
+
+test("repeated context length errors pause after host default overflow recovery", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  harness.sentMessages.length = 0;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
     await emitPersistentAssistantError(harness, attempt, "context_length_exceeded");
   }
 
@@ -1903,16 +1941,32 @@ test("repeated context length errors pause after bounded host recovery attempts"
   assert.equal(harness.sentMessages.length, 0);
 });
 
+test("first overflow error stays active while host performs compact-and-retry", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  harness.sentMessages.length = 0;
+
+  await emitPersistentAssistantError(harness, 0, "context_length_exceeded");
+  await harness.emit("session_compact", {
+    type: "session_compact",
+    summary: "compact summary",
+    tokensBefore: 100,
+  });
+
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 0);
+});
+
 test("context overflow recovery preserves compaction attempts across host session_compact", async () => {
   const harness = createRuntimeHarness();
   await harness.runCommand("ship it");
   harness.sentMessages.length = 0;
 
-  for (let attempt = 0; attempt < 4; attempt += 1) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
     await emitPersistentAssistantError(
       harness,
       attempt,
-      `context window exceeded: ${(attempt + 1) * 100_000} tokens`,
+      `prompt is too long: ${(attempt + 1) * 100_000} tokens > 200000 maximum`,
     );
     await harness.emit("session_compact", {
       type: "session_compact",
@@ -1926,18 +1980,29 @@ test("context overflow recovery preserves compaction attempts across host sessio
   assert.equal(harness.sentMessages.length, 0);
 });
 
-test("repeated transient errors pause after bounded persistent failures without hidden retries", async () => {
+test("repeated transient errors pause after host default retry cap without hidden retries", async () => {
   const harness = createRuntimeHarness();
   await harness.runCommand("ship it");
   harness.sentMessages.length = 0;
 
-  for (let attempt = 0; attempt < 6; attempt += 1) {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
     await emitPersistentAssistantError(harness, attempt, "websocket closed");
   }
 
   assert.equal(harness.snapshot().goal?.status, "paused");
   assert.equal(harness.sentMessages.length, 0);
   assert.equal(harness.compactCalls.length, 0);
+});
+
+test("transient errors before host retry cap stay active without attention", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  harness.sentMessages.length = 0;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await emitPersistentAssistantError(harness, attempt, "websocket closed");
+    assert.equal(harness.snapshot().goal?.status, "active");
+  }
 });
 
 test("successful turns reset transient error counters and continue active goals", async () => {
@@ -1987,7 +2052,7 @@ test("exhausted context overflow retries show recoverable attention in footer", 
   harness.sentMessages.length = 0;
   harness.footerStatuses.length = 0;
 
-  for (let attempt = 0; attempt < 4; attempt += 1) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
     await emitPersistentAssistantError(harness, attempt, "context_length_exceeded");
     await harness.emit("session_compact", {
       type: "session_compact",

@@ -24,7 +24,7 @@ import {
   type GoalRecoveryMachineState,
 } from "./recovery-machine.js";
 import { createGoalRecoveryRuntime } from "./recovery-runtime.js";
-import { isErrorAssistantMessage } from "./recovery.js";
+import { isContextOverflowError, isErrorAssistantMessage, type AssistantErrorMessage } from "./recovery.js";
 import { clearEntry, goalWithLiveUsage, goalsEquivalent, reconstructGoal, setEntry, updateGoalStatus } from "./state.js";
 import { registerGoalTools } from "./tools.js";
 import { CUSTOM_ENTRY_TYPE, type GoalEntrySource, type GoalResult, type ThreadGoal } from "./types.js";
@@ -55,6 +55,7 @@ export default function (pi: ExtensionAPI): void {
   const startedStaleQueuedGoalWorkGoalIds = new Set<string>();
   const accounting = createAccountingState();
   let recoveryState: GoalRecoveryMachineState = createGoalRecoveryMachine();
+  let hostOverflowRecoveryInProgress = false;
 
   const goalForDisplay = (): ThreadGoal | null =>
     goalWithLiveUsage(goal, accounting.activeGoalId, accounting.lastAccountedAt);
@@ -76,6 +77,7 @@ export default function (pi: ExtensionAPI): void {
 
   const resetErrorRecovery = (): void => {
     resetRecoveryMachine(recoveryState);
+    hostOverflowRecoveryInProgress = false;
   };
 
   const clearContinuationState = (): void => {
@@ -450,6 +452,7 @@ export default function (pi: ExtensionAPI): void {
     const continuationGoalId = continuationGoalIdFromPrompt(event.text);
 
     if (event.source !== "extension") {
+      hostOverflowRecoveryInProgress = false;
       recoveryRuntime.onUserInput();
       if (clearStaleQueuedGoalWorkTurn()) {
         refreshUi(ctx);
@@ -618,8 +621,11 @@ export default function (pi: ExtensionAPI): void {
     }
     const errorMessages = event.messages.filter(isErrorAssistantMessage);
     if (errorMessages.length > 0) {
-      const lastError = errorMessages.at(-1);
+      const lastError = errorMessages.at(-1) as AssistantErrorMessage | undefined;
       if (lastError) {
+        if (isContextOverflowError(lastError.errorMessage)) {
+          hostOverflowRecoveryInProgress = true;
+        }
         recoveryRuntime.handlePersistentAssistantError(lastError, ctx);
       }
       return;
@@ -646,7 +652,9 @@ export default function (pi: ExtensionAPI): void {
     }
     recoveryRuntime.onSessionCompact();
     refreshUi(ctx);
-    maybeContinue(ctx);
+    if (!hostOverflowRecoveryInProgress) {
+      maybeContinue(ctx);
+    }
   });
 
   pi.on("session_shutdown", async (_event, ctx) => {
