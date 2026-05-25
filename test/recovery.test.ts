@@ -120,23 +120,21 @@ test("changing context overflow messages share one recovery signature and reach 
   assert.equal(state.counters.signature, CONTEXT_OVERFLOW_SIGNATURE);
 });
 
-test("counters reset per-signature fields but preserve consecutive transient count", () => {
+test("counters reset per-signature transient and compaction fields on signature change", () => {
   const counters = countersForFailureSignature(
     {
       signature: "HTTP <n>",
       transientAttempts: 3,
-      consecutiveTransientAttempts: 2,
       compactionAttempts: 2,
     },
     "HTTP <n> service unavailable",
   );
   assert.equal(counters.signature, "HTTP <n> service unavailable");
   assert.equal(counters.transientAttempts, 0);
-  assert.equal(counters.consecutiveTransientAttempts, 2);
   assert.equal(counters.compactionAttempts, 0);
 });
 
-test("varied retryable transient errors pause on fourth consecutive failure", () => {
+test("varied retryable transient errors stay active without tripping signature-scoped cap", () => {
   const state = createGoalRecoveryMachine();
   const errors = [
     "HTTP 500 internal server error",
@@ -145,21 +143,35 @@ test("varied retryable transient errors pause on fourth consecutive failure", ()
     "HTTP 504 gateway timeout",
   ];
 
+  for (const errorMessage of errors) {
+    const action = planRecoveryForAssistantError(
+      state,
+      { role: "assistant", stopReason: "error", errorMessage },
+    );
+    assert.equal(action.type, "noop", `${errorMessage} should stay active`);
+    assert.equal(state.counters.transientAttempts, 1, `${errorMessage} should reset per signature`);
+  }
+});
+
+test("repeated identical transient errors pause after signature-scoped retry cap", () => {
+  const state = createGoalRecoveryMachine();
+  const errorMessage = "websocket closed";
+
   for (let index = 0; index < 3; index += 1) {
     const action = planRecoveryForAssistantError(
       state,
-      { role: "assistant", stopReason: "error", errorMessage: errors[index]! },
+      { role: "assistant", stopReason: "error", errorMessage },
     );
     assert.equal(action.type, "noop", `attempt ${index + 1} should stay active`);
-    assert.equal(state.counters.consecutiveTransientAttempts, index + 1);
+    assert.equal(state.counters.transientAttempts, index + 1);
   }
 
   const finalAction = planRecoveryForAssistantError(
     state,
-    { role: "assistant", stopReason: "error", errorMessage: errors[3]! },
+    { role: "assistant", stopReason: "error", errorMessage },
   );
   assert.equal(finalAction.type, "pause");
-  assert.equal(state.counters.consecutiveTransientAttempts, 4);
+  assert.equal(state.counters.transientAttempts, 4);
 });
 
 test("successful assistant turns exclude errors and aborts", () => {
@@ -173,7 +185,6 @@ test("createErrorRecoveryCounters starts empty", () => {
   assert.deepEqual(createErrorRecoveryCounters(), {
     signature: null,
     transientAttempts: 0,
-    consecutiveTransientAttempts: 0,
     compactionAttempts: 0,
   });
 });
@@ -192,7 +203,6 @@ test("recovery session compact preserves overflow attempt counts after host comp
   state.counters = {
     signature: CONTEXT_OVERFLOW_SIGNATURE,
     transientAttempts: 2,
-    consecutiveTransientAttempts: 2,
     compactionAttempts: 1,
   };
 
@@ -200,7 +210,6 @@ test("recovery session compact preserves overflow attempt counts after host comp
 
   assert.equal(state.counters.compactionAttempts, 1);
   assert.equal(state.counters.transientAttempts, 0);
-  assert.equal(state.counters.consecutiveTransientAttempts, 0);
   assert.equal(state.counters.signature, CONTEXT_OVERFLOW_SIGNATURE);
   assert.equal(state.attention, null);
 });
@@ -210,7 +219,6 @@ test("recovery plans pause after compaction cap even when compaction attempts ar
   state.counters = {
     signature: CONTEXT_OVERFLOW_SIGNATURE,
     transientAttempts: 0,
-    consecutiveTransientAttempts: 0,
     compactionAttempts: 1,
   };
   const action = planRecoveryForAssistantError(
@@ -233,7 +241,6 @@ test("recovery plans pause after host default transient retry cap", () => {
   state.counters = {
     signature: "websocket closed",
     transientAttempts: 3,
-    consecutiveTransientAttempts: 3,
     compactionAttempts: 0,
   };
   const action = planRecoveryForAssistantError(
@@ -242,7 +249,6 @@ test("recovery plans pause after host default transient retry cap", () => {
   );
   assert.equal(action.type, "pause");
   assert.equal(state.counters.transientAttempts, 4);
-  assert.equal(state.counters.consecutiveTransientAttempts, 4);
 });
 
 test("recovery plans noop while under host-owned overflow and transient caps", () => {

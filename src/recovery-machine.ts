@@ -68,7 +68,6 @@ export function onRecoverySessionCompact(state: GoalRecoveryMachineState): void 
     state.counters = {
       signature: state.counters.signature,
       transientAttempts: 0,
-      consecutiveTransientAttempts: 0,
       compactionAttempts: state.counters.compactionAttempts,
     };
     return;
@@ -128,9 +127,8 @@ export function planRecoveryForAssistantError(
   state.counters = {
     ...state.counters,
     transientAttempts: state.counters.transientAttempts + 1,
-    consecutiveTransientAttempts: state.counters.consecutiveTransientAttempts + 1,
   };
-  if (state.counters.consecutiveTransientAttempts > MAX_TRANSIENT_ERROR_RETRIES) {
+  if (state.counters.transientAttempts > MAX_TRANSIENT_ERROR_RETRIES) {
     return {
       type: "pause",
       reason: `provider error persisted (${signature})`,

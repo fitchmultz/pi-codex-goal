@@ -27,7 +27,6 @@ function createRuntimeHarness(options: {
   compactBehavior?: "success" | "error" | "unavailable";
   compactCompletion?: "immediate" | "manual";
   contextWindow?: number;
-  waitForIdleMode?: "immediate" | "manual";
 } = {}) {
   const entries: ReturnType<ExtensionCommandContext["sessionManager"]["getBranch"]> = [];
   const handlers = new Map<string, EventHandler[]>();
@@ -53,8 +52,6 @@ function createRuntimeHarness(options: {
   let commandHandler: ((args: string, ctx: ExtensionCommandContext) => void | Promise<void>) | null = null;
   let ctx: ExtensionCommandContext;
   let entryIndex = 0;
-  const waitForIdleMode = options.waitForIdleMode ?? "immediate";
-  let waitForIdleWaiters: Array<() => void> = [];
 
   const on = ((event: string, handler: EventHandler) => {
     const currentHandlers = handlers.get(event) ?? [];
@@ -185,14 +182,6 @@ function createRuntimeHarness(options: {
     signal: undefined,
     switchSession: async () => ({ cancelled: false }),
     ui,
-    waitForIdle: async () => {
-      if (waitForIdleMode === "immediate") {
-        return;
-      }
-      await new Promise<void>((resolve) => {
-        waitForIdleWaiters.push(resolve);
-      });
-    },
   } as unknown as ExtensionCommandContext;
 
   if (options.contextWindow !== undefined) {
@@ -275,24 +264,8 @@ function createRuntimeHarness(options: {
     get abortCount() {
       return runtime.abortCount;
     },
-    resolveWaitForIdle() {
-      const waiters = waitForIdleWaiters;
-      waitForIdleWaiters = [];
-      for (const resolve of waiters) {
-        resolve();
-      }
-    },
     snapshot: () => reconstructGoal(entries),
   };
-}
-
-async function flushOverflowRecoveryFallback(): Promise<void> {
-  await new Promise<void>((resolve) => {
-    setImmediate(resolve);
-  });
-  await new Promise<void>((resolve) => {
-    setImmediate(resolve);
-  });
 }
 
 interface TestAssistantUsage {
@@ -2182,41 +2155,29 @@ test("first overflow error shows recoverable attention while host recovery is pe
   );
 });
 
-test("overflow without session_compact pauses with recoverable attention after host post-run", async () => {
-  const harness = createRuntimeHarness({ compactBehavior: "unavailable", waitForIdleMode: "manual" });
+test("overflow without session_compact stays active with pending overflow attention", async () => {
+  const harness = createRuntimeHarness({ compactBehavior: "unavailable" });
   await harness.runCommand("ship it");
   const goal = harness.snapshot().goal;
   assert.ok(goal);
   harness.sentMessages.length = 0;
 
   await emitPersistentAssistantError(harness, 0, "context_length_exceeded");
-  await waitForContinuationRetry();
 
   assert.equal(harness.snapshot().goal?.status, "active");
   assert.equal(harness.sentMessages.length, 0);
-
-  await flushOverflowRecoveryFallback();
-  harness.resolveWaitForIdle();
-  await flushOverflowRecoveryFallback();
-
-  assert.equal(harness.snapshot().goal?.status, "paused");
-  assert.equal(harness.sentMessages.length, 0);
   assert.equal(
     harness.footerStatuses.at(-1),
-    formatFooterStatus(
-      { ...goal, status: "paused" },
-      recoveryAttentionMessage("context window recovery did not complete"),
-    ),
+    formatFooterStatus(goal, recoveryAttentionMessage(HOST_OVERFLOW_RECOVERY_REASON)),
   );
 });
 
-test("delayed session_compact keeps goal active until host post-run completes", async () => {
-  const harness = createRuntimeHarness({ waitForIdleMode: "manual" });
+test("delayed session_compact keeps goal active without premature pause or extension follow-up", async () => {
+  const harness = createRuntimeHarness();
   await harness.runCommand("ship it");
   harness.sentMessages.length = 0;
 
   await emitPersistentAssistantError(harness, 0, "context_length_exceeded");
-  await waitForContinuationRetry();
 
   assert.equal(harness.snapshot().goal?.status, "active");
   assert.equal(harness.sentMessages.length, 0);
@@ -2227,7 +2188,6 @@ test("delayed session_compact keeps goal active until host post-run completes", 
     branchEntries: [],
     signal: new AbortController().signal,
   });
-  await waitForContinuationRetry();
 
   assert.equal(harness.snapshot().goal?.status, "active");
   assert.equal(harness.sentMessages.length, 0);
@@ -2237,9 +2197,6 @@ test("delayed session_compact keeps goal active until host post-run completes", 
     summary: "compact summary",
     tokensBefore: 100,
   });
-
-  harness.resolveWaitForIdle();
-  await flushOverflowRecoveryFallback();
 
   assert.equal(harness.snapshot().goal?.status, "active");
   assert.equal(harness.sentMessages.length, 0);
@@ -2308,28 +2265,7 @@ test("non-retryable provider errors pause active goals immediately", async () =>
   );
 });
 
-test("/goal resume after overflow fallback pause allows continuation", async () => {
-  const harness = createRuntimeHarness({ compactBehavior: "unavailable", waitForIdleMode: "manual" });
-  await harness.runCommand("ship it");
-  harness.sentMessages.length = 0;
-
-  await emitPersistentAssistantError(harness, 0, "context_length_exceeded");
-  await flushOverflowRecoveryFallback();
-  harness.resolveWaitForIdle();
-  await flushOverflowRecoveryFallback();
-  assert.equal(harness.snapshot().goal?.status, "paused");
-
-  harness.sentMessages.length = 0;
-  await harness.runCommand("resume");
-  assert.equal(harness.snapshot().goal?.status, "active");
-  assert.equal(harness.sentMessages.length, 1);
-  assert.deepEqual(harness.sentMessages[0]?.message.details, {
-    kind: "command_resume",
-    goalId: harness.snapshot().goal?.goalId,
-  });
-});
-
-test("varied retryable transient errors pause after host default retry cap", async () => {
+test("varied retryable transient errors stay active without tripping signature-scoped cap", async () => {
   const harness = createRuntimeHarness();
   await harness.runCommand("ship it");
   harness.sentMessages.length = 0;
@@ -2343,12 +2279,9 @@ test("varied retryable transient errors pause after host default retry cap", asy
 
   for (let attempt = 0; attempt < errors.length; attempt += 1) {
     await emitPersistentAssistantError(harness, attempt, errors[attempt]!);
-    if (attempt < 3) {
-      assert.equal(harness.snapshot().goal?.status, "active");
-    }
+    assert.equal(harness.snapshot().goal?.status, "active");
   }
 
-  assert.equal(harness.snapshot().goal?.status, "paused");
   assert.equal(harness.sentMessages.length, 0);
 });
 

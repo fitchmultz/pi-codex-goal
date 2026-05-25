@@ -24,7 +24,6 @@ export interface AssistantErrorMessage {
 export interface ErrorRecoveryCounters {
   signature: string | null;
   transientAttempts: number;
-  consecutiveTransientAttempts: number;
   compactionAttempts: number;
 }
 
@@ -32,7 +31,6 @@ export function createErrorRecoveryCounters(): ErrorRecoveryCounters {
   return {
     signature: null,
     transientAttempts: 0,
-    consecutiveTransientAttempts: 0,
     compactionAttempts: 0,
   };
 }
@@ -111,7 +109,6 @@ export function countersForFailureSignature(
   return {
     signature,
     transientAttempts: 0,
-    consecutiveTransientAttempts: counters.consecutiveTransientAttempts,
     compactionAttempts: 0,
   };
 }
