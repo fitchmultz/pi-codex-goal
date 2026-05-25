@@ -19,15 +19,21 @@ interface SentMessage {
   options: Parameters<ExtensionAPI["sendMessage"]>[1];
 }
 
-function createRuntimeHarness(options: { idle?: boolean; pendingMessages?: boolean } = {}) {
+function createRuntimeHarness(options: {
+  idle?: boolean;
+  pendingMessages?: boolean;
+  compactBehavior?: "success" | "error" | "unavailable";
+} = {}) {
   const entries: ReturnType<ExtensionCommandContext["sessionManager"]["getBranch"]> = [];
   const handlers = new Map<string, EventHandler[]>();
   const sentMessages: SentMessage[] = [];
   const tools = new Map<string, (params: Record<string, unknown>) => Promise<unknown>>();
+  const compactCalls: Array<{ customInstructions?: string }> = [];
   const runtime = {
     abortCount: 0,
     idle: options.idle ?? true,
     pendingMessages: options.pendingMessages ?? false,
+    compactBehavior: options.compactBehavior ?? "success",
   };
   let commandHandler: ((args: string, ctx: ExtensionCommandContext) => void | Promise<void>) | null = null;
   let ctx: ExtensionCommandContext;
@@ -143,7 +149,6 @@ function createRuntimeHarness(options: { idle?: boolean; pendingMessages?: boole
     abort() {
       runtime.abortCount += 1;
     },
-    compact() {},
     cwd: "/tmp",
     fork: async () => ({ cancelled: false }),
     getContextUsage: () => undefined,
@@ -162,7 +167,26 @@ function createRuntimeHarness(options: { idle?: boolean; pendingMessages?: boole
     switchSession: async () => ({ cancelled: false }),
     ui,
     waitForIdle: async () => {},
-  };
+  } as unknown as ExtensionCommandContext;
+
+  if (runtime.compactBehavior !== "unavailable") {
+    ctx.compact = (options) => {
+      if (options?.customInstructions !== undefined) {
+        compactCalls.push({ customInstructions: options.customInstructions });
+      } else {
+        compactCalls.push({});
+      }
+      if (runtime.compactBehavior === "error") {
+        options?.onError?.(new Error("compaction failed"));
+        return;
+      }
+      options?.onComplete?.({
+        summary: "compact summary",
+        tokensBefore: 100,
+        firstKeptEntryId: "entry-1",
+      });
+    };
+  }
 
   goalExtension(pi);
 
@@ -186,6 +210,7 @@ function createRuntimeHarness(options: { idle?: boolean; pendingMessages?: boole
   }
 
   return {
+    compactCalls,
     emit,
     entries,
     runCommand,
@@ -242,7 +267,11 @@ async function emitQueuedTurnThroughContext(
   return harness.emit("context", { type: "context", messages });
 }
 
-function assistantMessage(stopReason: "stop" | "aborted" | "length" | "toolUse", usage: TestAssistantUsage) {
+function assistantMessage(
+  stopReason: "stop" | "aborted" | "length" | "toolUse" | "error",
+  usage: TestAssistantUsage,
+  errorMessage?: string,
+) {
   const cacheRead = usage.cacheRead ?? 0;
   const cacheWrite = usage.cacheWrite ?? 0;
 
@@ -267,6 +296,7 @@ function assistantMessage(stopReason: "stop" | "aborted" | "length" | "toolUse",
       },
     },
     stopReason,
+    ...(stopReason === "error" ? { errorMessage: errorMessage ?? "provider error" } : {}),
     timestamp: 1,
   };
 }
@@ -1722,4 +1752,199 @@ test("session compaction queues continuation for active goals after length stops
     kind: "continuation",
     goalId: goal?.goalId,
   });
+});
+
+test("assistant error turns do not immediately queue continuation", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  const queued = harness.sentMessages[0];
+  assert.ok(queued);
+  const queuedMessage = queuedCustomMessage(queued);
+  harness.sentMessages.length = 0;
+
+  await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+  await harness.emit("message_start", {
+    type: "message_start",
+    message: queuedMessage,
+  });
+  await harness.emit("turn_end", {
+    type: "turn_end",
+    turnIndex: 0,
+    message: assistantMessage("error", { input: 30, output: 12 }, "websocket closed"),
+    toolResults: [],
+  });
+
+  const goal = harness.snapshot().goal;
+  assert.equal(goal?.status, "active");
+  assert.equal(goal?.usage.tokensUsed, 42);
+  assert.equal(harness.sentMessages.length, 0);
+});
+
+test("context length errors request compaction instead of immediate continuation", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  const queued = harness.sentMessages[0];
+  assert.ok(queued);
+  const queuedMessage = queuedCustomMessage(queued);
+  harness.sentMessages.length = 0;
+
+  await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+  await harness.emit("message_start", {
+    type: "message_start",
+    message: queuedMessage,
+  });
+  await harness.emit("turn_end", {
+    type: "turn_end",
+    turnIndex: 0,
+    message: assistantMessage("error", { input: 30, output: 12 }, "context_length_exceeded"),
+    toolResults: [],
+  });
+
+  assert.equal(harness.compactCalls.length, 1);
+  assert.equal(harness.sentMessages.length, 0);
+
+  await harness.emit("session_compact", {
+    type: "session_compact",
+    summary: "compact summary",
+    tokensBefore: 100,
+  });
+
+  const goal = harness.snapshot().goal;
+  assert.equal(goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 1);
+  assert.deepEqual(harness.sentMessages[0]?.message.details, {
+    kind: "continuation",
+    goalId: goal?.goalId,
+  });
+});
+
+test("repeated context length errors pause after bounded compaction attempts", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  harness.sentMessages.length = 0;
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: attempt, timestamp: attempt + 1 });
+    await harness.emit("turn_end", {
+      type: "turn_end",
+      turnIndex: attempt,
+      message: assistantMessage("error", { input: 1, output: 1 }, "context_length_exceeded"),
+      toolResults: [],
+    });
+  }
+
+  assert.equal(harness.compactCalls.length, 3);
+  assert.equal(harness.snapshot().goal?.status, "paused");
+  assert.equal(harness.sentMessages.length, 0);
+});
+
+test("compaction failures pause with recoverable attention", async () => {
+  const harness = createRuntimeHarness({ compactBehavior: "error" });
+  await harness.runCommand("ship it");
+  harness.sentMessages.length = 0;
+
+  await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+  await harness.emit("turn_end", {
+    type: "turn_end",
+    turnIndex: 0,
+    message: assistantMessage("error", { input: 1, output: 1 }, "context_length_exceeded"),
+    toolResults: [],
+  });
+
+  assert.equal(harness.compactCalls.length, 1);
+  assert.equal(harness.snapshot().goal?.status, "paused");
+  assert.equal(harness.sentMessages.length, 0);
+});
+
+test("repeated transient errors use bounded backoff before pausing", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  harness.sentMessages.length = 0;
+
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: attempt, timestamp: attempt + 1 });
+    await harness.emit("turn_end", {
+      type: "turn_end",
+      turnIndex: attempt,
+      message: assistantMessage("error", { input: 1, output: 1 }, "websocket closed"),
+      toolResults: [],
+    });
+    if (attempt < 5) {
+      await new Promise((resolve) => setTimeout(resolve, 1_100 * 2 ** attempt));
+    }
+  }
+
+  assert.equal(harness.snapshot().goal?.status, "paused");
+  assert.equal(harness.sentMessages.length, 0);
+});
+
+test("successful turns reset transient error counters and continue active goals", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  const queued = harness.sentMessages[0];
+  assert.ok(queued);
+  const queuedMessage = queuedCustomMessage(queued);
+  harness.sentMessages.length = 0;
+
+  await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+  await harness.emit("message_start", {
+    type: "message_start",
+    message: queuedMessage,
+  });
+  await harness.emit("turn_end", {
+    type: "turn_end",
+    turnIndex: 0,
+    message: assistantMessage("error", { input: 1, output: 1 }, "websocket closed"),
+    toolResults: [],
+  });
+  assert.equal(harness.sentMessages.length, 0);
+
+  await new Promise((resolve) => setTimeout(resolve, 1_100));
+  await harness.emit("turn_start", { type: "turn_start", turnIndex: 1, timestamp: 2 });
+  await harness.emit("turn_end", {
+    type: "turn_end",
+    turnIndex: 1,
+    message: assistantMessage("stop", { input: 1, output: 1 }),
+    toolResults: [],
+  });
+
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 1);
+
+  harness.sentMessages.length = 0;
+  await harness.emit("before_agent_start", {
+    type: "before_agent_start",
+    prompt: "keep going",
+    systemPrompt: "",
+    systemPromptOptions: {},
+  });
+  await harness.emit("turn_start", { type: "turn_start", turnIndex: 2, timestamp: 3 });
+  await harness.emit("turn_end", {
+    type: "turn_end",
+    turnIndex: 2,
+    message: assistantMessage("error", { input: 1, output: 1 }, "websocket closed"),
+    toolResults: [],
+  });
+  await new Promise((resolve) => setTimeout(resolve, 1_100));
+
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 1);
+});
+
+test("unavailable compaction pauses with recoverable attention", async () => {
+  const harness = createRuntimeHarness({ compactBehavior: "unavailable" });
+  await harness.runCommand("ship it");
+  harness.sentMessages.length = 0;
+
+  await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+  await harness.emit("turn_end", {
+    type: "turn_end",
+    turnIndex: 0,
+    message: assistantMessage("error", { input: 1, output: 1 }, "context_length_exceeded"),
+    toolResults: [],
+  });
+
+  assert.equal(harness.snapshot().goal?.status, "paused");
+  assert.equal(harness.compactCalls.length, 0);
+  assert.equal(harness.sentMessages.length, 0);
 });

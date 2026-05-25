@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Bounds hidden goal continuation provider context by superseding older active-goal continuations with short bookkeeping markers, refreshing only the latest continuation, and using compact auto-continuation prompts after `/goal` start or resume.
+- Stops provider-error continuation retry storms by skipping immediate hidden requeues on `stopReason: "error"`, auto-compacting on context-window overflow when available, using bounded backoff for transient failures, and pausing with a recoverable `/goal resume` path when recovery is exhausted.
 - Makes goal lifecycle transitions terminal and idempotent: duplicate `update_goal complete` calls no longer append extra session entries, completed goals cannot be paused or resumed, and runtime/compaction skips unchanged goal snapshots.
 - Allows `create_goal` to replace a completed goal and clarifies recovery via `/goal <objective>` or `/goal clear`.
 - Surfaces failed goal tool calls as real pi tool errors by throwing from tool handlers.

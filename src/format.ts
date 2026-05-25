@@ -127,9 +127,13 @@ function compactBudgetUsage(goal: ThreadGoal): string {
   return `${formatCompactTokenValue(goal.usage.tokensUsed)} / ${formatCompactTokenValue(goal.tokenBudget)}`;
 }
 
-export function formatFooterStatus(goal: ThreadGoal | null): string | undefined {
+export function formatFooterStatus(goal: ThreadGoal | null, recoveryAttention: string | null = null): string | undefined {
   if (!goal) {
     return undefined;
+  }
+
+  if (goal.status === "paused" && recoveryAttention) {
+    return recoveryAttention;
   }
 
   if (goal.status === "active") {

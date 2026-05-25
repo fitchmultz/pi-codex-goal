@@ -10,6 +10,18 @@ import {
   supersededContinuationMessage,
 } from "./prompts.js";
 import { applyUsage, clearEntry, goalWithLiveUsage, goalsEquivalent, reconstructGoal, setEntry, updateGoalStatus } from "./state.js";
+import {
+  countersForFailureSignature,
+  createErrorRecoveryCounters,
+  failureSignature,
+  isContextOverflowError,
+  isErrorAssistantMessage,
+  isSuccessfulAssistantTurn,
+  MAX_CONTEXT_COMPACTION_RETRIES,
+  MAX_TRANSIENT_ERROR_RETRIES,
+  recoveryAttentionMessage,
+  transientErrorBackoffMs,
+} from "./recovery.js";
 import { registerGoalTools } from "./tools.js";
 import { CUSTOM_ENTRY_TYPE, type GoalEntrySource, type GoalResult, type ThreadGoal } from "./types.js";
 
@@ -26,6 +38,13 @@ interface StatusContext {
 interface AssistantUsage {
   input: number;
   output: number;
+}
+
+interface AssistantTurnMessage {
+  role: string;
+  stopReason?: string;
+  errorMessage?: string;
+  usage?: AssistantUsage;
 }
 
 interface QueuedGoalMessageDetails {
@@ -45,18 +64,18 @@ function usageChannelTokens(value: number): number {
   return Math.max(0, Math.trunc(value));
 }
 
-function assistantTurnTokens(message: { role: string; usage?: AssistantUsage }): number {
+function assistantTurnTokens(message: AssistantTurnMessage): number {
   if (message.role !== "assistant" || !message.usage) {
     return 0;
   }
   return usageChannelTokens(message.usage.input) + usageChannelTokens(message.usage.output);
 }
 
-function isAbortedAssistantMessage(message: { role: string; stopReason?: string }): boolean {
+function isAbortedAssistantMessage(message: AssistantTurnMessage): boolean {
   return message.role === "assistant" && message.stopReason === "aborted";
 }
 
-function isToolUseAssistantMessage(message: { role: string; stopReason?: string }): boolean {
+function isToolUseAssistantMessage(message: AssistantTurnMessage): boolean {
   return message.role === "assistant" && message.stopReason === "toolUse";
 }
 
@@ -311,6 +330,10 @@ export default function (pi: ExtensionAPI): void {
     lastAccountedAt: null,
     budgetWarningSentFor: null,
   };
+  let errorRecovery = createErrorRecoveryCounters();
+  let errorRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
+  let contextCompactionInFlight = false;
+  let recoveryAttention: string | null = null;
 
   const goalForDisplay = (): ThreadGoal | null =>
     goalWithLiveUsage(goal, accounting.activeGoalId, accounting.lastAccountedAt);
@@ -328,6 +351,20 @@ export default function (pi: ExtensionAPI): void {
       continuationTimer = null;
     }
     continuationScheduledFor = null;
+  };
+
+  const clearErrorRecoveryTimer = (): void => {
+    if (errorRecoveryTimer) {
+      clearTimeout(errorRecoveryTimer);
+      errorRecoveryTimer = null;
+    }
+  };
+
+  const resetErrorRecovery = (): void => {
+    clearErrorRecoveryTimer();
+    errorRecovery = createErrorRecoveryCounters();
+    contextCompactionInFlight = false;
+    recoveryAttention = null;
   };
 
   const clearContinuationState = (): void => {
@@ -406,6 +443,7 @@ export default function (pi: ExtensionAPI): void {
   const clearStoppedRuntimeState = (): void => {
     clearContinuationState();
     clearActiveAccounting();
+    resetErrorRecovery();
   };
 
   const syncStatusRefresh = (): void => {
@@ -415,7 +453,7 @@ export default function (pi: ExtensionAPI): void {
           stopStatusRefresh();
           return;
         }
-        statusContext.ui.setStatus("codex-goal", formatFooterStatus(goalForDisplay()));
+        statusContext.ui.setStatus("codex-goal", formatFooterStatus(goalForDisplay(), recoveryAttention));
       }, 1_000);
       statusRefreshTimer.unref?.();
       return;
@@ -428,7 +466,7 @@ export default function (pi: ExtensionAPI): void {
 
   const refreshUi = (ctx: StatusContext): void => {
     statusContext = ctx;
-    ctx.ui.setStatus("codex-goal", formatFooterStatus(goalForDisplay()));
+    ctx.ui.setStatus("codex-goal", formatFooterStatus(goalForDisplay(), recoveryAttention));
     syncStatusRefresh();
   };
 
@@ -588,6 +626,24 @@ export default function (pi: ExtensionAPI): void {
     refreshUi(ctx);
   };
 
+  const pauseForRecoveryAttention = (ctx: ExtensionContext, reason: string): void => {
+    if (!goal || goal.status !== "active") {
+      return;
+    }
+
+    const result = updateGoalStatus(goal, "paused");
+    if (!result.ok || !result.goal) {
+      return;
+    }
+
+    recoveryAttention = recoveryAttentionMessage(reason);
+    clearContinuationState();
+    clearErrorRecoveryTimer();
+    contextCompactionInFlight = false;
+    persistGoal(result.goal, "runtime");
+    refreshUi(ctx);
+  };
+
   const resumePausedGoal = (ctx: ExtensionContext): void => {
     if (!goal || goal.status !== "paused") {
       return;
@@ -598,6 +654,7 @@ export default function (pi: ExtensionAPI): void {
       return;
     }
 
+    resetErrorRecovery();
     clearContinuationState();
     persistGoal(result.goal, "runtime");
     refreshUi(ctx);
@@ -691,6 +748,76 @@ export default function (pi: ExtensionAPI): void {
     );
   };
 
+  const requestContextCompaction = (ctx: ExtensionContext, reason: string): void => {
+    if (contextCompactionInFlight) {
+      return;
+    }
+
+    if (typeof ctx.compact !== "function") {
+      pauseForRecoveryAttention(ctx, reason);
+      return;
+    }
+
+    contextCompactionInFlight = true;
+    ctx.compact({
+      onComplete: () => {
+        contextCompactionInFlight = false;
+      },
+      onError: (error) => {
+        contextCompactionInFlight = false;
+        pauseForRecoveryAttention(ctx, `${reason}: ${error.message}`);
+      },
+    });
+  };
+
+  const scheduleTransientErrorRetry = (ctx: ExtensionContext, attempt: number): void => {
+    clearErrorRecoveryTimer();
+    errorRecoveryTimer = setTimeout(() => {
+      errorRecoveryTimer = null;
+      maybeContinue(ctx);
+    }, transientErrorBackoffMs(attempt));
+    errorRecoveryTimer.unref?.();
+  };
+
+  const handleAssistantError = (message: AssistantTurnMessage, ctx: ExtensionContext): void => {
+    if (!goal || goal.status !== "active") {
+      return;
+    }
+
+    const signature = failureSignature(message.errorMessage);
+    errorRecovery = countersForFailureSignature(errorRecovery, signature);
+
+    if (isContextOverflowError(message.errorMessage)) {
+      errorRecovery = {
+        ...errorRecovery,
+        compactionAttempts: errorRecovery.compactionAttempts + 1,
+      };
+      if (errorRecovery.compactionAttempts > MAX_CONTEXT_COMPACTION_RETRIES) {
+        pauseForRecoveryAttention(ctx, "context window recovery failed after repeated compaction attempts");
+        return;
+      }
+      requestContextCompaction(ctx, "context window exceeded");
+      return;
+    }
+
+    errorRecovery = {
+      ...errorRecovery,
+      transientAttempts: errorRecovery.transientAttempts + 1,
+    };
+    if (errorRecovery.transientAttempts > MAX_TRANSIENT_ERROR_RETRIES) {
+      pauseForRecoveryAttention(ctx, `provider error persisted (${signature})`);
+      return;
+    }
+    scheduleTransientErrorRetry(ctx, errorRecovery.transientAttempts);
+  };
+
+  const finishSuccessfulAssistantTurn = (message: AssistantTurnMessage, ctx: ExtensionContext): void => {
+    if (isSuccessfulAssistantTurn(message)) {
+      resetErrorRecovery();
+    }
+    maybeContinue(ctx);
+  };
+
   const maybeContinue = (ctx: ExtensionContext): void => {
     if (staleQueuedGoalWorkTurnActive || !goal || goal.status !== "active" || continuationQueuedFor === goal.goalId) {
       return;
@@ -747,6 +874,7 @@ export default function (pi: ExtensionAPI): void {
     const continuationGoalId = continuationGoalIdFromPrompt(event.text);
 
     if (event.source !== "extension") {
+      resetErrorRecovery();
       if (clearStaleQueuedGoalWorkTurn()) {
         refreshUi(ctx);
       }
@@ -889,8 +1017,12 @@ export default function (pi: ExtensionAPI): void {
       pauseForAbort(ctx);
       return;
     }
+    if (isErrorAssistantMessage(_event.message)) {
+      handleAssistantError(_event.message, ctx);
+      return;
+    }
     if (!isToolUseAssistantMessage(_event.message)) {
-      maybeContinue(ctx);
+      finishSuccessfulAssistantTurn(_event.message, ctx);
     }
   });
 
@@ -909,6 +1041,15 @@ export default function (pi: ExtensionAPI): void {
       pauseForAbort(ctx);
       return;
     }
+    const errorMessages = event.messages.filter(isErrorAssistantMessage);
+    if (errorMessages.length > 0) {
+      const lastError = errorMessages.at(-1);
+      if (lastError) {
+        handleAssistantError(lastError, ctx);
+      }
+      return;
+    }
+    resetErrorRecovery();
     maybeContinue(ctx);
   });
 
@@ -928,6 +1069,7 @@ export default function (pi: ExtensionAPI): void {
     if (goal) {
       persistGoal(goal, "runtime");
     }
+    resetErrorRecovery();
     refreshUi(ctx);
     maybeContinue(ctx);
   });
@@ -945,6 +1087,7 @@ export default function (pi: ExtensionAPI): void {
 
     accountProgress(ctx, false, 0, true);
     clearContinuationTimer();
+    clearErrorRecoveryTimer();
     stopStatusRefresh();
   });
 }
