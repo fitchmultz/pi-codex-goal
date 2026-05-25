@@ -451,11 +451,16 @@ test("session resume prompt can reactivate a paused goal", async () => {
   await harness.emit("session_start", { type: "session_start", reason: "resume" });
 
   assert.equal(harness.snapshot().goal?.status, "active");
-  assert.equal(harness.sentMessages.length, 1);
-  assert.deepEqual(harness.sentMessages[0]?.message.details, {
-    kind: "continuation",
-    goalId: harness.snapshot().goal?.goalId,
-  });
+  assert.equal(harness.sentMessages.length, 0);
+  assert.equal(harness.sentUserMessages.length, 1);
+  const sentUserMessage = harness.sentUserMessages[0];
+  assert.ok(sentUserMessage);
+  assert.deepEqual(sentUserMessage.options, { deliverAs: "followUp" });
+  const content = sentUserMessage.content;
+  if (typeof content !== "string") {
+    assert.fail("Expected session resume to send a user continuation prompt.");
+  }
+  assert.match(content, /<untrusted_objective>\nship it\n<\/untrusted_objective>/);
 });
 
 test("completed turns count input plus output and continue active goals", async () => {
@@ -2414,6 +2419,46 @@ test("/goal resume after overflow pause resets recovery counters", async () => {
   await harness.emit("message_start", {
     type: "message_start",
     message: { role: "user", content },
+  });
+  assert.equal(harness.hostOverflowRecoveryAttempted, false);
+
+  await emitPersistentAssistantError(harness, 2, "context_length_exceeded");
+  assert.equal(harness.snapshot().goal?.status, "active");
+});
+
+test("/goal resume after overflow pause and session shutdown sends user turn and resets host overflow cap", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  const goal = harness.snapshot().goal;
+  assert.ok(goal);
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await emitPersistentAssistantError(harness, attempt, "context_length_exceeded");
+    await harness.emit("session_compact", {
+      type: "session_compact",
+      summary: "compact summary",
+      tokensBefore: 100,
+    });
+  }
+  assert.equal(harness.snapshot().goal?.status, "paused");
+  assert.equal(harness.hostOverflowRecoveryAttempted, true);
+
+  await harness.emit("session_shutdown", { type: "session_shutdown" });
+  assert.equal(harness.snapshot().goal?.status, "paused");
+
+  harness.sentMessages.length = 0;
+  harness.sentUserMessages.length = 0;
+  await harness.runCommand("resume");
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 0);
+  assert.equal(harness.sentUserMessages.length, 1);
+  const resumeMessage = harness.sentUserMessages[0];
+  assert.ok(resumeMessage);
+  assert.deepEqual(resumeMessage.options, { deliverAs: "followUp" });
+
+  await harness.emit("message_start", {
+    type: "message_start",
+    message: { role: "user", content: resumeMessage.content },
   });
   assert.equal(harness.hostOverflowRecoveryAttempted, false);
 

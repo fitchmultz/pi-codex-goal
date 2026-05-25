@@ -9,7 +9,6 @@ export interface CommandHost {
   getGoal(): ThreadGoal | null;
   setGoal(goal: ThreadGoal, source: GoalEntrySource, ctx: GoalCommandContext): void;
   clearGoal(source: GoalEntrySource, ctx: GoalCommandContext): void;
-  needsUserMessageResume(): boolean;
 }
 
 const COMMANDS = ["pause", "resume", "clear"] as const;
@@ -71,7 +70,6 @@ export async function handleGoalCommand(
   if (trimmed === "pause" || trimmed === "resume") {
     const current = host.getGoal();
     const status = trimmed === "pause" ? "paused" : "active";
-    const resumeWithUserMessage = trimmed === "resume" && host.needsUserMessageResume();
     const result = updateGoalStatus(current, status);
     if (!result.ok || !result.goal) {
       ctx.ui.notify(result.message, "warning");
@@ -80,11 +78,7 @@ export async function handleGoalCommand(
     host.setGoal(result.goal, "command", ctx);
     ctx.ui.notify(result.message);
     if (trimmed === "resume" && result.goal.status === "active") {
-      if (resumeWithUserMessage) {
-        queueGoalUserResumeTurn(pi, result.goal);
-      } else {
-        queueGoalTurn(pi, result.goal, "command_resume");
-      }
+      queueGoalUserResumeTurn(pi, result.goal);
     }
     return;
   }

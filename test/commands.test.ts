@@ -12,7 +12,7 @@ interface SentMessage {
   options: Parameters<SendMessage>[1];
 }
 
-function createHarness(options: { needsUserMessageResume?: boolean } = {}) {
+function createHarness() {
   let goal: ThreadGoal | null = null;
   const sentMessages: SentMessage[] = [];
   const sentUserMessages: Array<{
@@ -39,7 +39,6 @@ function createHarness(options: { needsUserMessageResume?: boolean } = {}) {
     clearGoal() {
       goal = null;
     },
-    needsUserMessageResume: () => options.needsUserMessageResume ?? false,
   };
 
   const ctx: GoalCommandContext = {
@@ -93,34 +92,8 @@ test("/goal objective creates the goal and starts a hidden follow-up turn", asyn
   assert.deepEqual(sentMessage.options, { triggerTurn: true, deliverAs: "followUp" });
 });
 
-test("/goal resume restarts a hidden follow-up turn", async () => {
+test("/goal resume sends a user continuation turn", async () => {
   const harness = createHarness();
-
-  await handleGoalCommand(harness.pi, harness.host, "ship the feature", harness.ctx);
-  const paused = updateGoalStatus(harness.goal, "paused").goal;
-  assert.ok(paused);
-  harness.sentMessages.length = 0;
-  harness.setGoal(paused);
-
-  await handleGoalCommand(harness.pi, harness.host, "resume", harness.ctx);
-
-  assert.equal(harness.goal?.status, "active");
-  assert.equal(harness.sentMessages.length, 1);
-  const sentMessage = harness.sentMessages[0];
-  assert.ok(sentMessage);
-  assert.deepEqual(sentMessage.message.details, {
-    kind: "command_resume",
-    goalId: harness.goal?.goalId,
-  });
-  const content = sentMessage.message.content;
-  if (typeof content !== "string") {
-    assert.fail("Expected queued goal message content to be a string.");
-  }
-  assert.match(content, /<untrusted_objective>\nship the feature\n<\/untrusted_objective>/);
-});
-
-test("/goal resume after overflow pause sends a user continuation turn", async () => {
-  const harness = createHarness({ needsUserMessageResume: true });
 
   await handleGoalCommand(harness.pi, harness.host, "ship the feature", harness.ctx);
   const paused = updateGoalStatus(harness.goal, "paused").goal;

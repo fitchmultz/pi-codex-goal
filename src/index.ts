@@ -9,7 +9,7 @@ import {
   isAbortedAssistantMessage,
   isToolUseAssistantMessage,
 } from "./goal-accounting.js";
-import { compactContinuationPrompt, continuationGoalIdFromPrompt } from "./prompts.js";
+import { compactContinuationPrompt, continuationGoalIdFromPrompt, continuationPrompt } from "./prompts.js";
 import {
   dedupeActiveGoalContinuations,
   extensionQueuedGoalWorkMessageId,
@@ -19,7 +19,6 @@ import {
 } from "./queued-goal-work.js";
 import {
   createGoalRecoveryMachine,
-  needsUserMessageResumeForOverflowPause,
   resetRecoveryMachine,
   setRecoveryPausedAttention,
   type GoalRecoveryMachineState,
@@ -498,7 +497,6 @@ export default function (pi: ExtensionAPI): void {
 
   registerGoalCommand(pi, {
     getGoal: () => goalForDisplay(),
-    needsUserMessageResume: () => needsUserMessageResumeForOverflowPause(recoveryState),
     setGoal(nextGoal, source, ctx) {
       const wasPaused = goal?.status === "paused";
       persistGoal(nextGoal, source);
@@ -595,6 +593,10 @@ export default function (pi: ExtensionAPI): void {
       if (shouldResume) {
         resumePausedGoal(ctx);
         goalAccounting.beginAccounting();
+        if (goal) {
+          pi.sendUserMessage(continuationPrompt(goal), { deliverAs: "followUp" });
+        }
+        return;
       }
     }
     maybeContinue(ctx);
