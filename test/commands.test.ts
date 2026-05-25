@@ -113,7 +113,8 @@ test("/goal resume sends a user continuation turn", async () => {
   if (typeof content !== "string") {
     assert.fail("Expected queued goal resume content to be a string.");
   }
-  assert.match(content, /<untrusted_objective>\nship the feature\n<\/untrusted_objective>/);
+  assert.doesNotMatch(content, /<untrusted_objective>/);
+  assert.match(content, /<pi_goal_continuation goal_id="/);
 });
 
 test("/goal pause rejects completed and paused goals", async () => {

@@ -9,7 +9,7 @@ import {
   isAbortedAssistantMessage,
   isToolUseAssistantMessage,
 } from "./goal-accounting.js";
-import { compactContinuationPrompt, continuationGoalIdFromPrompt, continuationPrompt } from "./prompts.js";
+import { compactContinuationPrompt, continuationGoalIdFromPrompt } from "./prompts.js";
 import {
   dedupeActiveGoalContinuations,
   extensionQueuedGoalWorkMessageId,
@@ -594,7 +594,7 @@ export default function (pi: ExtensionAPI): void {
         resumePausedGoal(ctx);
         goalAccounting.beginAccounting();
         if (goal) {
-          pi.sendUserMessage(continuationPrompt(goal), { deliverAs: "followUp" });
+          pi.sendUserMessage(compactContinuationPrompt(goal), { deliverAs: "followUp" });
         }
         return;
       }

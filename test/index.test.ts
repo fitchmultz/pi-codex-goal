@@ -460,7 +460,8 @@ test("session resume prompt can reactivate a paused goal", async () => {
   if (typeof content !== "string") {
     assert.fail("Expected session resume to send a user continuation prompt.");
   }
-  assert.match(content, /<untrusted_objective>\nship it\n<\/untrusted_objective>/);
+  assert.doesNotMatch(content, /<untrusted_objective>/);
+  assert.match(content, /<pi_goal_continuation goal_id="/);
 });
 
 test("completed turns count input plus output and continue active goals", async () => {
@@ -2414,13 +2415,26 @@ test("/goal resume after overflow pause resets recovery counters", async () => {
   if (typeof content !== "string") {
     assert.fail("Expected overflow resume to send a user continuation prompt.");
   }
-  assert.match(content, /<untrusted_objective>\nship it\n<\/untrusted_objective>/);
+  assert.doesNotMatch(content, /<untrusted_objective>/);
+  assert.equal(continuationGoalIdFromPrompt(content), harness.snapshot().goal?.goalId);
 
   await harness.emit("message_start", {
     type: "message_start",
     message: { role: "user", content },
   });
   assert.equal(harness.hostOverflowRecoveryAttempted, false);
+
+  const contextResults = await harness.emit("context", {
+    type: "context",
+    messages: [
+      {
+        role: "user",
+        content: [{ type: "text", text: content }],
+        timestamp: 1,
+      },
+    ],
+  });
+  assert.equal(contextResults[0], undefined);
 
   await emitPersistentAssistantError(harness, 2, "context_length_exceeded");
   assert.equal(harness.snapshot().goal?.status, "active");

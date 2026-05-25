@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 import { formatGoalSummary } from "./format.js";
-import { continuationPrompt } from "./prompts.js";
+import { compactContinuationPrompt, continuationPrompt } from "./prompts.js";
 import { replaceGoal, updateGoalStatus } from "./state.js";
 import { CUSTOM_ENTRY_TYPE, type GoalEntrySource, type ThreadGoal } from "./types.js";
 
@@ -41,7 +41,7 @@ function queueGoalTurn(pi: GoalCommandPi, goal: ThreadGoal, kind: "command_start
 }
 
 function queueGoalUserResumeTurn(pi: GoalCommandPi, goal: ThreadGoal): void {
-  pi.sendUserMessage(continuationPrompt(goal), { deliverAs: "followUp" });
+  pi.sendUserMessage(compactContinuationPrompt(goal), { deliverAs: "followUp" });
 }
 
 export async function handleGoalCommand(
