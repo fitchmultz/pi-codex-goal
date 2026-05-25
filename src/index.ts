@@ -19,6 +19,7 @@ import {
 } from "./queued-goal-work.js";
 import {
   createGoalRecoveryMachine,
+  needsUserMessageResumeForOverflowPause,
   resetRecoveryMachine,
   setRecoveryPausedAttention,
   type GoalRecoveryMachineState,
@@ -497,6 +498,7 @@ export default function (pi: ExtensionAPI): void {
 
   registerGoalCommand(pi, {
     getGoal: () => goalForDisplay(),
+    needsUserMessageResume: () => needsUserMessageResumeForOverflowPause(recoveryState),
     setGoal(nextGoal, source, ctx) {
       const wasPaused = goal?.status === "paused";
       persistGoal(nextGoal, source);

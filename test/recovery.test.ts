@@ -17,9 +17,11 @@ import {
 import {
   beginHostOverflowRecovery,
   createGoalRecoveryMachine,
+  needsUserMessageResumeForOverflowPause,
   onRecoverySessionCompact,
   planRecoveryForAssistantError,
   planRecoveryForSilentContextOverflow,
+  setRecoveryPausedAttention,
 } from "../src/recovery-machine.js";
 
 test("detects context overflow error messages with host overflow classifier", () => {
@@ -189,6 +191,23 @@ test("beginHostOverflowRecovery surfaces pending attention without pausing", () 
     recoveryPendingAttentionMessage(HOST_OVERFLOW_RECOVERY_REASON),
   );
   assert.doesNotMatch(state.attention ?? "", /\/goal resume/);
+});
+
+test("needsUserMessageResumeForOverflowPause detects overflow recovery pauses", () => {
+  const pending = createGoalRecoveryMachine();
+  beginHostOverflowRecovery(pending);
+  assert.equal(needsUserMessageResumeForOverflowPause(pending), true);
+
+  const paused = createGoalRecoveryMachine();
+  setRecoveryPausedAttention(paused, HOST_OVERFLOW_RECOVERY_REASON);
+  assert.equal(needsUserMessageResumeForOverflowPause(paused), true);
+
+  setRecoveryPausedAttention(paused, "context window recovery failed after repeated compaction attempts");
+  assert.equal(needsUserMessageResumeForOverflowPause(paused), true);
+
+  const transient = createGoalRecoveryMachine();
+  setRecoveryPausedAttention(transient, "provider error (websocket closed)");
+  assert.equal(needsUserMessageResumeForOverflowPause(transient), false);
 });
 
 test("recovery session compact preserves overflow attempt counts after host compaction", () => {

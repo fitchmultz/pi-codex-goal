@@ -85,6 +85,17 @@ export function setRecoveryPausedAttention(state: GoalRecoveryMachineState, reas
   return message;
 }
 
+/** Overflow pauses may leave host overflow recovery capped; resume must use a user turn. */
+export function needsUserMessageResumeForOverflowPause(state: GoalRecoveryMachineState): boolean {
+  if (state.counters.signature === CONTEXT_OVERFLOW_SIGNATURE) {
+    return true;
+  }
+  const attention = state.attention ?? "";
+  return (
+    attention.includes(HOST_OVERFLOW_RECOVERY_REASON) || attention.includes("context window recovery")
+  );
+}
+
 export function beginHostOverflowRecovery(state: GoalRecoveryMachineState): string {
   return setRecoveryPendingAttention(state, HOST_OVERFLOW_RECOVERY_REASON);
 }

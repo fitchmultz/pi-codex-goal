@@ -12,6 +12,7 @@ import {
 } from "../src/prompts.js";
 import {
   HOST_OVERFLOW_RECOVERY_REASON,
+  isContextOverflowError,
   recoveryAttentionMessage,
   recoveryPendingAttentionMessage,
 } from "../src/recovery.js";
@@ -25,6 +26,11 @@ interface SentMessage {
   options: Parameters<ExtensionAPI["sendMessage"]>[1];
 }
 
+interface SentUserMessage {
+  content: Parameters<ExtensionAPI["sendUserMessage"]>[0];
+  options: Parameters<ExtensionAPI["sendUserMessage"]>[1];
+}
+
 function createRuntimeHarness(options: {
   idle?: boolean;
   pendingMessages?: boolean;
@@ -35,6 +41,7 @@ function createRuntimeHarness(options: {
   const entries: ReturnType<ExtensionCommandContext["sessionManager"]["getBranch"]> = [];
   const handlers = new Map<string, EventHandler[]>();
   const sentMessages: SentMessage[] = [];
+  const sentUserMessages: SentUserMessage[] = [];
   const tools = new Map<string, (params: Record<string, unknown>) => Promise<unknown>>();
   const compactCalls: Array<{
     customInstructions?: string;
@@ -52,6 +59,7 @@ function createRuntimeHarness(options: {
     pendingMessages: options.pendingMessages ?? false,
     compactBehavior: options.compactBehavior ?? "success",
     compactCompletion: options.compactCompletion ?? "immediate",
+    hostOverflowRecoveryAttempted: false,
   };
   let commandHandler: ((args: string, ctx: ExtensionCommandContext) => void | Promise<void>) | null = null;
   let ctx: ExtensionCommandContext;
@@ -105,7 +113,9 @@ function createRuntimeHarness(options: {
     sendMessage(message, options) {
       sentMessages.push({ message, options });
     },
-    sendUserMessage() {},
+    sendUserMessage(content, options) {
+      sentUserMessages.push({ content, options });
+    },
     setActiveTools() {},
     setLabel() {},
     setModel: async () => false,
@@ -231,6 +241,12 @@ function createRuntimeHarness(options: {
   }
 
   async function emit(event: string, payload: object): Promise<unknown[]> {
+    if (event === "message_start") {
+      const message = (payload as { message?: { role?: string } }).message;
+      if (message?.role === "user") {
+        runtime.hostOverflowRecoveryAttempted = false;
+      }
+    }
     const results: unknown[] = [];
     for (const handler of handlers.get(event) ?? []) {
       results.push(await handler(payload, ctx));
@@ -252,6 +268,7 @@ function createRuntimeHarness(options: {
     runCommand,
     runTool,
     sentMessages,
+    sentUserMessages,
     setIdle(idle: boolean) {
       runtime.idle = idle;
     },
@@ -264,6 +281,12 @@ function createRuntimeHarness(options: {
         provider: "test",
         contextWindow,
       } as ExtensionCommandContext["model"];
+    },
+    get hostOverflowRecoveryAttempted() {
+      return runtime.hostOverflowRecoveryAttempted;
+    },
+    setHostOverflowRecoveryAttempted(value: boolean) {
+      runtime.hostOverflowRecoveryAttempted = value;
     },
     get abortCount() {
       return runtime.abortCount;
@@ -361,6 +384,9 @@ async function emitPersistentAssistantError(
     type: "agent_end",
     messages: [message],
   });
+  if (isContextOverflowError(errorMessage)) {
+    harness.setHostOverflowRecoveryAttempted(true);
+  }
 }
 
 test("aborted turns pause goals and do not queue continuation", async () => {
@@ -2357,6 +2383,7 @@ test("/goal resume after overflow pause resets recovery counters", async () => {
   const harness = createRuntimeHarness();
   await harness.runCommand("ship it");
   harness.sentMessages.length = 0;
+  harness.sentUserMessages.length = 0;
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     await emitPersistentAssistantError(harness, attempt, "context_length_exceeded");
@@ -2367,13 +2394,61 @@ test("/goal resume after overflow pause resets recovery counters", async () => {
     });
   }
   assert.equal(harness.snapshot().goal?.status, "paused");
+  assert.equal(harness.hostOverflowRecoveryAttempted, true);
 
   harness.sentMessages.length = 0;
+  harness.sentUserMessages.length = 0;
   await harness.runCommand("resume");
   assert.equal(harness.snapshot().goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 0);
+  assert.equal(harness.sentUserMessages.length, 1);
+  const resumeMessage = harness.sentUserMessages[0];
+  assert.ok(resumeMessage);
+  assert.deepEqual(resumeMessage.options, { deliverAs: "followUp" });
+  const content = resumeMessage.content;
+  if (typeof content !== "string") {
+    assert.fail("Expected overflow resume to send a user continuation prompt.");
+  }
+  assert.match(content, /<untrusted_objective>\nship it\n<\/untrusted_objective>/);
+
+  await harness.emit("message_start", {
+    type: "message_start",
+    message: { role: "user", content },
+  });
+  assert.equal(harness.hostOverflowRecoveryAttempted, false);
 
   await emitPersistentAssistantError(harness, 2, "context_length_exceeded");
   assert.equal(harness.snapshot().goal?.status, "active");
+});
+
+test("custom command_resume turn after host overflow exhaustion does not reset host recovery cap", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  const goal = harness.snapshot().goal;
+  assert.ok(goal);
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await emitPersistentAssistantError(harness, attempt, "context_length_exceeded");
+    await harness.emit("session_compact", {
+      type: "session_compact",
+      summary: "compact summary",
+      tokensBefore: 100,
+    });
+  }
+  assert.equal(harness.snapshot().goal?.status, "paused");
+  assert.equal(harness.hostOverflowRecoveryAttempted, true);
+
+  await harness.emit("message_start", {
+    type: "message_start",
+    message: {
+      role: "custom",
+      customType: CUSTOM_ENTRY_TYPE,
+      content: continuationPrompt(goal),
+      display: false,
+      details: { kind: "command_resume", goalId: goal.goalId },
+    },
+  });
+  assert.equal(harness.hostOverflowRecoveryAttempted, true);
 });
 
 test("non-retryable provider errors pause active goals immediately", async () => {

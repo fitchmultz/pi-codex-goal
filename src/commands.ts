@@ -9,11 +9,12 @@ export interface CommandHost {
   getGoal(): ThreadGoal | null;
   setGoal(goal: ThreadGoal, source: GoalEntrySource, ctx: GoalCommandContext): void;
   clearGoal(source: GoalEntrySource, ctx: GoalCommandContext): void;
+  needsUserMessageResume(): boolean;
 }
 
 const COMMANDS = ["pause", "resume", "clear"] as const;
 
-export type GoalCommandPi = Pick<ExtensionAPI, "registerCommand" | "sendMessage">;
+export type GoalCommandPi = Pick<ExtensionAPI, "registerCommand" | "sendMessage" | "sendUserMessage">;
 
 export interface GoalCommandContext {
   hasUI: boolean;
@@ -38,6 +39,10 @@ function queueGoalTurn(pi: GoalCommandPi, goal: ThreadGoal, kind: "command_start
     },
     { triggerTurn: true, deliverAs: "followUp" },
   );
+}
+
+function queueGoalUserResumeTurn(pi: GoalCommandPi, goal: ThreadGoal): void {
+  pi.sendUserMessage(continuationPrompt(goal), { deliverAs: "followUp" });
 }
 
 export async function handleGoalCommand(
@@ -66,6 +71,7 @@ export async function handleGoalCommand(
   if (trimmed === "pause" || trimmed === "resume") {
     const current = host.getGoal();
     const status = trimmed === "pause" ? "paused" : "active";
+    const resumeWithUserMessage = trimmed === "resume" && host.needsUserMessageResume();
     const result = updateGoalStatus(current, status);
     if (!result.ok || !result.goal) {
       ctx.ui.notify(result.message, "warning");
@@ -74,7 +80,11 @@ export async function handleGoalCommand(
     host.setGoal(result.goal, "command", ctx);
     ctx.ui.notify(result.message);
     if (trimmed === "resume" && result.goal.status === "active") {
-      queueGoalTurn(pi, result.goal, "command_resume");
+      if (resumeWithUserMessage) {
+        queueGoalUserResumeTurn(pi, result.goal);
+      } else {
+        queueGoalTurn(pi, result.goal, "command_resume");
+      }
     }
     return;
   }

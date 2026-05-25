@@ -12,15 +12,22 @@ interface SentMessage {
   options: Parameters<SendMessage>[1];
 }
 
-function createHarness() {
+function createHarness(options: { needsUserMessageResume?: boolean } = {}) {
   let goal: ThreadGoal | null = null;
   const sentMessages: SentMessage[] = [];
+  const sentUserMessages: Array<{
+    content: Parameters<GoalCommandPi["sendUserMessage"]>[0];
+    options: Parameters<GoalCommandPi["sendUserMessage"]>[1];
+  }> = [];
   const notifications: string[] = [];
 
   const pi: GoalCommandPi = {
     registerCommand() {},
     sendMessage(message: SentMessage["message"], options: SentMessage["options"]) {
       sentMessages.push({ message, options });
+    },
+    sendUserMessage(content, options) {
+      sentUserMessages.push({ content, options });
     },
   };
 
@@ -32,6 +39,7 @@ function createHarness() {
     clearGoal() {
       goal = null;
     },
+    needsUserMessageResume: () => options.needsUserMessageResume ?? false,
   };
 
   const ctx: GoalCommandContext = {
@@ -57,6 +65,7 @@ function createHarness() {
     },
     notifications,
     sentMessages,
+    sentUserMessages,
   };
 }
 
@@ -106,6 +115,30 @@ test("/goal resume restarts a hidden follow-up turn", async () => {
   const content = sentMessage.message.content;
   if (typeof content !== "string") {
     assert.fail("Expected queued goal message content to be a string.");
+  }
+  assert.match(content, /<untrusted_objective>\nship the feature\n<\/untrusted_objective>/);
+});
+
+test("/goal resume after overflow pause sends a user continuation turn", async () => {
+  const harness = createHarness({ needsUserMessageResume: true });
+
+  await handleGoalCommand(harness.pi, harness.host, "ship the feature", harness.ctx);
+  const paused = updateGoalStatus(harness.goal, "paused").goal;
+  assert.ok(paused);
+  harness.sentMessages.length = 0;
+  harness.setGoal(paused);
+
+  await handleGoalCommand(harness.pi, harness.host, "resume", harness.ctx);
+
+  assert.equal(harness.goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 0);
+  assert.equal(harness.sentUserMessages.length, 1);
+  const sentUserMessage = harness.sentUserMessages[0];
+  assert.ok(sentUserMessage);
+  assert.deepEqual(sentUserMessage.options, { deliverAs: "followUp" });
+  const content = sentUserMessage.content;
+  if (typeof content !== "string") {
+    assert.fail("Expected queued goal resume content to be a string.");
   }
   assert.match(content, /<untrusted_objective>\nship the feature\n<\/untrusted_objective>/);
 });
