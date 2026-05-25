@@ -132,6 +132,13 @@ export function formatFooterStatus(goal: ThreadGoal | null, recoveryAttention: s
     return undefined;
   }
 
+  if (goal.status === "budgetLimited") {
+    if (goal.tokenBudget !== null) {
+      return `Goal unmet (${compactBudgetUsage(goal)} tokens)`;
+    }
+    return "Goal abandoned";
+  }
+
   if (recoveryAttention) {
     return recoveryAttention;
   }
@@ -148,13 +155,6 @@ export function formatFooterStatus(goal: ThreadGoal | null, recoveryAttention: s
 
   if (goal.status === "paused") {
     return "Goal paused (/goal resume)";
-  }
-
-  if (goal.status === "budgetLimited") {
-    if (goal.tokenBudget !== null) {
-      return `Goal unmet (${compactBudgetUsage(goal)} tokens)`;
-    }
-    return "Goal abandoned";
   }
 
   if (goal.tokenBudget !== null) {

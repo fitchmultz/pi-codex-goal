@@ -91,8 +91,11 @@ export function createGoalRecoveryRuntime(deps: RecoveryRuntimeDeps) {
     ctx: ExtensionContext,
     options?: { continueGoal?: boolean },
   ): void => {
-    if (onRecoverySuccessfulTurn(deps.getRecoveryState(), message) && options?.continueGoal !== false) {
-      deps.maybeContinue(ctx);
+    if (onRecoverySuccessfulTurn(deps.getRecoveryState(), message)) {
+      deps.refreshUi(ctx);
+      if (options?.continueGoal !== false) {
+        deps.maybeContinue(ctx);
+      }
     }
   };
 

@@ -486,6 +486,32 @@ test("tool-use turn ends do not queue continuation before tool execution finishe
   assert.equal(harness.sentMessages.length, 0);
 });
 
+test("successful budget-crossing turn clears stale recovery footer attention", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runTool("create_goal", { objective: "ship it", token_budget: 10 });
+  harness.sentMessages.length = 0;
+  harness.footerStatuses.length = 0;
+
+  await emitPersistentAssistantError(harness, 0, "websocket closed");
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.match(harness.footerStatuses.at(-1) ?? "", /Goal recovery pending/);
+
+  await harness.emit("turn_start", { type: "turn_start", turnIndex: 1, timestamp: 2 });
+  await harness.emit("turn_end", {
+    type: "turn_end",
+    turnIndex: 1,
+    message: assistantMessage("stop", { input: 8, output: 3 }),
+    toolResults: [],
+  });
+
+  const goal = harness.snapshot().goal;
+  assert.equal(goal?.status, "budgetLimited");
+  assert.equal(goal?.usage.tokensUsed, 13);
+  assert.equal(harness.footerStatuses.at(-1), formatFooterStatus(goal));
+  assert.match(harness.footerStatuses.at(-1) ?? "", /Goal unmet/);
+  assert.doesNotMatch(harness.footerStatuses.at(-1) ?? "", /Goal recovery pending/);
+});
+
 test("budget crossing sends one hidden budget-limit steering message", async () => {
   const harness = createRuntimeHarness();
   await harness.runTool("create_goal", { objective: "ship it", token_budget: 10 });
