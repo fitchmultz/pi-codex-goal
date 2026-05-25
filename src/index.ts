@@ -756,10 +756,6 @@ export default function (pi: ExtensionAPI): void {
     clearPassthroughContinuationInput();
     if (staleQueuedGoalWorkTurnActive) {
       clearStaleQueuedGoalWorkTurn();
-      clearStaleQueuedGoalWorkTerminalEvents();
-      clearContinuationTimer();
-      stopStatusRefresh();
-      return;
     }
     clearStaleQueuedGoalWorkTerminalEvents();
 
