@@ -17,6 +17,7 @@ import {
   type RecoveryAction,
   type RecoveryCompactionScope,
 } from "./recovery-machine.js";
+import { defaultDelayScheduler, type DelayScheduler } from "./delay-scheduler.js";
 import type { AssistantErrorMessage } from "./recovery.js";
 import type { ThreadGoal } from "./types.js";
 
@@ -29,9 +30,12 @@ interface RecoveryRuntimeDeps {
   pauseGoalForRecovery: (ctx: ExtensionContext, pausedGoal: ThreadGoal) => void;
   refreshUi: (ctx: ExtensionContext) => void;
   maybeContinue: (ctx: ExtensionContext) => void;
+  delayScheduler?: DelayScheduler;
 }
 
 export function createGoalRecoveryRuntime(deps: RecoveryRuntimeDeps) {
+  const delayScheduler = deps.delayScheduler ?? defaultDelayScheduler;
+
   const resetErrorRecovery = (): void => {
     deps.clearErrorRecoveryTimer();
     resetRecoveryMachine(deps.getRecoveryState());
@@ -80,11 +84,10 @@ export function createGoalRecoveryRuntime(deps: RecoveryRuntimeDeps) {
 
   const scheduleTransientErrorRetry = (ctx: ExtensionContext, delayMs: number): void => {
     deps.clearErrorRecoveryTimer();
-    const timer = setTimeout(() => {
+    const timer = delayScheduler.schedule(() => {
       deps.setErrorRecoveryTimer(null);
       deps.maybeContinue(ctx);
     }, delayMs);
-    timer.unref?.();
     deps.setErrorRecoveryTimer(timer);
   };
 
@@ -118,11 +121,21 @@ export function createGoalRecoveryRuntime(deps: RecoveryRuntimeDeps) {
     applyRecoveryAction(planRecoveryForAssistantError(deps.getRecoveryState(), message, goal.goalId), ctx);
   };
 
-  const finishSuccessfulAssistantTurn = (message: AssistantErrorMessage, ctx: ExtensionContext): void => {
+  const acknowledgeSuccessfulAssistantTurn = (message: AssistantErrorMessage): void => {
     if (onRecoverySuccessfulTurn(deps.getRecoveryState(), message)) {
       deps.clearErrorRecoveryTimer();
     }
-    deps.maybeContinue(ctx);
+  };
+
+  const finishSuccessfulAssistantTurn = (
+    message: AssistantErrorMessage,
+    ctx: ExtensionContext,
+    options?: { continueGoal?: boolean },
+  ): void => {
+    acknowledgeSuccessfulAssistantTurn(message);
+    if (options?.continueGoal !== false) {
+      deps.maybeContinue(ctx);
+    }
   };
 
   return {
