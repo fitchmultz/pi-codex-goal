@@ -499,11 +499,15 @@ export default function (pi: ExtensionAPI): void {
     setGoal(nextGoal, source, ctx) {
       const wasPaused = goal?.status === "paused";
       persistGoal(nextGoal, source);
-      if (source === "command" && nextGoal.status === "active") {
-        if (wasPaused) {
+      if (source === "command") {
+        if (nextGoal.status === "active") {
+          if (wasPaused) {
+            resetErrorRecovery();
+          }
+          continuationQueuedFor = nextGoal.goalId;
+        } else if (nextGoal.status === "paused") {
           resetErrorRecovery();
         }
-        continuationQueuedFor = nextGoal.goalId;
       }
       refreshUi(ctx);
     },

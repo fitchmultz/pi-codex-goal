@@ -2045,6 +2045,46 @@ test("transient errors surface pending attention without pausing before host ret
   assert.doesNotMatch(harness.footerStatuses.at(-1) ?? "", /\/goal resume/);
 });
 
+test("/goal pause after pending transient error clears recovery attention", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  harness.sentMessages.length = 0;
+  harness.footerStatuses.length = 0;
+
+  await emitPersistentAssistantError(harness, 0, "websocket closed");
+
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.match(harness.footerStatuses.at(-1) ?? "", /Goal recovery pending/);
+  assert.doesNotMatch(harness.footerStatuses.at(-1) ?? "", /\/goal resume/);
+
+  await harness.runCommand("pause");
+
+  assert.equal(harness.snapshot().goal?.status, "paused");
+  assert.equal(harness.footerStatuses.at(-1), formatFooterStatus(harness.snapshot().goal));
+  assert.match(harness.footerStatuses.at(-1) ?? "", /Goal paused \(\/goal resume\)/);
+  assert.doesNotMatch(harness.footerStatuses.at(-1) ?? "", /Goal recovery pending/);
+});
+
+test("/goal pause after pending overflow error clears recovery attention", async () => {
+  const harness = createRuntimeHarness({ compactBehavior: "unavailable" });
+  await harness.runCommand("ship it");
+  harness.sentMessages.length = 0;
+  harness.footerStatuses.length = 0;
+
+  await emitPersistentAssistantError(harness, 0, "context_length_exceeded");
+
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.match(harness.footerStatuses.at(-1) ?? "", /Goal recovery pending/);
+  assert.doesNotMatch(harness.footerStatuses.at(-1) ?? "", /\/goal resume/);
+
+  await harness.runCommand("pause");
+
+  assert.equal(harness.snapshot().goal?.status, "paused");
+  assert.equal(harness.footerStatuses.at(-1), formatFooterStatus(harness.snapshot().goal));
+  assert.match(harness.footerStatuses.at(-1) ?? "", /Goal paused \(\/goal resume\)/);
+  assert.doesNotMatch(harness.footerStatuses.at(-1) ?? "", /Goal recovery pending/);
+});
+
 test("successful turns reset transient error counters and continue active goals", async () => {
   const harness = createRuntimeHarness();
   await harness.runCommand("ship it");
