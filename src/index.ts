@@ -187,6 +187,9 @@ function dedupeActiveGoalContinuations<TMessage extends {
 }>(
   messages: TMessage[],
   goal: ThreadGoal,
+  resolveQueuedGoalWorkMessageId: (
+    message: { role: string; customType?: string; details?: unknown; content?: unknown },
+  ) => string | null,
 ): { messages: TMessage[]; changed: boolean } {
   const activeGoalId = goal.goalId;
   const indices: number[] = [];
@@ -195,7 +198,7 @@ function dedupeActiveGoalContinuations<TMessage extends {
     if (!message) {
       continue;
     }
-    const queuedGoalId = queuedGoalWorkMessageId(message);
+    const queuedGoalId = resolveQueuedGoalWorkMessageId(message);
     if (queuedGoalId === activeGoalId) {
       indices.push(index);
     }
@@ -775,7 +778,7 @@ export default function (pi: ExtensionAPI): void {
     });
 
     if (goal?.status === "active") {
-      const deduped = dedupeActiveGoalContinuations(messages, goal);
+      const deduped = dedupeActiveGoalContinuations(messages, goal, queuedGoalWorkMessageIdForRuntime);
       if (deduped.changed) {
         changed = true;
         messages = deduped.messages;
