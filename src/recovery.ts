@@ -117,6 +117,15 @@ export function recoveryPendingAttentionMessage(reason: string): string {
   return `Goal recovery pending (${reason}); ${RECOVERY_PENDING_ATTENTION_SUFFIX}`;
 }
 
+export function isRecoveryPendingAttention(attention: string | null): boolean {
+  return attention?.startsWith("Goal recovery pending (") ?? false;
+}
+
+export function reasonFromRecoveryPendingAttention(attention: string): string | null {
+  const match = /^Goal recovery pending \((.+)\); /.exec(attention);
+  return match?.[1] ?? null;
+}
+
 export function recoveryPausedAttentionMessage(reason: string): string {
   return `Goal needs attention (${reason}). Use /goal resume to continue.`;
 }

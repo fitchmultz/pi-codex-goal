@@ -11,7 +11,10 @@ import {
   isContextOverflowError,
   isErrorAssistantMessage,
   isRetryableTransientError,
+  isRecoveryPendingAttention,
   isSuccessfulAssistantTurn,
+  reasonFromRecoveryPendingAttention,
+  recoveryAttentionMessage,
   recoveryPendingAttentionMessage,
 } from "../src/recovery.js";
 import {
@@ -95,6 +98,15 @@ test("failure signatures canonicalize context overflow regardless of volatile to
   );
   assert.equal(failureSignature("first line\nsecond line"), "first line");
   assert.equal(failureSignature(undefined), "unknown_error");
+});
+
+test("recovery pending attention helpers round-trip the reason", () => {
+  const reason = "provider error (websocket closed)";
+  const attention = recoveryPendingAttentionMessage(reason);
+  assert.equal(isRecoveryPendingAttention(attention), true);
+  assert.equal(reasonFromRecoveryPendingAttention(attention), reason);
+  assert.equal(isRecoveryPendingAttention(recoveryAttentionMessage(reason)), false);
+  assert.equal(reasonFromRecoveryPendingAttention("Goal paused"), null);
 });
 
 test("changing context overflow messages share one recovery signature and reach the host cap", () => {

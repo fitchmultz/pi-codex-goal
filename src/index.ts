@@ -25,11 +25,11 @@ import {
 } from "./recovery-machine.js";
 import { createGoalRecoveryRuntime } from "./recovery-runtime.js";
 import {
-  HOST_OVERFLOW_RECOVERY_REASON,
   isAssistantContextOverflow,
   isContextOverflowError,
   isErrorAssistantMessage,
-  recoveryPendingAttentionMessage,
+  isRecoveryPendingAttention,
+  reasonFromRecoveryPendingAttention,
   type AssistantErrorMessage,
 } from "./recovery.js";
 import { clearEntry, goalWithLiveUsage, goalsEquivalent, reconstructGoal, setEntry, updateGoalStatus } from "./state.js";
@@ -439,8 +439,13 @@ export default function (pi: ExtensionAPI): void {
     maybeContinue,
   });
 
-  const pauseForPendingOverflowShutdown = (ctx: ExtensionContext): void => {
-    if (!goal || goal.status !== "active") {
+  const pauseForPendingRecoveryShutdown = (ctx: ExtensionContext): void => {
+    if (!goal || goal.status !== "active" || !recoveryState.attention) {
+      return;
+    }
+
+    const reason = reasonFromRecoveryPendingAttention(recoveryState.attention);
+    if (!reason) {
       return;
     }
 
@@ -451,17 +456,13 @@ export default function (pi: ExtensionAPI): void {
 
     clearContinuationState();
     hostOverflowRecoveryInProgress = false;
-    setRecoveryPausedAttention(recoveryState, HOST_OVERFLOW_RECOVERY_REASON);
+    setRecoveryPausedAttention(recoveryState, reason);
     persistGoal(result.goal, "runtime");
     refreshUi(ctx);
   };
 
-  const hasPendingOverflowRecovery = (): boolean => {
-    return (
-      hostOverflowRecoveryInProgress &&
-      goal?.status === "active" &&
-      recoveryState.attention === recoveryPendingAttentionMessage(HOST_OVERFLOW_RECOVERY_REASON)
-    );
+  const hasPendingRecoveryAttention = (): boolean => {
+    return goal?.status === "active" && isRecoveryPendingAttention(recoveryState.attention);
   };
 
   const beginOverflowRecoveryAttention = (ctx: ExtensionContext): void => {
@@ -764,8 +765,8 @@ export default function (pi: ExtensionAPI): void {
 
     goalAccounting.accountProgress(ctx, false, 0, true);
     clearContinuationTimer();
-    if (hasPendingOverflowRecovery()) {
-      pauseForPendingOverflowShutdown(ctx);
+    if (hasPendingRecoveryAttention()) {
+      pauseForPendingRecoveryShutdown(ctx);
     } else {
       resetErrorRecovery();
     }

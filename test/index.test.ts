@@ -2318,6 +2318,66 @@ test("pending overflow shutdown persists paused goal with valid resume guidance"
   );
 });
 
+test("pending transient shutdown persists paused goal with valid resume guidance", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  harness.sentMessages.length = 0;
+  harness.footerStatuses.length = 0;
+
+  await emitPersistentAssistantError(harness, 0, "websocket closed");
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.doesNotMatch(harness.footerStatuses.at(-1) ?? "", /\/goal resume/);
+
+  await harness.emit("session_shutdown", { type: "session_shutdown" });
+
+  const pausedGoal = harness.snapshot().goal;
+  assert.equal(pausedGoal?.status, "paused");
+  assert.match(harness.footerStatuses.at(-1) ?? "", /\/goal resume/);
+  assert.equal(
+    harness.footerStatuses.at(-1),
+    formatFooterStatus(
+      pausedGoal,
+      recoveryAttentionMessage("provider error (websocket closed)"),
+    ),
+  );
+});
+
+test("session_start after pending transient shutdown does not auto-continue", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  harness.sentMessages.length = 0;
+
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    await emitPersistentAssistantError(harness, attempt, "websocket closed");
+    assert.equal(harness.snapshot().goal?.status, "active");
+  }
+
+  await harness.emit("session_shutdown", { type: "session_shutdown" });
+  assert.equal(harness.snapshot().goal?.status, "paused");
+
+  harness.sentMessages.length = 0;
+  await harness.emit("session_start", { type: "session_start", reason: "startup" });
+
+  assert.equal(harness.snapshot().goal?.status, "paused");
+  assert.equal(harness.sentMessages.length, 0);
+});
+
+test("session_tree after pending transient shutdown does not auto-continue", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  harness.sentMessages.length = 0;
+
+  await emitPersistentAssistantError(harness, 0, "websocket closed");
+  await harness.emit("session_shutdown", { type: "session_shutdown" });
+  assert.equal(harness.snapshot().goal?.status, "paused");
+
+  harness.sentMessages.length = 0;
+  await harness.emit("session_tree", { type: "session_tree" });
+
+  assert.equal(harness.snapshot().goal?.status, "paused");
+  assert.equal(harness.sentMessages.length, 0);
+});
+
 test("session_start after pending overflow shutdown does not auto-continue", async () => {
   const harness = createRuntimeHarness({ compactBehavior: "unavailable" });
   await harness.runCommand("ship it");
