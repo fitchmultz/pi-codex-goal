@@ -90,6 +90,10 @@ export function createGoalRecoveryRuntime(deps: RecoveryRuntimeDeps) {
     }
   };
 
+  const pauseIncompleteOverflowRecovery = (ctx: ExtensionContext): void => {
+    pauseForRecoveryAttention(ctx, "context window recovery did not complete");
+  };
+
   return {
     resetErrorRecovery,
     onUserInput: () => {
@@ -99,6 +103,7 @@ export function createGoalRecoveryRuntime(deps: RecoveryRuntimeDeps) {
       onRecoverySessionCompact(deps.getRecoveryState());
     },
     beginOverflowRecovery,
+    pauseIncompleteOverflowRecovery,
     handlePersistentAssistantError,
     handleSilentContextOverflow,
     finishSuccessfulAssistantTurn,

@@ -258,3 +258,19 @@ test("recovery plans noop while under host-owned overflow and transient caps", (
   );
   assert.equal(transient.type, "noop");
 });
+
+test("non-retryable provider errors pause immediately", () => {
+  const state = createGoalRecoveryMachine();
+  const action = planRecoveryForAssistantError(
+    state,
+    {
+      role: "assistant",
+      stopReason: "error",
+      errorMessage: "invalid tool call state: malformed function arguments",
+    },
+  );
+  assert.equal(action.type, "pause");
+  if (action.type === "pause") {
+    assert.match(action.reason, /non-retryable provider error/);
+  }
+});

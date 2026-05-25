@@ -2156,23 +2156,107 @@ test("first overflow error shows recoverable attention while host recovery is pe
   );
 });
 
-test("overflow without session_compact keeps attention and does not queue continuation", async () => {
+test("overflow without session_compact pauses with recoverable attention after fallback", async () => {
+  const harness = createRuntimeHarness({ compactBehavior: "unavailable" });
+  await harness.runCommand("ship it");
+  const goal = harness.snapshot().goal;
+  assert.ok(goal);
+  harness.sentMessages.length = 0;
+
+  await emitPersistentAssistantError(harness, 0, "context_length_exceeded");
+  await waitForContinuationRetry();
+
+  assert.equal(harness.snapshot().goal?.status, "paused");
+  assert.equal(harness.sentMessages.length, 0);
+  assert.equal(
+    harness.footerStatuses.at(-1),
+    formatFooterStatus(
+      { ...goal, status: "paused" },
+      recoveryAttentionMessage("context window recovery did not complete"),
+    ),
+  );
+});
+
+test("/goal resume after transient pause resets recovery counters", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  harness.sentMessages.length = 0;
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await emitPersistentAssistantError(harness, attempt, "websocket closed");
+  }
+  assert.equal(harness.snapshot().goal?.status, "paused");
+
+  harness.sentMessages.length = 0;
+  await harness.runCommand("resume");
+  assert.equal(harness.snapshot().goal?.status, "active");
+
+  await emitPersistentAssistantError(harness, 4, "websocket closed");
+  assert.equal(harness.snapshot().goal?.status, "active");
+});
+
+test("/goal resume after overflow pause resets recovery counters", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  harness.sentMessages.length = 0;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await emitPersistentAssistantError(harness, attempt, "context_length_exceeded");
+    await harness.emit("session_compact", {
+      type: "session_compact",
+      summary: "compact summary",
+      tokensBefore: 100,
+    });
+  }
+  assert.equal(harness.snapshot().goal?.status, "paused");
+
+  harness.sentMessages.length = 0;
+  await harness.runCommand("resume");
+  assert.equal(harness.snapshot().goal?.status, "active");
+
+  await emitPersistentAssistantError(harness, 2, "context_length_exceeded");
+  assert.equal(harness.snapshot().goal?.status, "active");
+});
+
+test("non-retryable provider errors pause active goals immediately", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  harness.sentMessages.length = 0;
+
+  await emitPersistentAssistantError(
+    harness,
+    0,
+    "invalid tool call state: malformed function arguments",
+  );
+
+  assert.equal(harness.snapshot().goal?.status, "paused");
+  assert.equal(harness.sentMessages.length, 0);
+  assert.equal(
+    harness.footerStatuses.at(-1),
+    formatFooterStatus(
+      harness.snapshot().goal,
+      recoveryAttentionMessage("non-retryable provider error (invalid tool call state: malformed function arguments)"),
+    ),
+  );
+});
+
+test("/goal resume after overflow fallback pause allows continuation", async () => {
   const harness = createRuntimeHarness({ compactBehavior: "unavailable" });
   await harness.runCommand("ship it");
   harness.sentMessages.length = 0;
 
   await emitPersistentAssistantError(harness, 0, "context_length_exceeded");
   await waitForContinuationRetry();
+  assert.equal(harness.snapshot().goal?.status, "paused");
 
+  harness.sentMessages.length = 0;
+  await harness.runCommand("resume");
   assert.equal(harness.snapshot().goal?.status, "active");
-  assert.equal(harness.sentMessages.length, 0);
-  assert.equal(
-    harness.footerStatuses.at(-1),
-    formatFooterStatus(
-      harness.snapshot().goal,
-      recoveryAttentionMessage(HOST_OVERFLOW_RECOVERY_REASON),
-    ),
-  );
+  assert.equal(harness.sentMessages.length, 1);
+  assert.deepEqual(harness.sentMessages[0]?.message.details, {
+    kind: "command_resume",
+    goalId: harness.snapshot().goal?.goalId,
+  });
 });
 
 test("varied retryable transient errors pause after host default retry cap", async () => {

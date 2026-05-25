@@ -34,6 +34,7 @@ interface StatusContext {
 }
 
 const CONTINUATION_RETRY_MS = 50;
+const OVERFLOW_RECOVERY_FALLBACK_MS = 50;
 
 export default function (pi: ExtensionAPI): void {
   let goal: ThreadGoal | null = null;
@@ -56,6 +57,8 @@ export default function (pi: ExtensionAPI): void {
   const accounting = createAccountingState();
   let recoveryState: GoalRecoveryMachineState = createGoalRecoveryMachine();
   let hostOverflowRecoveryInProgress = false;
+  let hostOverflowCompactReceived = false;
+  let overflowRecoveryFallbackTimer: ReturnType<typeof setTimeout> | null = null;
 
   const goalForDisplay = (): ThreadGoal | null =>
     goalWithLiveUsage(goal, accounting.activeGoalId, accounting.lastAccountedAt);
@@ -75,9 +78,18 @@ export default function (pi: ExtensionAPI): void {
     continuationScheduledFor = null;
   };
 
+  const clearOverflowRecoveryFallback = (): void => {
+    if (overflowRecoveryFallbackTimer) {
+      clearTimeout(overflowRecoveryFallbackTimer);
+      overflowRecoveryFallbackTimer = null;
+    }
+  };
+
   const resetErrorRecovery = (): void => {
     resetRecoveryMachine(recoveryState);
     hostOverflowRecoveryInProgress = false;
+    hostOverflowCompactReceived = false;
+    clearOverflowRecoveryFallback();
   };
 
   const clearContinuationState = (): void => {
@@ -428,9 +440,28 @@ export default function (pi: ExtensionAPI): void {
     maybeContinue,
   });
 
+  const scheduleOverflowRecoveryFallback = (ctx: ExtensionContext): void => {
+    clearOverflowRecoveryFallback();
+    overflowRecoveryFallbackTimer = setTimeout(() => {
+      overflowRecoveryFallbackTimer = null;
+      if (!hostOverflowRecoveryInProgress || hostOverflowCompactReceived) {
+        return;
+      }
+      if (!goal || goal.status !== "active") {
+        return;
+      }
+
+      hostOverflowRecoveryInProgress = false;
+      recoveryRuntime.pauseIncompleteOverflowRecovery(ctx);
+    }, OVERFLOW_RECOVERY_FALLBACK_MS);
+    overflowRecoveryFallbackTimer.unref?.();
+  };
+
   const beginOverflowRecoveryAttention = (ctx: ExtensionContext): void => {
     hostOverflowRecoveryInProgress = true;
+    hostOverflowCompactReceived = false;
     recoveryRuntime.beginOverflowRecovery(ctx);
+    scheduleOverflowRecoveryFallback(ctx);
   };
 
   const recordAssistantContextOverflow = (
@@ -462,8 +493,12 @@ export default function (pi: ExtensionAPI): void {
   registerGoalCommand(pi, {
     getGoal: () => goalForDisplay(),
     setGoal(nextGoal, source, ctx) {
+      const wasPaused = goal?.status === "paused";
       persistGoal(nextGoal, source);
       if (source === "command" && nextGoal.status === "active") {
+        if (wasPaused) {
+          resetErrorRecovery();
+        }
         continuationQueuedFor = nextGoal.goalId;
       }
       refreshUi(ctx);
@@ -588,6 +623,15 @@ export default function (pi: ExtensionAPI): void {
     clearContinuationStateFor(queuedGoalId);
     if (isCurrentActiveGoalId(queuedGoalId)) {
       startedRunnableWorkThisTurn = true;
+      const details = (event.message as { details?: unknown }).details;
+      if (
+        details !== null &&
+        typeof details === "object" &&
+        "kind" in details &&
+        (details as { kind?: unknown }).kind === "command_resume"
+      ) {
+        resetErrorRecovery();
+      }
       return;
     }
 
@@ -687,6 +731,8 @@ export default function (pi: ExtensionAPI): void {
     if (goal) {
       persistGoal(goal, "runtime");
     }
+    hostOverflowCompactReceived = true;
+    clearOverflowRecoveryFallback();
     recoveryRuntime.onSessionCompact();
     refreshUi(ctx);
     if (!hostOverflowRecoveryInProgress) {
@@ -707,6 +753,7 @@ export default function (pi: ExtensionAPI): void {
 
     goalAccounting.accountProgress(ctx, false, 0, true);
     clearContinuationTimer();
+    clearOverflowRecoveryFallback();
     resetErrorRecovery();
     stopStatusRefresh();
   });
