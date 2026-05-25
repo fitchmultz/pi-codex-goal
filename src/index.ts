@@ -112,16 +112,12 @@ function staleGoalContinuationMessage(queuedGoalId: string, currentGoal: ThreadG
   ].join("\n");
 }
 
-function queuedGoalWorkMessageId(message: {
+function extensionQueuedGoalWorkMessageId(message: {
   role: string;
   customType?: string;
   details?: unknown;
   content?: unknown;
 }): string | null {
-  if (message.role === "user") {
-    return continuationGoalIdFromMessageContent(message.content);
-  }
-
   if (message.role !== "custom" || message.customType !== CUSTOM_ENTRY_TYPE) {
     return null;
   }
@@ -138,6 +134,19 @@ function queuedGoalWorkMessageId(message: {
   }
 
   return continuationGoalIdFromMessageContent(message.content);
+}
+
+function queuedGoalWorkMessageId(message: {
+  role: string;
+  customType?: string;
+  details?: unknown;
+  content?: unknown;
+}): string | null {
+  if (message.role === "user") {
+    return continuationGoalIdFromMessageContent(message.content);
+  }
+
+  return extensionQueuedGoalWorkMessageId(message);
 }
 
 function supersededContinuationContextMessage<TMessage extends { role: string; content?: unknown; display?: boolean; details?: unknown }>(
@@ -778,7 +787,7 @@ export default function (pi: ExtensionAPI): void {
     });
 
     if (goal?.status === "active") {
-      const deduped = dedupeActiveGoalContinuations(messages, goal, queuedGoalWorkMessageIdForRuntime);
+      const deduped = dedupeActiveGoalContinuations(messages, goal, extensionQueuedGoalWorkMessageId);
       if (deduped.changed) {
         changed = true;
         messages = deduped.messages;
