@@ -395,8 +395,19 @@ export default function (pi: ExtensionAPI): void {
     );
   };
 
+  const hasPendingRecoveryAttention = (): boolean => {
+    return goal?.status === "active" && isRecoveryPendingAttention(recoveryState.attention);
+  };
+
   const maybeContinue = (ctx: ExtensionContext): void => {
-    if (staleQueuedGoalWorkTurnActive || !goal || goal.status !== "active" || continuationQueuedFor === goal.goalId) {
+    if (
+      staleQueuedGoalWorkTurnActive ||
+      !goal ||
+      goal.status !== "active" ||
+      continuationQueuedFor === goal.goalId ||
+      hasPendingRecoveryAttention() ||
+      hostOverflowRecoveryInProgress
+    ) {
       return;
     }
 
@@ -459,10 +470,6 @@ export default function (pi: ExtensionAPI): void {
     setRecoveryPausedAttention(recoveryState, reason);
     persistGoal(result.goal, "runtime");
     refreshUi(ctx);
-  };
-
-  const hasPendingRecoveryAttention = (): boolean => {
-    return goal?.status === "active" && isRecoveryPendingAttention(recoveryState.attention);
   };
 
   const beginOverflowRecoveryAttention = (ctx: ExtensionContext): void => {

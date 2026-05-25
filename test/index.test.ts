@@ -2362,6 +2362,37 @@ test("session_start after pending transient shutdown does not auto-continue", as
   assert.equal(harness.sentMessages.length, 0);
 });
 
+test("session_tree with pending transient recovery does not auto-continue before shutdown", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  harness.sentMessages.length = 0;
+
+  await emitPersistentAssistantError(harness, 0, "websocket closed");
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.match(harness.footerStatuses.at(-1) ?? "", /Goal recovery pending/);
+  assert.equal(harness.sentMessages.length, 0);
+
+  await harness.emit("session_tree", { type: "session_tree" });
+
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 0);
+});
+
+test("session_tree with pending overflow recovery does not auto-continue before compaction", async () => {
+  const harness = createRuntimeHarness({ compactBehavior: "unavailable" });
+  await harness.runCommand("ship it");
+  harness.sentMessages.length = 0;
+
+  await emitPersistentAssistantError(harness, 0, "context_length_exceeded");
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 0);
+
+  await harness.emit("session_tree", { type: "session_tree" });
+
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 0);
+});
+
 test("session_tree after pending transient shutdown does not auto-continue", async () => {
   const harness = createRuntimeHarness();
   await harness.runCommand("ship it");
