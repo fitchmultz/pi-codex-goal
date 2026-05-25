@@ -172,7 +172,7 @@ export function createGoal(current: ThreadGoal | null, objective: string, tokenB
     return {
       ok: false,
       message:
-        "cannot create a new goal because this thread already has an active goal; use update_goal to mark it complete, /goal clear, or /goal <objective> to replace it",
+        "cannot create a new goal because this thread already has a non-complete goal; use update_goal to mark it complete, /goal clear, or /goal <objective> to replace it",
       goal: current,
     };
   }

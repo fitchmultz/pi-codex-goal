@@ -66,7 +66,8 @@ export function registerGoalTools(pi: ExtensionAPI, host: ToolHost): void {
     name: "create_goal",
     label: "Create Goal",
     description: "Create a Codex-style long-running goal for this pi session.",
-    promptSnippet: "Create one active goal with an objective and optional positive token budget.",
+    promptSnippet:
+      "Create one goal with an objective and optional positive token budget. Fails when a non-complete goal already exists; replaces a completed goal.",
     promptGuidelines: TOOL_PROMPT_GUIDELINES,
     parameters: CreateGoalParams,
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {

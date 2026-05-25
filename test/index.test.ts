@@ -1321,7 +1321,7 @@ test("failed create_goal throws so pi marks the tool result as an error", async 
   const harness = createRuntimeHarness();
   await harness.runCommand("ship it");
 
-  await assert.rejects(() => harness.runTool("create_goal", { objective: "duplicate" }), /already has an active goal/);
+  await assert.rejects(() => harness.runTool("create_goal", { objective: "duplicate" }), /already has a non-complete goal/);
 });
 
 test("session compaction queues continuation for active goals after length stops", async () => {

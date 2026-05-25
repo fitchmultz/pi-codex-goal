@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { formatBudget, formatDuration, formatFooterStatus, formatGoalSummary, formatTokenValue } from "../src/format.js";
-import { budgetLimitPrompt, continuationPrompt } from "../src/prompts.js";
+import { budgetLimitPrompt, continuationPrompt, TOOL_PROMPT_GUIDELINES } from "../src/prompts.js";
 import {
   applyUsage,
   clearEntry,
@@ -153,7 +153,7 @@ test("updateGoalStatus only allows pause from active and resume from paused", ()
   assert.equal(updateGoalStatus(resumed, "active").ok, false);
 });
 
-test("createGoal replaces completed goals and rejects active duplicates", () => {
+test("createGoal replaces completed goals and rejects non-complete duplicates", () => {
   const created = createGoal(null, "finish").goal;
   assert.ok(created);
   const completed = updateGoalStatus(created, "complete").goal;
@@ -161,6 +161,26 @@ test("createGoal replaces completed goals and rejects active duplicates", () => 
 
   assert.equal(createGoal(completed, "next").ok, true);
   assert.equal(createGoal(created, "next").ok, false);
+  assert.match(createGoal(created, "next").message ?? "", /non-complete goal/);
+
+  const paused = updateGoalStatus(created, "paused").goal;
+  assert.ok(paused);
+  assert.equal(createGoal(paused, "next").ok, false);
+  assert.match(createGoal(paused, "next").message ?? "", /non-complete goal/);
+
+  const limited = applyUsage(createGoal(null, "finish", 10).goal!, 10, 0).goal;
+  assert.ok(limited);
+  assert.equal(limited.status, "budgetLimited");
+  assert.equal(createGoal(limited, "next").ok, false);
+  assert.match(createGoal(limited, "next").message ?? "", /non-complete goal/);
+});
+
+test("model-facing create_goal guidance matches create-after-complete semantics", () => {
+  const guidance = TOOL_PROMPT_GUIDELINES.join("\n");
+
+  assert.match(guidance, /non-complete goal/);
+  assert.match(guidance, /After a goal is complete,.*replaces it with a new active goal/);
+  assert.doesNotMatch(guidance, /do not create a second goal while one already exists/);
 });
 
 test("goalsEquivalent compares full goal snapshots", () => {
