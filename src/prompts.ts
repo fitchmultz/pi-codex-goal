@@ -3,12 +3,22 @@ import type { ThreadGoal } from "./types.js";
 
 const CONTINUATION_MARKER_PREFIX = "<pi_goal_continuation goal_id=\"";
 
+export const GOAL_TOOL_NAME_GUIDANCE =
+  "Call each goal tool by the name exposed in your available tool list. In pi that is usually get_goal, create_goal, and update_goal; in bridged MCP runs it may be a namespaced variant such as pi__get_goal, pi__create_goal, or pi__update_goal. Do not assume display, history, or transcript tool names are callable unless they appear in your tool list.";
+
+type GoalToolName = "get_goal" | "create_goal" | "update_goal";
+
+export function goalToolReference(toolName: GoalToolName): string {
+  return `${toolName} (or the exposed namespaced equivalent, such as pi__${toolName})`;
+}
+
 export const TOOL_PROMPT_GUIDELINES = [
-  "Use get_goal when you need to inspect the current long-running user objective.",
-  "Use create_goal only when the user explicitly asks you to start tracking a concrete goal; do not infer goals from ordinary tasks and do not create a second goal while one already exists.",
-  "Use update_goal with status complete only after a completion audit proves the objective is actually achieved and no required work remains.",
-  "Before using update_goal, map every explicit requirement in the goal to concrete evidence from files, command output, test results, PR state, or other real artifacts; uncertainty means the goal is not complete.",
-  "Do not use update_goal merely because work is stopping, substantial progress was made, tests passed without covering every requirement, or the token budget is nearly exhausted.",
+  GOAL_TOOL_NAME_GUIDANCE,
+  `Use ${goalToolReference("get_goal")} when you need to inspect the current long-running user objective.`,
+  `Use ${goalToolReference("create_goal")} only when the user explicitly asks you to start tracking a concrete goal; do not infer goals from ordinary tasks and do not create a second goal while one already exists.`,
+  `Use ${goalToolReference("update_goal")} with status complete only after a completion audit proves the objective is actually achieved and no required work remains.`,
+  `Before using ${goalToolReference("update_goal")}, map every explicit requirement in the goal to concrete evidence from files, command output, test results, PR state, or other real artifacts; uncertainty means the goal is not complete.`,
+  `Do not use ${goalToolReference("update_goal")} merely because work is stopping, substantial progress was made, tests passed without covering every requirement, or the token budget is nearly exhausted.`,
   "When a goal is active, keep working through clear low-risk next steps instead of stopping at a plan.",
 ];
 
@@ -69,9 +79,11 @@ export function continuationPrompt(goal: ThreadGoal): string {
     "- Identify any missing, incomplete, weakly verified, or uncovered requirement.",
     "- Treat uncertainty as not achieved; do more verification or continue the work.",
     "",
-    "Do not rely on intent, partial progress, elapsed effort, memory of earlier work, or a plausible final answer as proof of completion. Only mark the goal achieved when the audit shows that the objective has actually been achieved and no required work remains. If any requirement is missing, incomplete, or unverified, keep working instead of marking the goal complete. If the objective is achieved, call update_goal with status \"complete\" so usage accounting is preserved. Report the final elapsed time, and if the achieved goal has a token budget, report the final consumed token budget to the user after update_goal succeeds.",
+    `Do not rely on intent, partial progress, elapsed effort, memory of earlier work, or a plausible final answer as proof of completion. Only mark the goal achieved when the audit shows that the objective has actually been achieved and no required work remains. If any requirement is missing, incomplete, or unverified, keep working instead of marking the goal complete. If the objective is achieved, call ${goalToolReference("update_goal")} with status \"complete\" so usage accounting is preserved. Report the final elapsed time, and if the achieved goal has a token budget, report the final consumed token budget to the user after the goal-completion tool succeeds.`,
     "",
-    "Do not call update_goal unless the goal is complete. Do not mark a goal complete merely because the budget is nearly exhausted or because you are stopping work.",
+    `Do not call ${goalToolReference("update_goal")} unless the goal is complete. Do not mark a goal complete merely because the budget is nearly exhausted or because you are stopping work.`,
+    "",
+    GOAL_TOOL_NAME_GUIDANCE,
     "</pi_goal_continuation>",
   ].join("\n");
 }
@@ -93,6 +105,8 @@ export function budgetLimitPrompt(goal: ThreadGoal): string {
     "",
     "The system has marked the goal as budget_limited, so do not start new substantive work for this goal. Wrap up this turn soon: summarize useful progress, identify remaining work or blockers, and leave the user with a clear next step.",
     "",
-    "Do not call update_goal unless the goal is actually complete.",
+    `Do not call ${goalToolReference("update_goal")} unless the goal is actually complete.`,
+    "",
+    GOAL_TOOL_NAME_GUIDANCE,
   ].join("\n");
 }

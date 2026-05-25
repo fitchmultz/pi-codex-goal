@@ -65,6 +65,8 @@ This intentionally matches Codex TUI behavior: token budgets are set through the
 
 `update_goal` only accepts `status: "complete"`, matching Codex's model-side contract. The extension reports final token and elapsed-time usage before marking the goal complete.
 
+In bridged MCP environments such as `pi-cursor-sdk`, pi may expose these tools under namespaced MCP names like `pi__get_goal`, `pi__create_goal`, and `pi__update_goal`. Prompt guidance tells models to call whichever goal-tool name is actually exposed in the current run, not display or transcript labels.
+
 ## Behavior
 
 While a goal is active, the extension:
