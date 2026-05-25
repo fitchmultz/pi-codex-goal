@@ -1,16 +1,20 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { mock, test } from "node:test";
 
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-import goalExtension from "../src/index.js";
+import goalExtension, { __testHooks } from "../src/index.js";
 import { formatFooterStatus } from "../src/format.js";
 import {
   compactContinuationPrompt,
   continuationGoalIdFromPrompt,
   continuationPrompt,
 } from "../src/prompts.js";
-import { recoveryAttentionMessage, HOST_OVERFLOW_RECOVERY_REASON } from "../src/recovery.js";
+import {
+  HOST_OVERFLOW_RECOVERY_REASON,
+  recoveryAttentionMessage,
+  recoveryPendingAttentionMessage,
+} from "../src/recovery.js";
 import { isGoalCustomEntry, reconstructGoal } from "../src/state.js";
 import { CUSTOM_ENTRY_TYPE } from "../src/types.js";
 
@@ -276,8 +280,8 @@ interface TestAssistantUsage {
   totalTokens?: number;
 }
 
-function waitForContinuationRetry(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 75));
+function flushContinuationScheduler(): void {
+  mock.timers.tick(__testHooks.continuationRetryMs);
 }
 
 function queuedCustomMessage(sent: SentMessage, timestamp = 1) {
@@ -561,65 +565,75 @@ test("goal tools return Codex-shaped response details", async () => {
 });
 
 test("agent end waits for idle before continuing active goals", async () => {
-  const harness = createRuntimeHarness({ idle: false, pendingMessages: true });
-  await harness.runCommand("ship it");
-  const queued = harness.sentMessages[0];
-  assert.ok(queued);
-  const queuedMessage = queuedCustomMessage(queued);
-  harness.sentMessages.length = 0;
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const harness = createRuntimeHarness({ idle: false, pendingMessages: true });
+    await harness.runCommand("ship it");
+    const queued = harness.sentMessages[0];
+    assert.ok(queued);
+    const queuedMessage = queuedCustomMessage(queued);
+    harness.sentMessages.length = 0;
 
-  await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
-  await harness.emit("message_start", {
-    type: "message_start",
-    message: queuedMessage,
-  });
-  await harness.emit("agent_end", {
-    type: "agent_end",
-    messages: [assistantMessage("stop", { input: 30, output: 12 })],
-  });
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("message_start", {
+      type: "message_start",
+      message: queuedMessage,
+    });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("stop", { input: 30, output: 12 })],
+    });
 
-  assert.equal(harness.sentMessages.length, 0);
-  harness.setIdle(true);
-  harness.setPendingMessages(false);
-  await waitForContinuationRetry();
+    assert.equal(harness.sentMessages.length, 0);
+    harness.setIdle(true);
+    harness.setPendingMessages(false);
+    flushContinuationScheduler();
 
-  const goal = harness.snapshot().goal;
-  assert.equal(goal?.status, "active");
-  assert.equal(harness.sentMessages.length, 1);
-  assert.deepEqual(harness.sentMessages[0]?.message.details, {
-    kind: "continuation",
-    goalId: goal?.goalId,
-  });
+    const goal = harness.snapshot().goal;
+    assert.equal(goal?.status, "active");
+    assert.equal(harness.sentMessages.length, 1);
+    assert.deepEqual(harness.sentMessages[0]?.message.details, {
+      kind: "continuation",
+      goalId: goal?.goalId,
+    });
+  } finally {
+    mock.timers.reset();
+  }
 });
 
 test("completing a goal cancels a scheduled continuation before it is sent", async () => {
-  const harness = createRuntimeHarness({ idle: false, pendingMessages: true });
-  await harness.runCommand("ship it");
-  harness.sentMessages.length = 0;
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const harness = createRuntimeHarness({ idle: false, pendingMessages: true });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
 
-  await harness.emit("agent_end", {
-    type: "agent_end",
-    messages: [assistantMessage("stop", { input: 30, output: 12 })],
-  });
-  assert.equal(harness.sentMessages.length, 0);
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("stop", { input: 30, output: 12 })],
+    });
+    assert.equal(harness.sentMessages.length, 0);
 
-  await harness.runTool("update_goal", { status: "complete" });
-  const completeSetEntries = harness.entries.filter((entry) => {
-    return (
-      entry.type === "custom" &&
-      entry.customType === CUSTOM_ENTRY_TYPE &&
-      isGoalCustomEntry(entry.data) &&
-      entry.data.kind === "set" &&
-      entry.data.goal.status === "complete"
-    );
-  });
-  assert.equal(completeSetEntries.length, 1);
-  harness.setIdle(true);
-  harness.setPendingMessages(false);
-  await waitForContinuationRetry();
+    await harness.runTool("update_goal", { status: "complete" });
+    const completeSetEntries = harness.entries.filter((entry) => {
+      return (
+        entry.type === "custom" &&
+        entry.customType === CUSTOM_ENTRY_TYPE &&
+        isGoalCustomEntry(entry.data) &&
+        entry.data.kind === "set" &&
+        entry.data.goal.status === "complete"
+      );
+    });
+    assert.equal(completeSetEntries.length, 1);
+    harness.setIdle(true);
+    harness.setPendingMessages(false);
+    flushContinuationScheduler();
 
-  assert.equal(harness.snapshot().goal?.status, "complete");
-  assert.equal(harness.sentMessages.length, 0);
+    assert.equal(harness.snapshot().goal?.status, "complete");
+    assert.equal(harness.sentMessages.length, 0);
+  } finally {
+    mock.timers.reset();
+  }
 });
 
 test("stale prompt continuation input is handled before agent start", async () => {
@@ -1995,29 +2009,40 @@ test("context overflow recovery preserves compaction attempts across host sessio
   assert.equal(harness.sentMessages.length, 0);
 });
 
-test("repeated transient errors pause after host default retry cap without hidden retries", async () => {
+test("repeated transient errors stay active with pending attention without hidden retries", async () => {
   const harness = createRuntimeHarness();
   await harness.runCommand("ship it");
   harness.sentMessages.length = 0;
 
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    await emitPersistentAssistantError(harness, attempt, "websocket closed");
-  }
-
-  assert.equal(harness.snapshot().goal?.status, "paused");
-  assert.equal(harness.sentMessages.length, 0);
-  assert.equal(harness.compactCalls.length, 0);
-});
-
-test("transient errors before host retry cap stay active without attention", async () => {
-  const harness = createRuntimeHarness();
-  await harness.runCommand("ship it");
-  harness.sentMessages.length = 0;
-
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
     await emitPersistentAssistantError(harness, attempt, "websocket closed");
     assert.equal(harness.snapshot().goal?.status, "active");
   }
+
+  assert.equal(harness.sentMessages.length, 0);
+  assert.equal(harness.compactCalls.length, 0);
+  assert.match(harness.footerStatuses.at(-1) ?? "", /Goal recovery pending/);
+  assert.doesNotMatch(harness.footerStatuses.at(-1) ?? "", /\/goal resume/);
+});
+
+test("transient errors surface pending attention without pausing before host retry finishes", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  harness.sentMessages.length = 0;
+  harness.footerStatuses.length = 0;
+
+  await emitPersistentAssistantError(harness, 0, "websocket closed");
+
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 0);
+  assert.equal(
+    harness.footerStatuses.at(-1),
+    formatFooterStatus(
+      harness.snapshot().goal,
+      recoveryPendingAttentionMessage("provider error (websocket closed)"),
+    ),
+  );
+  assert.doesNotMatch(harness.footerStatuses.at(-1) ?? "", /\/goal resume/);
 });
 
 test("successful turns reset transient error counters and continue active goals", async () => {
@@ -2151,8 +2176,9 @@ test("first overflow error shows recoverable attention while host recovery is pe
   assert.equal(harness.sentMessages.length, 0);
   assert.equal(
     harness.footerStatuses.at(-1),
-    formatFooterStatus(goal, recoveryAttentionMessage(HOST_OVERFLOW_RECOVERY_REASON)),
+    formatFooterStatus(goal, recoveryPendingAttentionMessage(HOST_OVERFLOW_RECOVERY_REASON)),
   );
+  assert.doesNotMatch(harness.footerStatuses.at(-1) ?? "", /\/goal resume/);
 });
 
 test("overflow without session_compact stays active with pending overflow attention", async () => {
@@ -2168,8 +2194,46 @@ test("overflow without session_compact stays active with pending overflow attent
   assert.equal(harness.sentMessages.length, 0);
   assert.equal(
     harness.footerStatuses.at(-1),
-    formatFooterStatus(goal, recoveryAttentionMessage(HOST_OVERFLOW_RECOVERY_REASON)),
+    formatFooterStatus(goal, recoveryPendingAttentionMessage(HOST_OVERFLOW_RECOVERY_REASON)),
   );
+  assert.doesNotMatch(harness.footerStatuses.at(-1) ?? "", /\/goal resume/);
+});
+
+test("pending overflow shutdown persists paused goal with valid resume guidance", async () => {
+  const harness = createRuntimeHarness({ compactBehavior: "unavailable" });
+  await harness.runCommand("ship it");
+  harness.sentMessages.length = 0;
+  harness.footerStatuses.length = 0;
+
+  await emitPersistentAssistantError(harness, 0, "context_length_exceeded");
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.doesNotMatch(harness.footerStatuses.at(-1) ?? "", /\/goal resume/);
+
+  await harness.emit("session_shutdown", { type: "session_shutdown" });
+
+  const pausedGoal = harness.snapshot().goal;
+  assert.equal(pausedGoal?.status, "paused");
+  assert.match(harness.footerStatuses.at(-1) ?? "", /\/goal resume/);
+  assert.equal(
+    harness.footerStatuses.at(-1),
+    formatFooterStatus(pausedGoal, recoveryAttentionMessage(HOST_OVERFLOW_RECOVERY_REASON)),
+  );
+});
+
+test("session_start after pending overflow shutdown does not auto-continue", async () => {
+  const harness = createRuntimeHarness({ compactBehavior: "unavailable" });
+  await harness.runCommand("ship it");
+  harness.sentMessages.length = 0;
+
+  await emitPersistentAssistantError(harness, 0, "context_length_exceeded");
+  await harness.emit("session_shutdown", { type: "session_shutdown" });
+  assert.equal(harness.snapshot().goal?.status, "paused");
+
+  harness.sentMessages.length = 0;
+  await harness.emit("session_start", { type: "session_start", reason: "startup" });
+
+  assert.equal(harness.snapshot().goal?.status, "paused");
+  assert.equal(harness.sentMessages.length, 0);
 });
 
 test("delayed session_compact keeps goal active without premature pause or extension follow-up", async () => {
@@ -2202,22 +2266,25 @@ test("delayed session_compact keeps goal active without premature pause or exten
   assert.equal(harness.sentMessages.length, 0);
 });
 
-test("/goal resume after transient pause resets recovery counters", async () => {
+test("/goal resume after non-retryable pause resets recovery counters", async () => {
   const harness = createRuntimeHarness();
   await harness.runCommand("ship it");
   harness.sentMessages.length = 0;
 
-  for (let attempt = 0; attempt < 4; attempt += 1) {
-    await emitPersistentAssistantError(harness, attempt, "websocket closed");
-  }
+  await emitPersistentAssistantError(
+    harness,
+    0,
+    "invalid tool call state: malformed function arguments",
+  );
   assert.equal(harness.snapshot().goal?.status, "paused");
 
   harness.sentMessages.length = 0;
   await harness.runCommand("resume");
   assert.equal(harness.snapshot().goal?.status, "active");
 
-  await emitPersistentAssistantError(harness, 4, "websocket closed");
+  await emitPersistentAssistantError(harness, 1, "websocket closed");
   assert.equal(harness.snapshot().goal?.status, "active");
+  assert.match(harness.footerStatuses.at(-1) ?? "", /Goal recovery pending/);
 });
 
 test("/goal resume after overflow pause resets recovery counters", async () => {
@@ -2314,7 +2381,7 @@ test("silent stop overflow suppresses continuation and shows overflow recovery a
   assert.equal(harness.sentMessages.length, 0);
   assert.equal(
     harness.footerStatuses.at(-1),
-    formatFooterStatus(goal, recoveryAttentionMessage(HOST_OVERFLOW_RECOVERY_REASON)),
+    formatFooterStatus(goal, recoveryPendingAttentionMessage(HOST_OVERFLOW_RECOVERY_REASON)),
   );
 });
 
@@ -2346,6 +2413,6 @@ test("zero-output length overflow suppresses continuation and shows overflow rec
   assert.equal(harness.sentMessages.length, 0);
   assert.equal(
     harness.footerStatuses.at(-1),
-    formatFooterStatus(goal, recoveryAttentionMessage(HOST_OVERFLOW_RECOVERY_REASON)),
+    formatFooterStatus(goal, recoveryPendingAttentionMessage(HOST_OVERFLOW_RECOVERY_REASON)),
   );
 });

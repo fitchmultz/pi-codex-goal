@@ -4,10 +4,10 @@ export const CONTEXT_OVERFLOW_SIGNATURE = "context_overflow";
 
 /** Host AgentSession performs one overflow compact-and-retry before giving up. */
 export const MAX_CONTEXT_COMPACTION_RETRIES = 1;
-/** Host default retry settings use maxRetries = 3 before final failure. */
-export const MAX_TRANSIENT_ERROR_RETRIES = 3;
-
 export const HOST_OVERFLOW_RECOVERY_REASON = "recovering from context overflow";
+
+const RECOVERY_PENDING_ATTENTION_SUFFIX =
+  "wait for host retry/compaction or send a new user message if it does not recover.";
 
 export interface AssistantErrorMessage {
   role: string;
@@ -113,6 +113,15 @@ export function countersForFailureSignature(
   };
 }
 
-export function recoveryAttentionMessage(reason: string): string {
+export function recoveryPendingAttentionMessage(reason: string): string {
+  return `Goal recovery pending (${reason}); ${RECOVERY_PENDING_ATTENTION_SUFFIX}`;
+}
+
+export function recoveryPausedAttentionMessage(reason: string): string {
   return `Goal needs attention (${reason}). Use /goal resume to continue.`;
+}
+
+/** Paused goals use /goal resume guidance in footer attention copy. */
+export function recoveryAttentionMessage(reason: string): string {
+  return recoveryPausedAttentionMessage(reason);
 }

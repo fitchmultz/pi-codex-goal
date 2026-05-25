@@ -18,13 +18,20 @@ import {
   staleGoalContinuationContextMessage,
 } from "./queued-goal-work.js";
 import {
-  bumpRecoveryGeneration,
   createGoalRecoveryMachine,
   resetRecoveryMachine,
+  setRecoveryPausedAttention,
   type GoalRecoveryMachineState,
 } from "./recovery-machine.js";
 import { createGoalRecoveryRuntime } from "./recovery-runtime.js";
-import { isAssistantContextOverflow, isContextOverflowError, isErrorAssistantMessage, type AssistantErrorMessage } from "./recovery.js";
+import {
+  HOST_OVERFLOW_RECOVERY_REASON,
+  isAssistantContextOverflow,
+  isContextOverflowError,
+  isErrorAssistantMessage,
+  recoveryPendingAttentionMessage,
+  type AssistantErrorMessage,
+} from "./recovery.js";
 import { clearEntry, goalWithLiveUsage, goalsEquivalent, reconstructGoal, setEntry, updateGoalStatus } from "./state.js";
 import { registerGoalTools } from "./tools.js";
 import { CUSTOM_ENTRY_TYPE, type GoalEntrySource, type GoalResult, type ThreadGoal } from "./types.js";
@@ -34,6 +41,10 @@ interface StatusContext {
 }
 
 const CONTINUATION_RETRY_MS = 50;
+
+export const __testHooks = {
+  continuationRetryMs: CONTINUATION_RETRY_MS,
+};
 
 export default function (pi: ExtensionAPI): void {
   let goal: ThreadGoal | null = null;
@@ -56,7 +67,6 @@ export default function (pi: ExtensionAPI): void {
   const accounting = createAccountingState();
   let recoveryState: GoalRecoveryMachineState = createGoalRecoveryMachine();
   let hostOverflowRecoveryInProgress = false;
-  let hostOverflowCompactReceived = false;
 
   const goalForDisplay = (): ThreadGoal | null =>
     goalWithLiveUsage(goal, accounting.activeGoalId, accounting.lastAccountedAt);
@@ -79,7 +89,6 @@ export default function (pi: ExtensionAPI): void {
   const resetErrorRecovery = (): void => {
     resetRecoveryMachine(recoveryState);
     hostOverflowRecoveryInProgress = false;
-    hostOverflowCompactReceived = false;
   };
 
   const clearContinuationState = (): void => {
@@ -285,7 +294,6 @@ export default function (pi: ExtensionAPI): void {
     goal = nextGoal;
     if (previousGoalId !== nextGoal.goalId) {
       accounting.budgetWarningSentFor = null;
-      bumpRecoveryGeneration(recoveryState);
       clearStoppedRuntimeState();
     }
     if (nextGoal.status === "complete") {
@@ -430,9 +438,33 @@ export default function (pi: ExtensionAPI): void {
     maybeContinue,
   });
 
+  const pauseForPendingOverflowShutdown = (ctx: ExtensionContext): void => {
+    if (!goal || goal.status !== "active") {
+      return;
+    }
+
+    const result = updateGoalStatus(goal, "paused");
+    if (!result.ok || !result.goal) {
+      return;
+    }
+
+    clearContinuationState();
+    hostOverflowRecoveryInProgress = false;
+    setRecoveryPausedAttention(recoveryState, HOST_OVERFLOW_RECOVERY_REASON);
+    persistGoal(result.goal, "runtime");
+    refreshUi(ctx);
+  };
+
+  const hasPendingOverflowRecovery = (): boolean => {
+    return (
+      hostOverflowRecoveryInProgress &&
+      goal?.status === "active" &&
+      recoveryState.attention === recoveryPendingAttentionMessage(HOST_OVERFLOW_RECOVERY_REASON)
+    );
+  };
+
   const beginOverflowRecoveryAttention = (ctx: ExtensionContext): void => {
     hostOverflowRecoveryInProgress = true;
-    hostOverflowCompactReceived = false;
     recoveryRuntime.beginOverflowRecovery(ctx);
   };
 
@@ -703,7 +735,6 @@ export default function (pi: ExtensionAPI): void {
     if (goal) {
       persistGoal(goal, "runtime");
     }
-    hostOverflowCompactReceived = true;
     recoveryRuntime.onSessionCompact();
     refreshUi(ctx);
     if (!hostOverflowRecoveryInProgress) {
@@ -724,7 +755,11 @@ export default function (pi: ExtensionAPI): void {
 
     goalAccounting.accountProgress(ctx, false, 0, true);
     clearContinuationTimer();
-    resetErrorRecovery();
+    if (hasPendingOverflowRecovery()) {
+      pauseForPendingOverflowShutdown(ctx);
+    } else {
+      resetErrorRecovery();
+    }
     stopStatusRefresh();
   });
 }

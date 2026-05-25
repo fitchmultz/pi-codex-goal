@@ -49,7 +49,7 @@ function createRecoveryTestRuntime() {
   };
 }
 
-test("persistent provider errors plan attention without scheduling hidden continuation", () => {
+test("persistent provider errors plan pending attention without scheduling hidden continuation", () => {
   const harness = createRecoveryTestRuntime();
 
   harness.runtime.handlePersistentAssistantError(
@@ -59,6 +59,8 @@ test("persistent provider errors plan attention without scheduling hidden contin
 
   assert.equal(harness.continueCount, 0);
   assert.equal(harness.recoveryState.counters.transientAttempts, 1);
+  assert.match(harness.recoveryState.attention ?? "", /Goal recovery pending/);
+  assert.doesNotMatch(harness.recoveryState.attention ?? "", /\/goal resume/);
 });
 
 test("persistent overflow errors do not invoke extension compaction hooks", () => {

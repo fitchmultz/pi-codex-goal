@@ -8,30 +8,27 @@ import {
   isRetryableTransientError,
   isSuccessfulAssistantTurn,
   MAX_CONTEXT_COMPACTION_RETRIES,
-  MAX_TRANSIENT_ERROR_RETRIES,
-  recoveryAttentionMessage,
+  recoveryPausedAttentionMessage,
+  recoveryPendingAttentionMessage,
   type AssistantErrorMessage,
   type ErrorRecoveryCounters,
 } from "./recovery.js";
 
-export type RecoveryAction = { type: "noop" } | { type: "pause"; reason: string };
+export type RecoveryAction =
+  | { type: "noop" }
+  | { type: "pending"; reason: string }
+  | { type: "pause"; reason: string };
 
 export interface GoalRecoveryMachineState {
   counters: ErrorRecoveryCounters;
-  generation: number;
   attention: string | null;
 }
 
 export function createGoalRecoveryMachine(): GoalRecoveryMachineState {
   return {
     counters: createErrorRecoveryCounters(),
-    generation: 0,
     attention: null,
   };
-}
-
-export function bumpRecoveryGeneration(state: GoalRecoveryMachineState): void {
-  state.generation += 1;
 }
 
 export function resetRecoveryMachine(state: GoalRecoveryMachineState): void {
@@ -60,7 +57,7 @@ export function onRecoverySuccessfulTurn(
 }
 
 export function onRecoverySessionCompact(state: GoalRecoveryMachineState): void {
-  if (state.attention === recoveryAttentionMessage(HOST_OVERFLOW_RECOVERY_REASON)) {
+  if (state.attention === recoveryPendingAttentionMessage(HOST_OVERFLOW_RECOVERY_REASON)) {
     state.attention = null;
   }
 
@@ -76,14 +73,20 @@ export function onRecoverySessionCompact(state: GoalRecoveryMachineState): void 
   resetRecoveryCounters(state);
 }
 
-export function setRecoveryAttention(state: GoalRecoveryMachineState, reason: string): string {
-  const message = recoveryAttentionMessage(reason);
+export function setRecoveryPendingAttention(state: GoalRecoveryMachineState, reason: string): string {
+  const message = recoveryPendingAttentionMessage(reason);
+  state.attention = message;
+  return message;
+}
+
+export function setRecoveryPausedAttention(state: GoalRecoveryMachineState, reason: string): string {
+  const message = recoveryPausedAttentionMessage(reason);
   state.attention = message;
   return message;
 }
 
 export function beginHostOverflowRecovery(state: GoalRecoveryMachineState): string {
-  return setRecoveryAttention(state, HOST_OVERFLOW_RECOVERY_REASON);
+  return setRecoveryPendingAttention(state, HOST_OVERFLOW_RECOVERY_REASON);
 }
 
 function incrementOverflowCompactionAttempts(state: GoalRecoveryMachineState): RecoveryAction {
@@ -128,13 +131,10 @@ export function planRecoveryForAssistantError(
     ...state.counters,
     transientAttempts: state.counters.transientAttempts + 1,
   };
-  if (state.counters.transientAttempts > MAX_TRANSIENT_ERROR_RETRIES) {
-    return {
-      type: "pause",
-      reason: `provider error persisted (${signature})`,
-    };
-  }
-  return { type: "noop" };
+  return {
+    type: "pending",
+    reason: `provider error (${signature})`,
+  };
 }
 
 export function planRecoveryForSilentContextOverflow(state: GoalRecoveryMachineState): RecoveryAction {

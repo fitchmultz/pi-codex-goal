@@ -7,8 +7,8 @@ import {
   onRecoveryUserInput,
   planRecoveryForAssistantError,
   planRecoveryForSilentContextOverflow,
-  resetRecoveryMachine,
-  setRecoveryAttention,
+  setRecoveryPausedAttention,
+  setRecoveryPendingAttention,
   type GoalRecoveryMachineState,
   type RecoveryAction,
 } from "./recovery-machine.js";
@@ -25,10 +25,6 @@ interface RecoveryRuntimeDeps {
 }
 
 export function createGoalRecoveryRuntime(deps: RecoveryRuntimeDeps) {
-  const resetErrorRecovery = (): void => {
-    resetRecoveryMachine(deps.getRecoveryState());
-  };
-
   const pauseForRecoveryAttention = (ctx: ExtensionContext, reason: string): void => {
     const goal = deps.getGoal();
     if (!goal || goal.status !== "active") {
@@ -37,7 +33,7 @@ export function createGoalRecoveryRuntime(deps: RecoveryRuntimeDeps) {
 
     deps.clearContinuationState();
     deps.pauseGoalForRecovery(ctx, goal);
-    setRecoveryAttention(deps.getRecoveryState(), reason);
+    setRecoveryPausedAttention(deps.getRecoveryState(), reason);
     deps.refreshUi(ctx);
   };
 
@@ -45,6 +41,16 @@ export function createGoalRecoveryRuntime(deps: RecoveryRuntimeDeps) {
     switch (action.type) {
       case "noop":
         return;
+      case "pending": {
+        const goal = deps.getGoal();
+        if (!goal || goal.status !== "active") {
+          return;
+        }
+        deps.clearContinuationState();
+        setRecoveryPendingAttention(deps.getRecoveryState(), action.reason);
+        deps.refreshUi(ctx);
+        return;
+      }
       case "pause":
         pauseForRecoveryAttention(ctx, action.reason);
         return;
@@ -91,7 +97,6 @@ export function createGoalRecoveryRuntime(deps: RecoveryRuntimeDeps) {
   };
 
   return {
-    resetErrorRecovery,
     onUserInput: () => {
       onRecoveryUserInput(deps.getRecoveryState());
     },

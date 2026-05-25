@@ -12,7 +12,7 @@ import {
   isErrorAssistantMessage,
   isRetryableTransientError,
   isSuccessfulAssistantTurn,
-  recoveryAttentionMessage,
+  recoveryPendingAttentionMessage,
 } from "../src/recovery.js";
 import {
   beginHostOverflowRecovery,
@@ -148,30 +148,23 @@ test("varied retryable transient errors stay active without tripping signature-s
       state,
       { role: "assistant", stopReason: "error", errorMessage },
     );
-    assert.equal(action.type, "noop", `${errorMessage} should stay active`);
+    assert.equal(action.type, "pending", `${errorMessage} should surface pending attention`);
     assert.equal(state.counters.transientAttempts, 1, `${errorMessage} should reset per signature`);
   }
 });
 
-test("repeated identical transient errors pause after signature-scoped retry cap", () => {
+test("repeated identical transient errors stay pending without host-default pause caps", () => {
   const state = createGoalRecoveryMachine();
   const errorMessage = "websocket closed";
 
-  for (let index = 0; index < 3; index += 1) {
+  for (let index = 0; index < 10; index += 1) {
     const action = planRecoveryForAssistantError(
       state,
       { role: "assistant", stopReason: "error", errorMessage },
     );
-    assert.equal(action.type, "noop", `attempt ${index + 1} should stay active`);
+    assert.equal(action.type, "pending", `attempt ${index + 1} should stay pending`);
     assert.equal(state.counters.transientAttempts, index + 1);
   }
-
-  const finalAction = planRecoveryForAssistantError(
-    state,
-    { role: "assistant", stopReason: "error", errorMessage },
-  );
-  assert.equal(finalAction.type, "pause");
-  assert.equal(state.counters.transientAttempts, 4);
 });
 
 test("successful assistant turns exclude errors and aborts", () => {
@@ -193,8 +186,9 @@ test("beginHostOverflowRecovery surfaces pending attention without pausing", () 
   const state = createGoalRecoveryMachine();
   assert.equal(
     beginHostOverflowRecovery(state),
-    recoveryAttentionMessage(HOST_OVERFLOW_RECOVERY_REASON),
+    recoveryPendingAttentionMessage(HOST_OVERFLOW_RECOVERY_REASON),
   );
+  assert.doesNotMatch(state.attention ?? "", /\/goal resume/);
 });
 
 test("recovery session compact preserves overflow attempt counts after host compaction", () => {
@@ -236,22 +230,17 @@ test("silent context overflow increments compaction attempts like error overflow
   assert.equal(state.counters.signature, CONTEXT_OVERFLOW_SIGNATURE);
 });
 
-test("recovery plans pause after host default transient retry cap", () => {
+test("retryable transient errors surface pending attention instead of pausing", () => {
   const state = createGoalRecoveryMachine();
-  state.counters = {
-    signature: "websocket closed",
-    transientAttempts: 3,
-    compactionAttempts: 0,
-  };
   const action = planRecoveryForAssistantError(
     state,
     { role: "assistant", stopReason: "error", errorMessage: "websocket closed" },
   );
-  assert.equal(action.type, "pause");
-  assert.equal(state.counters.transientAttempts, 4);
+  assert.equal(action.type, "pending");
+  assert.equal(state.counters.transientAttempts, 1);
 });
 
-test("recovery plans noop while under host-owned overflow and transient caps", () => {
+test("recovery plans noop for first overflow and pending for first transient error", () => {
   const overflow = planRecoveryForAssistantError(
     createGoalRecoveryMachine(),
     { role: "assistant", stopReason: "error", errorMessage: "context_length_exceeded" },
@@ -262,7 +251,7 @@ test("recovery plans noop while under host-owned overflow and transient caps", (
     createGoalRecoveryMachine(),
     { role: "assistant", stopReason: "error", errorMessage: "websocket closed" },
   );
-  assert.equal(transient.type, "noop");
+  assert.equal(transient.type, "pending");
 });
 
 test("non-retryable provider errors pause immediately", () => {
