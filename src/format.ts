@@ -94,6 +94,9 @@ function commandHint(status: GoalStatus): string {
   if (status === "paused") {
     return "/goal resume, /goal clear";
   }
+  if (status === "complete") {
+    return "/goal <objective> to replace, /goal clear";
+  }
   return "/goal clear";
 }
 

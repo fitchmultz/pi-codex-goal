@@ -3,7 +3,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { registerGoalCommand } from "./commands.js";
 import { formatFooterStatus } from "./format.js";
 import { budgetLimitPrompt, continuationGoalIdFromPrompt, continuationPrompt } from "./prompts.js";
-import { applyUsage, clearEntry, goalWithLiveUsage, reconstructGoal, setEntry, updateGoalStatus } from "./state.js";
+import { applyUsage, clearEntry, goalWithLiveUsage, goalsEquivalent, reconstructGoal, setEntry, updateGoalStatus } from "./state.js";
 import { registerGoalTools } from "./tools.js";
 import { CUSTOM_ENTRY_TYPE, type GoalEntrySource, type GoalResult, type ThreadGoal } from "./types.js";
 
@@ -409,7 +409,11 @@ export default function (pi: ExtensionAPI): void {
     return true;
   };
 
-  const persistGoal = (nextGoal: ThreadGoal, source: GoalEntrySource): void => {
+  const persistGoal = (nextGoal: ThreadGoal, source: GoalEntrySource): boolean => {
+    if (goal && goalsEquivalent(goal, nextGoal)) {
+      return false;
+    }
+
     const previousGoalId = goal?.goalId ?? null;
     goal = nextGoal;
     if (previousGoalId !== nextGoal.goalId) {
@@ -425,6 +429,7 @@ export default function (pi: ExtensionAPI): void {
       accounting.budgetWarningSentFor = null;
     }
     pi.appendEntry(CUSTOM_ENTRY_TYPE, setEntry(nextGoal, source));
+    return true;
   };
 
   const persistClear = (source: GoalEntrySource): void => {
@@ -530,6 +535,9 @@ export default function (pi: ExtensionAPI): void {
     accountProgress(ctx, false, 0, true);
     const result = updateGoalStatus(goal, "complete");
     if (!result.ok || !result.goal) {
+      return result;
+    }
+    if (goal && goalsEquivalent(goal, result.goal)) {
       return result;
     }
     persistGoal(result.goal, source);

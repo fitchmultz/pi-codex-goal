@@ -28,6 +28,19 @@ export function cloneGoal(goal: ThreadGoal): ThreadGoal {
   };
 }
 
+export function goalsEquivalent(left: ThreadGoal, right: ThreadGoal): boolean {
+  return (
+    left.goalId === right.goalId &&
+    left.objective === right.objective &&
+    left.status === right.status &&
+    left.tokenBudget === right.tokenBudget &&
+    left.createdAt === right.createdAt &&
+    left.updatedAt === right.updatedAt &&
+    left.usage.tokensUsed === right.usage.tokensUsed &&
+    left.usage.activeSeconds === right.usage.activeSeconds
+  );
+}
+
 export function validateObjective(objective: string): string | null {
   const trimmed = objective.trim();
   if (trimmed.length === 0) {
@@ -155,11 +168,11 @@ export function reconstructGoal(entries: Iterable<SessionEntryLike>): GoalSnapsh
 }
 
 export function createGoal(current: ThreadGoal | null, objective: string, tokenBudget?: number | null): GoalResult {
-  if (current) {
+  if (current && current.status !== "complete") {
     return {
       ok: false,
       message:
-        "cannot create a new goal because this thread already has a goal; use update_goal only when the existing goal is complete",
+        "cannot create a new goal because this thread already has an active goal; use update_goal to mark it complete, /goal clear, or /goal <objective> to replace it",
       goal: current,
     };
   }
@@ -207,6 +220,48 @@ export function updateGoalStatus(current: ThreadGoal | null, status: GoalStatus)
       ok: false,
       message: "No active goal exists.",
       goal: null,
+    };
+  }
+
+  if (current.status === "complete") {
+    if (status === "complete") {
+      return {
+        ok: true,
+        message: "Goal already complete.",
+        goal: current,
+      };
+    }
+    return {
+      ok: false,
+      message: "Completed goals are terminal; use /goal <objective> to replace or /goal clear before changing status.",
+      goal: current,
+    };
+  }
+
+  if (status === "complete") {
+    const goal = cloneGoal(current);
+    goal.status = "complete";
+    goal.updatedAt = unixSeconds();
+    return {
+      ok: true,
+      message: "Goal marked complete.",
+      goal,
+    };
+  }
+
+  if (status === "paused" && current.status !== "active") {
+    return {
+      ok: false,
+      message: "Only active goals can be paused.",
+      goal: current,
+    };
+  }
+
+  if (status === "active" && current.status !== "paused") {
+    return {
+      ok: false,
+      message: "Only paused goals can be resumed.",
+      goal: current,
     };
   }
 

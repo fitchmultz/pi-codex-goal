@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Makes goal lifecycle transitions terminal and idempotent: duplicate `update_goal complete` calls no longer append extra session entries, completed goals cannot be paused or resumed, and runtime/compaction skips unchanged goal snapshots.
+- Allows `create_goal` to replace a completed goal and clarifies recovery via `/goal <objective>` or `/goal clear`.
+- Surfaces failed goal tool calls as real pi tool errors by throwing from tool handlers.
+
 ## 0.1.12 - 2026-05-23
 
 - Updated the local pi development baseline to `@earendil-works/*` `0.75.5`, refreshed Node/tsx tooling, and regenerated the npm lockfile.

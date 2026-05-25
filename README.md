@@ -59,11 +59,13 @@ This intentionally matches Codex TUI behavior: token budgets are set through the
 
 ## Model Tools
 
-`create_goal` starts a goal with an objective and optional positive token budget. It fails if a goal already exists.
+`create_goal` starts a goal with an objective and optional positive token budget. It fails if a non-complete goal already exists. After a goal is complete, `create_goal` replaces it with a new active goal.
 
 `get_goal` returns the current goal state and usage.
 
-`update_goal` only accepts `status: "complete"`, matching Codex's model-side contract. The extension reports final token and elapsed-time usage before marking the goal complete.
+`update_goal` only accepts `status: "complete"`, matching Codex's model-side contract. Calling it on an already-complete goal is idempotent and does not append duplicate session entries. The extension reports final token and elapsed-time usage before marking the goal complete.
+
+Completed goals are terminal for automatic transitions: pause, resume, and hidden continuations do not reopen them. To recover from premature completion, use `/goal <objective>` to replace the goal or `/goal clear` before starting again.
 
 In bridged MCP environments such as `pi-cursor-sdk`, pi may expose these tools under namespaced MCP names like `pi__get_goal`, `pi__create_goal`, and `pi__update_goal`. Prompt guidance tells models to call whichever goal-tool name is actually exposed in the current run, not display or transcript labels.
 
@@ -74,7 +76,9 @@ While a goal is active, the extension:
 - tracks elapsed active time between turns and tool completions
 - adds completed assistant turn input plus output token usage when the active model reports it
 - pauses when an active assistant turn is aborted, such as when you press Esc
-- prompts on session resume before reactivating a paused goal, and resumes explicitly with `/goal resume`
+- prompts on session resume before reactivating a paused goal, and resumes explicitly with `/goal resume` (only from paused)
+- rejects `/goal pause` unless the goal is active and `/goal resume` unless the goal is paused
+- treats completed goals as terminal for automatic transitions while allowing `/goal <objective>` to replace them without extra friction
 - marks the goal `budgetLimited` when a positive token budget is reached
 - sends hidden steering messages when budget is reached or when the agent is idle but the goal is still active
 - shows Codex-style status labels with compact token or elapsed-time usage in the pi footer when UI is available

@@ -110,6 +110,60 @@ test("/goal resume restarts a hidden follow-up turn", async () => {
   assert.match(content, /<untrusted_objective>\nship the feature\n<\/untrusted_objective>/);
 });
 
+test("/goal pause rejects completed and paused goals", async () => {
+  const harness = createHarness();
+
+  await handleGoalCommand(harness.pi, harness.host, "ship the feature", harness.ctx);
+  const completed = updateGoalStatus(harness.goal, "complete").goal;
+  assert.ok(completed);
+  harness.setGoal(completed);
+
+  await handleGoalCommand(harness.pi, harness.host, "pause", harness.ctx);
+  assert.equal(harness.goal?.status, "complete");
+  assert.match(harness.notifications.at(-1) ?? "", /Completed goals are terminal/);
+
+  const paused = updateGoalStatus(completed, "paused");
+  assert.equal(paused.ok, false);
+});
+
+test("/goal resume rejects completed and active goals", async () => {
+  const harness = createHarness();
+
+  await handleGoalCommand(harness.pi, harness.host, "ship the feature", harness.ctx);
+  const completed = updateGoalStatus(harness.goal, "complete").goal;
+  assert.ok(completed);
+  harness.setGoal(completed);
+
+  await handleGoalCommand(harness.pi, harness.host, "resume", harness.ctx);
+  assert.equal(harness.goal?.status, "complete");
+  assert.match(harness.notifications.at(-1) ?? "", /Completed goals are terminal/);
+
+  await handleGoalCommand(harness.pi, harness.host, "ship the feature", harness.ctx);
+  assert.equal(harness.goal?.status, "active");
+  harness.sentMessages.length = 0;
+
+  await handleGoalCommand(harness.pi, harness.host, "resume", harness.ctx);
+  assert.equal(harness.goal?.status, "active");
+  assert.match(harness.notifications.at(-1) ?? "", /Only paused goals can be resumed/);
+});
+
+test("/goal objective replaces a completed goal without confirmation", async () => {
+  const harness = createHarness();
+
+  await handleGoalCommand(harness.pi, harness.host, "old objective", harness.ctx);
+  const completed = updateGoalStatus(harness.goal, "complete").goal;
+  assert.ok(completed);
+  harness.setGoal(completed);
+  harness.sentMessages.length = 0;
+
+  await handleGoalCommand(harness.pi, harness.host, "new objective", harness.ctx);
+
+  assert.equal(harness.goal?.objective, "new objective");
+  assert.equal(harness.goal?.status, "active");
+  assert.notEqual(harness.goal?.goalId, completed.goalId);
+  assert.equal(harness.sentMessages.length, 1);
+});
+
 test("/goal resume does not restart an over-budget budget-limited goal", async () => {
   const harness = createHarness();
 

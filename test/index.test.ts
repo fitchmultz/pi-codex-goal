@@ -1260,6 +1260,70 @@ test("goal follow-up guard resets when custom-message continuations start", asyn
   });
 });
 
+test("duplicate update_goal complete appends only one complete entry", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+
+  await harness.runTool("update_goal", { status: "complete" });
+  await harness.runTool("update_goal", { status: "complete" });
+
+  const completeSetEntries = harness.entries.filter((entry) => {
+    return (
+      entry.type === "custom" &&
+      entry.customType === CUSTOM_ENTRY_TYPE &&
+      isGoalCustomEntry(entry.data) &&
+      entry.data.kind === "set" &&
+      entry.data.goal.status === "complete"
+    );
+  });
+  assert.equal(completeSetEntries.length, 1);
+  assert.equal(harness.snapshot().goal?.status, "complete");
+});
+
+test("compaction after complete does not append duplicate runtime entries", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  await harness.runTool("update_goal", { status: "complete" });
+  const entryCountAfterComplete = harness.entries.length;
+
+  await harness.emit("session_before_compact", {
+    type: "session_before_compact",
+    preparation: {},
+    branchEntries: [],
+    signal: new AbortController().signal,
+  });
+  await harness.emit("session_compact", {
+    type: "session_compact",
+    compactionEntry: {},
+    fromExtension: false,
+  });
+
+  assert.equal(harness.entries.length, entryCountAfterComplete);
+  assert.equal(harness.snapshot().goal?.status, "complete");
+});
+
+test("create_goal replaces a completed goal", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  const completedGoalId = harness.snapshot().goal?.goalId;
+  await harness.runTool("update_goal", { status: "complete" });
+
+  const created = (await harness.runTool("create_goal", { objective: "next objective" })) as {
+    details: Record<string, unknown>;
+  };
+
+  assert.equal((created.details.goal as { objective?: string }).objective, "next objective");
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.notEqual(harness.snapshot().goal?.goalId, completedGoalId);
+});
+
+test("failed create_goal throws so pi marks the tool result as an error", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+
+  await assert.rejects(() => harness.runTool("create_goal", { objective: "duplicate" }), /already has an active goal/);
+});
+
 test("session compaction queues continuation for active goals after length stops", async () => {
   const harness = createRuntimeHarness({ idle: false, pendingMessages: true });
   await harness.runCommand("ship it");

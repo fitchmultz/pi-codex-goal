@@ -8,6 +8,7 @@ import {
   clearEntry,
   createGoal,
   goalWithLiveUsage,
+  goalsEquivalent,
   reconstructGoal,
   setEntry,
   updateGoalStatus,
@@ -119,6 +120,55 @@ test("goalWithLiveUsage adds in-progress active time for display", () => {
 test("maximum goal objective length remains 8000 Unicode scalars in this package", () => {
   assert.equal(createGoal(null, "x".repeat(8_000)).ok, true);
   assert.equal(createGoal(null, "x".repeat(8_001)).ok, false);
+});
+
+test("updateGoalStatus rejects pause and resume on completed goals", () => {
+  const created = createGoal(null, "finish").goal;
+  assert.ok(created);
+  const completed = updateGoalStatus(created, "complete").goal;
+  assert.ok(completed);
+  assert.equal(completed.status, "complete");
+
+  assert.equal(updateGoalStatus(completed, "complete").ok, true);
+  assert.equal(updateGoalStatus(completed, "complete").message, "Goal already complete.");
+  assert.equal(updateGoalStatus(completed, "paused").ok, false);
+  assert.equal(updateGoalStatus(completed, "active").ok, false);
+});
+
+test("updateGoalStatus only allows pause from active and resume from paused", () => {
+  const created = createGoal(null, "finish").goal;
+  assert.ok(created);
+
+  assert.equal(updateGoalStatus(created, "paused").ok, true);
+  const paused = updateGoalStatus(created, "paused").goal;
+  assert.ok(paused);
+  assert.equal(paused.status, "paused");
+
+  assert.equal(updateGoalStatus(paused, "paused").ok, false);
+
+  const resumed = updateGoalStatus(paused, "active").goal;
+  assert.ok(resumed);
+  assert.equal(resumed.status, "active");
+
+  assert.equal(updateGoalStatus(resumed, "active").ok, false);
+});
+
+test("createGoal replaces completed goals and rejects active duplicates", () => {
+  const created = createGoal(null, "finish").goal;
+  assert.ok(created);
+  const completed = updateGoalStatus(created, "complete").goal;
+  assert.ok(completed);
+
+  assert.equal(createGoal(completed, "next").ok, true);
+  assert.equal(createGoal(created, "next").ok, false);
+});
+
+test("goalsEquivalent compares full goal snapshots", () => {
+  const created = createGoal(null, "finish").goal;
+  assert.ok(created);
+  const clone = { ...created, usage: { ...created.usage } };
+  assert.equal(goalsEquivalent(created, clone), true);
+  assert.equal(goalsEquivalent(created, { ...clone, status: "paused" }), false);
 });
 
 test("budget-limited goals cannot be paused or resumed back to active while over budget", () => {
