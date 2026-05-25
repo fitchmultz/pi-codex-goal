@@ -34,7 +34,10 @@ interface StatusContext {
 }
 
 const CONTINUATION_RETRY_MS = 50;
-const OVERFLOW_RECOVERY_FALLBACK_MS = 50;
+
+type ExtensionContextWithWaitForIdle = ExtensionContext & {
+  waitForIdle?: () => Promise<void>;
+};
 
 export default function (pi: ExtensionAPI): void {
   let goal: ThreadGoal | null = null;
@@ -58,7 +61,7 @@ export default function (pi: ExtensionAPI): void {
   let recoveryState: GoalRecoveryMachineState = createGoalRecoveryMachine();
   let hostOverflowRecoveryInProgress = false;
   let hostOverflowCompactReceived = false;
-  let overflowRecoveryFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+  let overflowRecoveryFallbackGeneration = 0;
 
   const goalForDisplay = (): ThreadGoal | null =>
     goalWithLiveUsage(goal, accounting.activeGoalId, accounting.lastAccountedAt);
@@ -78,18 +81,55 @@ export default function (pi: ExtensionAPI): void {
     continuationScheduledFor = null;
   };
 
-  const clearOverflowRecoveryFallback = (): void => {
-    if (overflowRecoveryFallbackTimer) {
-      clearTimeout(overflowRecoveryFallbackTimer);
-      overflowRecoveryFallbackTimer = null;
+  const cancelOverflowRecoveryFallback = (): void => {
+    overflowRecoveryFallbackGeneration += 1;
+  };
+
+  const waitForHostPostRunCompletion = async (ctx: ExtensionContext): Promise<void> => {
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
+    const waitForIdle = (ctx as ExtensionContextWithWaitForIdle).waitForIdle;
+    if (waitForIdle) {
+      await waitForIdle();
+      return;
     }
+    await new Promise<void>((resolve) => {
+      setImmediate(resolve);
+    });
+  };
+
+  const maybePauseIncompleteOverflowRecovery = (
+    ctx: ExtensionContext,
+    generation: number,
+  ): void => {
+    if (generation !== overflowRecoveryFallbackGeneration) {
+      return;
+    }
+    if (!hostOverflowRecoveryInProgress || hostOverflowCompactReceived) {
+      return;
+    }
+    if (!goal || goal.status !== "active") {
+      return;
+    }
+
+    hostOverflowRecoveryInProgress = false;
+    recoveryRuntime.pauseIncompleteOverflowRecovery(ctx);
+  };
+
+  const runOverflowRecoveryFallback = async (
+    ctx: ExtensionContext,
+    generation: number,
+  ): Promise<void> => {
+    await waitForHostPostRunCompletion(ctx);
+    maybePauseIncompleteOverflowRecovery(ctx, generation);
   };
 
   const resetErrorRecovery = (): void => {
     resetRecoveryMachine(recoveryState);
     hostOverflowRecoveryInProgress = false;
     hostOverflowCompactReceived = false;
-    clearOverflowRecoveryFallback();
+    cancelOverflowRecoveryFallback();
   };
 
   const clearContinuationState = (): void => {
@@ -441,20 +481,9 @@ export default function (pi: ExtensionAPI): void {
   });
 
   const scheduleOverflowRecoveryFallback = (ctx: ExtensionContext): void => {
-    clearOverflowRecoveryFallback();
-    overflowRecoveryFallbackTimer = setTimeout(() => {
-      overflowRecoveryFallbackTimer = null;
-      if (!hostOverflowRecoveryInProgress || hostOverflowCompactReceived) {
-        return;
-      }
-      if (!goal || goal.status !== "active") {
-        return;
-      }
-
-      hostOverflowRecoveryInProgress = false;
-      recoveryRuntime.pauseIncompleteOverflowRecovery(ctx);
-    }, OVERFLOW_RECOVERY_FALLBACK_MS);
-    overflowRecoveryFallbackTimer.unref?.();
+    cancelOverflowRecoveryFallback();
+    const generation = overflowRecoveryFallbackGeneration;
+    void runOverflowRecoveryFallback(ctx, generation);
   };
 
   const beginOverflowRecoveryAttention = (ctx: ExtensionContext): void => {
@@ -721,6 +750,9 @@ export default function (pi: ExtensionAPI): void {
     }
 
     goalAccounting.accountProgress(ctx, false, 0, true);
+    if (hostOverflowRecoveryInProgress && !hostOverflowCompactReceived) {
+      scheduleOverflowRecoveryFallback(ctx);
+    }
   });
 
   pi.on("session_compact", async (_event, ctx) => {
@@ -732,7 +764,7 @@ export default function (pi: ExtensionAPI): void {
       persistGoal(goal, "runtime");
     }
     hostOverflowCompactReceived = true;
-    clearOverflowRecoveryFallback();
+    cancelOverflowRecoveryFallback();
     recoveryRuntime.onSessionCompact();
     refreshUi(ctx);
     if (!hostOverflowRecoveryInProgress) {
@@ -753,7 +785,7 @@ export default function (pi: ExtensionAPI): void {
 
     goalAccounting.accountProgress(ctx, false, 0, true);
     clearContinuationTimer();
-    clearOverflowRecoveryFallback();
+    cancelOverflowRecoveryFallback();
     resetErrorRecovery();
     stopStatusRefresh();
   });

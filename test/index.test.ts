@@ -27,6 +27,7 @@ function createRuntimeHarness(options: {
   compactBehavior?: "success" | "error" | "unavailable";
   compactCompletion?: "immediate" | "manual";
   contextWindow?: number;
+  waitForIdleMode?: "immediate" | "manual";
 } = {}) {
   const entries: ReturnType<ExtensionCommandContext["sessionManager"]["getBranch"]> = [];
   const handlers = new Map<string, EventHandler[]>();
@@ -52,6 +53,8 @@ function createRuntimeHarness(options: {
   let commandHandler: ((args: string, ctx: ExtensionCommandContext) => void | Promise<void>) | null = null;
   let ctx: ExtensionCommandContext;
   let entryIndex = 0;
+  const waitForIdleMode = options.waitForIdleMode ?? "immediate";
+  let waitForIdleWaiters: Array<() => void> = [];
 
   const on = ((event: string, handler: EventHandler) => {
     const currentHandlers = handlers.get(event) ?? [];
@@ -182,7 +185,14 @@ function createRuntimeHarness(options: {
     signal: undefined,
     switchSession: async () => ({ cancelled: false }),
     ui,
-    waitForIdle: async () => {},
+    waitForIdle: async () => {
+      if (waitForIdleMode === "immediate") {
+        return;
+      }
+      await new Promise<void>((resolve) => {
+        waitForIdleWaiters.push(resolve);
+      });
+    },
   } as unknown as ExtensionCommandContext;
 
   if (options.contextWindow !== undefined) {
@@ -265,8 +275,24 @@ function createRuntimeHarness(options: {
     get abortCount() {
       return runtime.abortCount;
     },
+    resolveWaitForIdle() {
+      const waiters = waitForIdleWaiters;
+      waitForIdleWaiters = [];
+      for (const resolve of waiters) {
+        resolve();
+      }
+    },
     snapshot: () => reconstructGoal(entries),
   };
+}
+
+async function flushOverflowRecoveryFallback(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
+  await new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
 }
 
 interface TestAssistantUsage {
@@ -2156,8 +2182,8 @@ test("first overflow error shows recoverable attention while host recovery is pe
   );
 });
 
-test("overflow without session_compact pauses with recoverable attention after fallback", async () => {
-  const harness = createRuntimeHarness({ compactBehavior: "unavailable" });
+test("overflow without session_compact pauses with recoverable attention after host post-run", async () => {
+  const harness = createRuntimeHarness({ compactBehavior: "unavailable", waitForIdleMode: "manual" });
   await harness.runCommand("ship it");
   const goal = harness.snapshot().goal;
   assert.ok(goal);
@@ -2165,6 +2191,13 @@ test("overflow without session_compact pauses with recoverable attention after f
 
   await emitPersistentAssistantError(harness, 0, "context_length_exceeded");
   await waitForContinuationRetry();
+
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 0);
+
+  await flushOverflowRecoveryFallback();
+  harness.resolveWaitForIdle();
+  await flushOverflowRecoveryFallback();
 
   assert.equal(harness.snapshot().goal?.status, "paused");
   assert.equal(harness.sentMessages.length, 0);
@@ -2175,6 +2208,41 @@ test("overflow without session_compact pauses with recoverable attention after f
       recoveryAttentionMessage("context window recovery did not complete"),
     ),
   );
+});
+
+test("delayed session_compact keeps goal active until host post-run completes", async () => {
+  const harness = createRuntimeHarness({ waitForIdleMode: "manual" });
+  await harness.runCommand("ship it");
+  harness.sentMessages.length = 0;
+
+  await emitPersistentAssistantError(harness, 0, "context_length_exceeded");
+  await waitForContinuationRetry();
+
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 0);
+
+  await harness.emit("session_before_compact", {
+    type: "session_before_compact",
+    preparation: {},
+    branchEntries: [],
+    signal: new AbortController().signal,
+  });
+  await waitForContinuationRetry();
+
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 0);
+
+  await harness.emit("session_compact", {
+    type: "session_compact",
+    summary: "compact summary",
+    tokensBefore: 100,
+  });
+
+  harness.resolveWaitForIdle();
+  await flushOverflowRecoveryFallback();
+
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 0);
 });
 
 test("/goal resume after transient pause resets recovery counters", async () => {
@@ -2241,12 +2309,14 @@ test("non-retryable provider errors pause active goals immediately", async () =>
 });
 
 test("/goal resume after overflow fallback pause allows continuation", async () => {
-  const harness = createRuntimeHarness({ compactBehavior: "unavailable" });
+  const harness = createRuntimeHarness({ compactBehavior: "unavailable", waitForIdleMode: "manual" });
   await harness.runCommand("ship it");
   harness.sentMessages.length = 0;
 
   await emitPersistentAssistantError(harness, 0, "context_length_exceeded");
-  await waitForContinuationRetry();
+  await flushOverflowRecoveryFallback();
+  harness.resolveWaitForIdle();
+  await flushOverflowRecoveryFallback();
   assert.equal(harness.snapshot().goal?.status, "paused");
 
   harness.sentMessages.length = 0;
