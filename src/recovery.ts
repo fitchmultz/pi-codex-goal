@@ -7,6 +7,8 @@ const CONTEXT_OVERFLOW_PATTERNS = [
   /maximum context/i,
 ] as const;
 
+export const CONTEXT_OVERFLOW_SIGNATURE = "context_overflow";
+
 export const MAX_TRANSIENT_ERROR_RETRIES = 5;
 export const MAX_CONTEXT_COMPACTION_RETRIES = 3;
 export const TRANSIENT_ERROR_BACKOFF_BASE_MS = 1_000;
@@ -48,10 +50,21 @@ export function isContextOverflowError(errorMessage: string | undefined): boolea
   return CONTEXT_OVERFLOW_PATTERNS.some((pattern) => pattern.test(message));
 }
 
+function normalizeTransientSignature(line: string): string {
+  return line
+    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "<id>")
+    .replace(/\breq[_-]?[a-z0-9-]+\b/gi, "req_<id>")
+    .replace(/\b\d{4,}\b/g, "<n>")
+    .slice(0, 200);
+}
+
 export function failureSignature(errorMessage: string | undefined): string {
+  if (isContextOverflowError(errorMessage)) {
+    return CONTEXT_OVERFLOW_SIGNATURE;
+  }
   const message = (errorMessage ?? "unknown_error").trim();
   const firstLine = message.split("\n")[0] ?? message;
-  return firstLine.slice(0, 200);
+  return normalizeTransientSignature(firstLine);
 }
 
 export function transientErrorBackoffMs(attempt: number): number {

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import test, { mock } from "node:test";
+import test from "node:test";
 
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
@@ -10,7 +10,7 @@ import {
   continuationGoalIdFromPrompt,
   continuationPrompt,
 } from "../src/prompts.js";
-import { recoveryAttentionMessage, transientErrorBackoffMs } from "../src/recovery.js";
+import { recoveryAttentionMessage } from "../src/recovery.js";
 import { isGoalCustomEntry, reconstructGoal } from "../src/state.js";
 import { CUSTOM_ENTRY_TYPE } from "../src/types.js";
 
@@ -323,6 +323,25 @@ function assistantMessage(
     ...(stopReason === "error" ? { errorMessage: errorMessage ?? "provider error" } : {}),
     timestamp: 1,
   };
+}
+
+async function emitPersistentAssistantError(
+  harness: ReturnType<typeof createRuntimeHarness>,
+  turnIndex: number,
+  errorMessage: string,
+): Promise<void> {
+  const message = assistantMessage("error", { input: 1, output: 1 }, errorMessage);
+  await harness.emit("turn_start", { type: "turn_start", turnIndex, timestamp: turnIndex + 1 });
+  await harness.emit("turn_end", {
+    type: "turn_end",
+    turnIndex,
+    message,
+    toolResults: [],
+  });
+  await harness.emit("agent_end", {
+    type: "agent_end",
+    messages: [message],
+  });
 }
 
 test("aborted turns pause goals and do not queue continuation", async () => {
@@ -1804,7 +1823,34 @@ test("assistant error turns do not immediately queue continuation", async () => 
   assert.equal(harness.sentMessages.length, 0);
 });
 
-test("context length errors request compaction instead of immediate continuation", async () => {
+test("turn_end provider errors defer recovery to agent_end without hidden continuation or extension compaction", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  harness.sentMessages.length = 0;
+
+  const errorMessage = assistantMessage("error", { input: 1, output: 1 }, "websocket closed");
+  await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+  await harness.emit("turn_end", {
+    type: "turn_end",
+    turnIndex: 0,
+    message: errorMessage,
+    toolResults: [],
+  });
+
+  assert.equal(harness.compactCalls.length, 0);
+  assert.equal(harness.sentMessages.length, 0);
+
+  await harness.emit("agent_end", {
+    type: "agent_end",
+    messages: [errorMessage],
+  });
+
+  assert.equal(harness.compactCalls.length, 0);
+  assert.equal(harness.sentMessages.length, 0);
+  assert.equal(harness.snapshot().goal?.status, "active");
+});
+
+test("host session compaction continues active goals after overflow without extension compaction", async () => {
   const harness = createRuntimeHarness();
   await harness.runCommand("ship it");
   const queued = harness.sentMessages[0];
@@ -1812,6 +1858,7 @@ test("context length errors request compaction instead of immediate continuation
   const queuedMessage = queuedCustomMessage(queued);
   harness.sentMessages.length = 0;
 
+  const errorMessage = assistantMessage("error", { input: 30, output: 12 }, "context_length_exceeded");
   await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
   await harness.emit("message_start", {
     type: "message_start",
@@ -1820,11 +1867,11 @@ test("context length errors request compaction instead of immediate continuation
   await harness.emit("turn_end", {
     type: "turn_end",
     turnIndex: 0,
-    message: assistantMessage("error", { input: 30, output: 12 }, "context_length_exceeded"),
+    message: errorMessage,
     toolResults: [],
   });
 
-  assert.equal(harness.compactCalls.length, 1);
+  assert.equal(harness.compactCalls.length, 0);
   assert.equal(harness.sentMessages.length, 0);
 
   await harness.emit("session_compact", {
@@ -1842,39 +1889,31 @@ test("context length errors request compaction instead of immediate continuation
   });
 });
 
-test("repeated context length errors pause after bounded compaction attempts", async () => {
+test("repeated context length errors pause after bounded host recovery attempts", async () => {
   const harness = createRuntimeHarness();
   await harness.runCommand("ship it");
   harness.sentMessages.length = 0;
 
   for (let attempt = 0; attempt < 4; attempt += 1) {
-    await harness.emit("turn_start", { type: "turn_start", turnIndex: attempt, timestamp: attempt + 1 });
-    await harness.emit("turn_end", {
-      type: "turn_end",
-      turnIndex: attempt,
-      message: assistantMessage("error", { input: 1, output: 1 }, "context_length_exceeded"),
-      toolResults: [],
-    });
+    await emitPersistentAssistantError(harness, attempt, "context_length_exceeded");
   }
 
-  assert.equal(harness.compactCalls.length, 3);
+  assert.equal(harness.compactCalls.length, 0);
   assert.equal(harness.snapshot().goal?.status, "paused");
   assert.equal(harness.sentMessages.length, 0);
 });
 
-test("context overflow recovery preserves compaction attempts across session_compact", async () => {
+test("context overflow recovery preserves compaction attempts across host session_compact", async () => {
   const harness = createRuntimeHarness();
   await harness.runCommand("ship it");
   harness.sentMessages.length = 0;
 
   for (let attempt = 0; attempt < 4; attempt += 1) {
-    await harness.emit("turn_start", { type: "turn_start", turnIndex: attempt, timestamp: attempt + 1 });
-    await harness.emit("turn_end", {
-      type: "turn_end",
-      turnIndex: attempt,
-      message: assistantMessage("error", { input: 1, output: 1 }, "context_length_exceeded"),
-      toolResults: [],
-    });
+    await emitPersistentAssistantError(
+      harness,
+      attempt,
+      `context window exceeded: ${(attempt + 1) * 100_000} tokens`,
+    );
     await harness.emit("session_compact", {
       type: "session_compact",
       summary: "compact summary",
@@ -1882,150 +1921,62 @@ test("context overflow recovery preserves compaction attempts across session_com
     });
   }
 
-  assert.equal(harness.compactCalls.length, 3);
+  assert.equal(harness.compactCalls.length, 0);
   assert.equal(harness.snapshot().goal?.status, "paused");
   assert.equal(harness.sentMessages.length, 0);
 });
 
-test("compaction failures pause with recoverable attention", async () => {
-  const harness = createRuntimeHarness({ compactBehavior: "error" });
+test("repeated transient errors pause after bounded persistent failures without hidden retries", async () => {
+  const harness = createRuntimeHarness();
   await harness.runCommand("ship it");
-  const goal = harness.snapshot().goal;
-  assert.ok(goal);
   harness.sentMessages.length = 0;
-  harness.footerStatuses.length = 0;
 
-  await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
-  await harness.emit("turn_end", {
-    type: "turn_end",
-    turnIndex: 0,
-    message: assistantMessage("error", { input: 1, output: 1 }, "context_length_exceeded"),
-    toolResults: [],
-  });
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    await emitPersistentAssistantError(harness, attempt, "websocket closed");
+  }
 
-  assert.equal(harness.compactCalls.length, 1);
   assert.equal(harness.snapshot().goal?.status, "paused");
   assert.equal(harness.sentMessages.length, 0);
-  assert.equal(
-    harness.footerStatuses.at(-1),
-    formatFooterStatus(
-      { ...goal, status: "paused" },
-      recoveryAttentionMessage("context window exceeded: compaction failed"),
-    ),
-  );
-});
-
-test("repeated transient errors use bounded backoff before pausing", async () => {
-  mock.timers.enable({ apis: ["setTimeout"] });
-  try {
-    const harness = createRuntimeHarness();
-    await harness.runCommand("ship it");
-    harness.sentMessages.length = 0;
-
-    for (let attempt = 0; attempt < 6; attempt += 1) {
-      await harness.emit("turn_start", { type: "turn_start", turnIndex: attempt, timestamp: attempt + 1 });
-      await harness.emit("turn_end", {
-        type: "turn_end",
-        turnIndex: attempt,
-        message: assistantMessage("error", { input: 1, output: 1 }, "websocket closed"),
-        toolResults: [],
-      });
-      if (attempt < 5) {
-        mock.timers.tick(transientErrorBackoffMs(attempt + 1));
-      }
-    }
-
-    assert.equal(harness.snapshot().goal?.status, "paused");
-    assert.equal(harness.sentMessages.length, 0);
-  } finally {
-    mock.timers.reset();
-  }
+  assert.equal(harness.compactCalls.length, 0);
 });
 
 test("successful turns reset transient error counters and continue active goals", async () => {
-  mock.timers.enable({ apis: ["setTimeout"] });
-  try {
-    const harness = createRuntimeHarness();
-    await harness.runCommand("ship it");
-    const queued = harness.sentMessages[0];
-    assert.ok(queued);
-    const queuedMessage = queuedCustomMessage(queued);
-    harness.sentMessages.length = 0;
-
-    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
-    await harness.emit("message_start", {
-      type: "message_start",
-      message: queuedMessage,
-    });
-    await harness.emit("turn_end", {
-      type: "turn_end",
-      turnIndex: 0,
-      message: assistantMessage("error", { input: 1, output: 1 }, "websocket closed"),
-      toolResults: [],
-    });
-    assert.equal(harness.sentMessages.length, 0);
-
-    mock.timers.tick(transientErrorBackoffMs(1));
-    await harness.emit("turn_start", { type: "turn_start", turnIndex: 1, timestamp: 2 });
-    await harness.emit("turn_end", {
-      type: "turn_end",
-      turnIndex: 1,
-      message: assistantMessage("stop", { input: 1, output: 1 }),
-      toolResults: [],
-    });
-
-    assert.equal(harness.snapshot().goal?.status, "active");
-    assert.equal(harness.sentMessages.length, 1);
-
-    harness.sentMessages.length = 0;
-    await harness.emit("before_agent_start", {
-      type: "before_agent_start",
-      prompt: "keep going",
-      systemPrompt: "",
-      systemPromptOptions: {},
-    });
-    await harness.emit("turn_start", { type: "turn_start", turnIndex: 2, timestamp: 3 });
-    await harness.emit("turn_end", {
-      type: "turn_end",
-      turnIndex: 2,
-      message: assistantMessage("error", { input: 1, output: 1 }, "websocket closed"),
-      toolResults: [],
-    });
-    mock.timers.tick(transientErrorBackoffMs(1));
-
-    assert.equal(harness.snapshot().goal?.status, "active");
-    assert.equal(harness.sentMessages.length, 1);
-  } finally {
-    mock.timers.reset();
-  }
-});
-
-test("unavailable compaction pauses with recoverable attention", async () => {
-  const harness = createRuntimeHarness({ compactBehavior: "unavailable" });
+  const harness = createRuntimeHarness();
   await harness.runCommand("ship it");
-  const goal = harness.snapshot().goal;
-  assert.ok(goal);
+  const queued = harness.sentMessages[0];
+  assert.ok(queued);
+  const queuedMessage = queuedCustomMessage(queued);
   harness.sentMessages.length = 0;
-  harness.footerStatuses.length = 0;
 
-  await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+  await emitPersistentAssistantError(harness, 0, "websocket closed");
+  assert.equal(harness.sentMessages.length, 0);
+
+  await harness.emit("before_agent_start", {
+    type: "before_agent_start",
+    prompt: "keep going",
+    systemPrompt: "",
+    systemPromptOptions: {},
+  });
+  await harness.emit("turn_start", { type: "turn_start", turnIndex: 1, timestamp: 2 });
   await harness.emit("turn_end", {
     type: "turn_end",
-    turnIndex: 0,
-    message: assistantMessage("error", { input: 1, output: 1 }, "context_length_exceeded"),
+    turnIndex: 1,
+    message: assistantMessage("stop", { input: 1, output: 1 }),
     toolResults: [],
   });
+  await harness.emit("agent_end", {
+    type: "agent_end",
+    messages: [assistantMessage("stop", { input: 1, output: 1 })],
+  });
 
-  assert.equal(harness.snapshot().goal?.status, "paused");
-  assert.equal(harness.compactCalls.length, 0);
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 1);
+
+  harness.sentMessages.length = 0;
+  await emitPersistentAssistantError(harness, 2, "websocket closed");
+
+  assert.equal(harness.snapshot().goal?.status, "active");
   assert.equal(harness.sentMessages.length, 0);
-  assert.equal(
-    harness.footerStatuses.at(-1),
-    formatFooterStatus(
-      { ...goal, status: "paused" },
-      recoveryAttentionMessage("context window exceeded"),
-    ),
-  );
 });
 
 test("exhausted context overflow retries show recoverable attention in footer", async () => {
@@ -2037,13 +1988,7 @@ test("exhausted context overflow retries show recoverable attention in footer", 
   harness.footerStatuses.length = 0;
 
   for (let attempt = 0; attempt < 4; attempt += 1) {
-    await harness.emit("turn_start", { type: "turn_start", turnIndex: attempt, timestamp: attempt + 1 });
-    await harness.emit("turn_end", {
-      type: "turn_end",
-      turnIndex: attempt,
-      message: assistantMessage("error", { input: 1, output: 1 }, "context_length_exceeded"),
-      toolResults: [],
-    });
+    await emitPersistentAssistantError(harness, attempt, "context_length_exceeded");
     await harness.emit("session_compact", {
       type: "session_compact",
       summary: "compact summary",
@@ -2061,32 +2006,27 @@ test("exhausted context overflow retries show recoverable attention in footer", 
   );
 });
 
-test("turn_end and agent_end dedupe a single assistant error into one retry", async () => {
-  mock.timers.enable({ apis: ["setTimeout"] });
-  try {
-    const harness = createRuntimeHarness();
-    await harness.runCommand("ship it");
-    harness.sentMessages.length = 0;
+test("agent_end only counts recovered errors once per failed run", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  harness.sentMessages.length = 0;
 
-    const errorMessage = assistantMessage("error", { input: 1, output: 1 }, "websocket closed");
-    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
-    await harness.emit("turn_end", {
-      type: "turn_end",
-      turnIndex: 0,
-      message: errorMessage,
-      toolResults: [],
-    });
-    await harness.emit("agent_end", {
-      type: "agent_end",
-      messages: [errorMessage],
-    });
+  const errorMessage = assistantMessage("error", { input: 1, output: 1 }, "websocket closed");
+  await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+  await harness.emit("turn_end", {
+    type: "turn_end",
+    turnIndex: 0,
+    message: errorMessage,
+    toolResults: [],
+  });
+  await harness.emit("agent_end", {
+    type: "agent_end",
+    messages: [errorMessage],
+  });
 
-    mock.timers.tick(transientErrorBackoffMs(1));
-    assert.equal(harness.snapshot().goal?.status, "active");
-    assert.equal(harness.sentMessages.length, 0);
-  } finally {
-    mock.timers.reset();
-  }
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 0);
+  assert.equal(harness.compactCalls.length, 0);
 });
 
 test("successful toolUse turns reset context overflow recovery counters", async () => {
@@ -2094,14 +2034,8 @@ test("successful toolUse turns reset context overflow recovery counters", async 
   await harness.runCommand("ship it");
   harness.sentMessages.length = 0;
 
-  await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
-  await harness.emit("turn_end", {
-    type: "turn_end",
-    turnIndex: 0,
-    message: assistantMessage("error", { input: 1, output: 1 }, "context_length_exceeded"),
-    toolResults: [],
-  });
-  assert.equal(harness.compactCalls.length, 1);
+  await emitPersistentAssistantError(harness, 0, "context_length_exceeded");
+  assert.equal(harness.compactCalls.length, 0);
   await harness.emit("session_compact", {
     type: "session_compact",
     summary: "compact summary",
@@ -2117,47 +2051,8 @@ test("successful toolUse turns reset context overflow recovery counters", async 
   });
   assert.equal(harness.sentMessages.length, 0);
 
-  await harness.emit("turn_start", { type: "turn_start", turnIndex: 2, timestamp: 3 });
-  await harness.emit("turn_end", {
-    type: "turn_end",
-    turnIndex: 2,
-    message: assistantMessage("error", { input: 1, output: 1 }, "context_length_exceeded"),
-    toolResults: [],
-  });
+  await emitPersistentAssistantError(harness, 2, "context_length_exceeded");
 
-  assert.equal(harness.compactCalls.length, 2);
+  assert.equal(harness.compactCalls.length, 0);
   assert.equal(harness.snapshot().goal?.status, "active");
-});
-
-test("stale compaction callbacks do not pause a replaced active goal", async () => {
-  const harness = createRuntimeHarness({ compactCompletion: "manual" });
-  await harness.runCommand("old goal");
-  const oldGoalId = harness.snapshot().goal?.goalId;
-  assert.ok(oldGoalId);
-  harness.sentMessages.length = 0;
-
-  await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
-  await harness.emit("turn_end", {
-    type: "turn_end",
-    turnIndex: 0,
-    message: assistantMessage("error", { input: 1, output: 1 }, "context_length_exceeded"),
-    toolResults: [],
-  });
-  assert.equal(harness.compactCalls.length, 1);
-
-  await harness.runCommand("new goal");
-  assert.equal(harness.snapshot().goal?.status, "active");
-  assert.notEqual(harness.snapshot().goal?.goalId, oldGoalId);
-  harness.sentMessages.length = 0;
-
-  const staleComplete = harness.compactCalls[0];
-  assert.ok(staleComplete);
-  harness.compactCalls[0]?.onComplete?.({
-    summary: "stale compact",
-    tokensBefore: 50,
-    firstKeptEntryId: "entry-1",
-  });
-
-  assert.equal(harness.snapshot().goal?.status, "active");
-  assert.equal(harness.sentMessages.length, 0);
 });

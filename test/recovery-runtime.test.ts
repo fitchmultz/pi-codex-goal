@@ -3,10 +3,9 @@ import test from "node:test";
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-import { createRecordingDelayScheduler } from "../src/delay-scheduler.js";
 import { createGoalRecoveryMachine } from "../src/recovery-machine.js";
 import { createGoalRecoveryRuntime } from "../src/recovery-runtime.js";
-import { transientErrorBackoffMs } from "../src/recovery.js";
+import { CONTEXT_OVERFLOW_SIGNATURE } from "../src/recovery.js";
 import type { ThreadGoal } from "../src/types.js";
 
 const activeGoal: ThreadGoal = {
@@ -19,20 +18,8 @@ const activeGoal: ThreadGoal = {
   updatedAt: 0,
 };
 
-function createRecoveryTestRuntime(options: {
-  delayScheduler?: ReturnType<typeof createRecordingDelayScheduler>["scheduler"];
-  scheduledDelays?: number[];
-  runPending?: () => void;
-} = {}) {
-  const recording = options.delayScheduler
-    ? null
-    : createRecordingDelayScheduler();
-  const delayScheduler = options.delayScheduler ?? recording!.scheduler;
-  const scheduledDelays = options.scheduledDelays ?? recording!.scheduledDelays;
-  const runPending = options.runPending ?? recording!.runPending;
-
+function createRecoveryTestRuntime() {
   let recoveryState = createGoalRecoveryMachine();
-  let errorRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
   let continueCount = 0;
 
   const ctx = {
@@ -43,25 +30,16 @@ function createRecoveryTestRuntime(options: {
     getGoal: () => activeGoal,
     getRecoveryState: () => recoveryState,
     clearContinuationState: () => {},
-    clearErrorRecoveryTimer: () => {
-      errorRecoveryTimer = null;
-    },
-    setErrorRecoveryTimer(timer) {
-      errorRecoveryTimer = timer;
-    },
     pauseGoalForRecovery: () => {},
     refreshUi: () => {},
     maybeContinue: () => {
       continueCount += 1;
     },
-    delayScheduler,
   });
 
   return {
     ctx,
     runtime,
-    scheduledDelays,
-    runPending,
     get continueCount() {
       return continueCount;
     },
@@ -71,39 +49,43 @@ function createRecoveryTestRuntime(options: {
   };
 }
 
-test("transient error recovery schedules bounded backoff delays", () => {
+test("persistent provider errors plan attention without scheduling hidden continuation", () => {
   const harness = createRecoveryTestRuntime();
 
-  harness.runtime.handleAssistantError(
+  harness.runtime.handlePersistentAssistantError(
     { role: "assistant", stopReason: "error", errorMessage: "websocket closed" },
     harness.ctx,
-    0,
   );
 
-  assert.deepEqual(harness.scheduledDelays, [transientErrorBackoffMs(1)]);
+  assert.equal(harness.continueCount, 0);
+  assert.equal(harness.recoveryState.counters.transientAttempts, 1);
+});
 
-  harness.runPending();
-  assert.equal(harness.continueCount, 1);
+test("persistent overflow errors do not invoke extension compaction hooks", () => {
+  const harness = createRecoveryTestRuntime();
+  const ctx = harness.ctx as ExtensionContext & { compact?: () => void };
+  let compactCalls = 0;
+  ctx.compact = () => {
+    compactCalls += 1;
+  };
 
-  harness.runtime.handleAssistantError(
-    { role: "assistant", stopReason: "error", errorMessage: "websocket closed" },
+  harness.runtime.handlePersistentAssistantError(
+    { role: "assistant", stopReason: "error", errorMessage: "context_length_exceeded" },
     harness.ctx,
-    1,
   );
 
-  assert.deepEqual(harness.scheduledDelays, [
-    transientErrorBackoffMs(1),
-    transientErrorBackoffMs(2),
-  ]);
+  assert.equal(compactCalls, 0);
+  assert.equal(harness.continueCount, 0);
+  assert.equal(harness.recoveryState.counters.compactionAttempts, 1);
+  assert.equal(harness.recoveryState.counters.signature, CONTEXT_OVERFLOW_SIGNATURE);
 });
 
 test("successful toolUse turns reset recovery counters without continuing the goal", () => {
   const harness = createRecoveryTestRuntime();
 
-  harness.runtime.handleAssistantError(
+  harness.runtime.handlePersistentAssistantError(
     { role: "assistant", stopReason: "error", errorMessage: "context_length_exceeded" },
     harness.ctx,
-    0,
   );
   assert.equal(harness.recoveryState.counters.compactionAttempts, 1);
 
@@ -122,10 +104,9 @@ test("successful toolUse turns reset recovery counters without continuing the go
 test("successful non-toolUse turns reset recovery counters and continue the goal", () => {
   const harness = createRecoveryTestRuntime();
 
-  harness.runtime.handleAssistantError(
+  harness.runtime.handlePersistentAssistantError(
     { role: "assistant", stopReason: "error", errorMessage: "websocket closed" },
     harness.ctx,
-    0,
   );
   assert.equal(harness.recoveryState.counters.transientAttempts, 1);
 

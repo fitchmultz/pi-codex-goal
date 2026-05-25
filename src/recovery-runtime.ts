@@ -1,23 +1,15 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import {
-  clearRecoveryErrorHandledTurn,
-  completeRecoveryCompactionRequest,
-  failRecoveryCompactionRequest,
-  isRecoveryCompactionScopeActive,
-  markRecoveryErrorHandledForTurn,
   onRecoverySessionCompact,
   onRecoverySuccessfulTurn,
   onRecoveryUserInput,
   planRecoveryForAssistantError,
   resetRecoveryMachine,
   setRecoveryAttention,
-  shouldSkipDuplicateRecoveryErrorHandling,
   type GoalRecoveryMachineState,
   type RecoveryAction,
-  type RecoveryCompactionScope,
 } from "./recovery-machine.js";
-import { defaultDelayScheduler, type DelayScheduler } from "./delay-scheduler.js";
 import type { AssistantErrorMessage } from "./recovery.js";
 import type { ThreadGoal } from "./types.js";
 
@@ -25,19 +17,13 @@ interface RecoveryRuntimeDeps {
   getGoal: () => ThreadGoal | null;
   getRecoveryState: () => GoalRecoveryMachineState;
   clearContinuationState: () => void;
-  clearErrorRecoveryTimer: () => void;
-  setErrorRecoveryTimer: (timer: ReturnType<typeof setTimeout> | null) => void;
   pauseGoalForRecovery: (ctx: ExtensionContext, pausedGoal: ThreadGoal) => void;
   refreshUi: (ctx: ExtensionContext) => void;
   maybeContinue: (ctx: ExtensionContext) => void;
-  delayScheduler?: DelayScheduler;
 }
 
 export function createGoalRecoveryRuntime(deps: RecoveryRuntimeDeps) {
-  const delayScheduler = deps.delayScheduler ?? defaultDelayScheduler;
-
   const resetErrorRecovery = (): void => {
-    deps.clearErrorRecoveryTimer();
     resetRecoveryMachine(deps.getRecoveryState());
   };
 
@@ -48,58 +34,14 @@ export function createGoalRecoveryRuntime(deps: RecoveryRuntimeDeps) {
     }
 
     deps.clearContinuationState();
-    deps.clearErrorRecoveryTimer();
-    failRecoveryCompactionRequest(deps.getRecoveryState());
     deps.pauseGoalForRecovery(ctx, goal);
     setRecoveryAttention(deps.getRecoveryState(), reason);
     deps.refreshUi(ctx);
   };
 
-  const requestContextCompaction = (
-    ctx: ExtensionContext,
-    reason: string,
-    scope: RecoveryCompactionScope,
-  ): void => {
-    if (typeof ctx.compact !== "function") {
-      pauseForRecoveryAttention(ctx, reason);
-      return;
-    }
-
-    ctx.compact({
-      onComplete: () => {
-        if (!isRecoveryCompactionScopeActive(deps.getRecoveryState(), scope, deps.getGoal()?.goalId ?? null)) {
-          return;
-        }
-        completeRecoveryCompactionRequest(deps.getRecoveryState());
-      },
-      onError: (error) => {
-        if (!isRecoveryCompactionScopeActive(deps.getRecoveryState(), scope, deps.getGoal()?.goalId ?? null)) {
-          return;
-        }
-        failRecoveryCompactionRequest(deps.getRecoveryState());
-        pauseForRecoveryAttention(ctx, `${reason}: ${error.message}`);
-      },
-    });
-  };
-
-  const scheduleTransientErrorRetry = (ctx: ExtensionContext, delayMs: number): void => {
-    deps.clearErrorRecoveryTimer();
-    const timer = delayScheduler.schedule(() => {
-      deps.setErrorRecoveryTimer(null);
-      deps.maybeContinue(ctx);
-    }, delayMs);
-    deps.setErrorRecoveryTimer(timer);
-  };
-
   const applyRecoveryAction = (action: RecoveryAction, ctx: ExtensionContext): void => {
     switch (action.type) {
       case "noop":
-        return;
-      case "request_compaction":
-        requestContextCompaction(ctx, action.reason, action.scope);
-        return;
-      case "schedule_retry":
-        scheduleTransientErrorRetry(ctx, action.delayMs);
         return;
       case "pause":
         pauseForRecoveryAttention(ctx, action.reason);
@@ -107,24 +49,13 @@ export function createGoalRecoveryRuntime(deps: RecoveryRuntimeDeps) {
     }
   };
 
-  const handleAssistantError = (
-    message: AssistantErrorMessage,
-    ctx: ExtensionContext,
-    turnIndex: number | null,
-  ): void => {
+  const handlePersistentAssistantError = (message: AssistantErrorMessage, ctx: ExtensionContext): void => {
     const goal = deps.getGoal();
     if (!goal || goal.status !== "active") {
       return;
     }
 
-    markRecoveryErrorHandledForTurn(deps.getRecoveryState(), turnIndex);
-    applyRecoveryAction(planRecoveryForAssistantError(deps.getRecoveryState(), message, goal.goalId), ctx);
-  };
-
-  const acknowledgeSuccessfulAssistantTurn = (message: AssistantErrorMessage): void => {
-    if (onRecoverySuccessfulTurn(deps.getRecoveryState(), message)) {
-      deps.clearErrorRecoveryTimer();
-    }
+    applyRecoveryAction(planRecoveryForAssistantError(deps.getRecoveryState(), message), ctx);
   };
 
   const finishSuccessfulAssistantTurn = (
@@ -132,8 +63,7 @@ export function createGoalRecoveryRuntime(deps: RecoveryRuntimeDeps) {
     ctx: ExtensionContext,
     options?: { continueGoal?: boolean },
   ): void => {
-    acknowledgeSuccessfulAssistantTurn(message);
-    if (options?.continueGoal !== false) {
+    if (onRecoverySuccessfulTurn(deps.getRecoveryState(), message) && options?.continueGoal !== false) {
       deps.maybeContinue(ctx);
     }
   };
@@ -142,17 +72,11 @@ export function createGoalRecoveryRuntime(deps: RecoveryRuntimeDeps) {
     resetErrorRecovery,
     onUserInput: () => {
       onRecoveryUserInput(deps.getRecoveryState());
-      deps.clearErrorRecoveryTimer();
     },
     onSessionCompact: () => {
       onRecoverySessionCompact(deps.getRecoveryState());
     },
-    clearHandledErrorTurn: () => {
-      clearRecoveryErrorHandledTurn(deps.getRecoveryState());
-    },
-    shouldSkipDuplicateAgentEndError: (turnIndex: number | null) =>
-      shouldSkipDuplicateRecoveryErrorHandling(deps.getRecoveryState(), turnIndex),
-    handleAssistantError,
+    handlePersistentAssistantError,
     finishSuccessfulAssistantTurn,
   };
 }

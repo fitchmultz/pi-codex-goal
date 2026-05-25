@@ -55,7 +55,6 @@ export default function (pi: ExtensionAPI): void {
   const startedStaleQueuedGoalWorkGoalIds = new Set<string>();
   const accounting = createAccountingState();
   let recoveryState: GoalRecoveryMachineState = createGoalRecoveryMachine();
-  let errorRecoveryTimer: ReturnType<typeof setTimeout> | null = null;
 
   const goalForDisplay = (): ThreadGoal | null =>
     goalWithLiveUsage(goal, accounting.activeGoalId, accounting.lastAccountedAt);
@@ -75,15 +74,7 @@ export default function (pi: ExtensionAPI): void {
     continuationScheduledFor = null;
   };
 
-  const clearErrorRecoveryTimer = (): void => {
-    if (errorRecoveryTimer) {
-      clearTimeout(errorRecoveryTimer);
-      errorRecoveryTimer = null;
-    }
-  };
-
   const resetErrorRecovery = (): void => {
-    clearErrorRecoveryTimer();
     resetRecoveryMachine(recoveryState);
   };
 
@@ -419,10 +410,6 @@ export default function (pi: ExtensionAPI): void {
     getGoal: () => goal,
     getRecoveryState: () => recoveryState,
     clearContinuationState,
-    clearErrorRecoveryTimer,
-    setErrorRecoveryTimer(timer) {
-      errorRecoveryTimer = timer;
-    },
     pauseGoalForRecovery(ctx, activeGoal) {
       const result = updateGoalStatus(activeGoal, "paused");
       if (!result.ok || !result.goal) {
@@ -581,7 +568,6 @@ export default function (pi: ExtensionAPI): void {
   pi.on("turn_start", async (_event, ctx) => {
     currentTurnIndex = _event.turnIndex;
     bindPassthroughContinuationInputToTurn(_event.turnIndex);
-    recoveryRuntime.clearHandledErrorTurn();
     clearStartedTurnWork();
     clearStaleQueuedGoalWorkTurn();
     goalAccounting.beginAccounting();
@@ -608,7 +594,6 @@ export default function (pi: ExtensionAPI): void {
       return;
     }
     if (isErrorAssistantMessage(_event.message)) {
-      recoveryRuntime.handleAssistantError(_event.message, ctx, _event.turnIndex);
       return;
     }
     recoveryRuntime.finishSuccessfulAssistantTurn(_event.message, ctx, {
@@ -634,8 +619,8 @@ export default function (pi: ExtensionAPI): void {
     const errorMessages = event.messages.filter(isErrorAssistantMessage);
     if (errorMessages.length > 0) {
       const lastError = errorMessages.at(-1);
-      if (lastError && !recoveryRuntime.shouldSkipDuplicateAgentEndError(currentTurnIndex)) {
-        recoveryRuntime.handleAssistantError(lastError, ctx, currentTurnIndex);
+      if (lastError) {
+        recoveryRuntime.handlePersistentAssistantError(lastError, ctx);
       }
       return;
     }
@@ -677,7 +662,7 @@ export default function (pi: ExtensionAPI): void {
 
     goalAccounting.accountProgress(ctx, false, 0, true);
     clearContinuationTimer();
-    clearErrorRecoveryTimer();
+    resetErrorRecovery();
     stopStatusRefresh();
   });
 }
