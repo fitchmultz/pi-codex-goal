@@ -51,6 +51,36 @@ export function escapeXmlText(value: string): string {
     .replaceAll(">", "&gt;");
 }
 
+export function supersededContinuationMessage(goalId: string): string {
+  return [
+    "Superseded hidden goal continuation bookkeeping.",
+    `Goal id: ${goalId}.`,
+    "A newer continuation for this active goal appears later in context.",
+    "Ignore this message; do not perform work for it or mention it to the user.",
+  ].join("\n");
+}
+
+export function compactContinuationPrompt(goal: ThreadGoal): string {
+  return [
+    `${CONTINUATION_MARKER_PREFIX}${goal.goalId}\">`,
+    "Continue working toward the active thread goal.",
+    "",
+    `Inspect the current objective and status with ${goalToolReference("get_goal")} if needed.`,
+    "",
+    "Budget:",
+    `- Time spent pursuing goal: ${formatDuration(goal.usage.activeSeconds)}`,
+    `- Tokens used: ${formatTokenValue(goal.usage.tokensUsed)}`,
+    `- Token budget: ${formatOptionalTokenBudget(goal)}`,
+    `- Tokens remaining: ${formatRemainingTokens(goal)}`,
+    "",
+    "Avoid repeating work that is already done. Choose the next concrete action toward the objective.",
+    "",
+    `Before marking the goal complete, audit progress against the objective and call ${goalToolReference("update_goal")} with status \"complete\" only when every requirement is verified.`,
+    GOAL_TOOL_NAME_GUIDANCE,
+    "</pi_goal_continuation>",
+  ].join("\n");
+}
+
 export function continuationPrompt(goal: ThreadGoal): string {
   return [
     `${CONTINUATION_MARKER_PREFIX}${goal.goalId}\">`,

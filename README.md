@@ -81,6 +81,7 @@ While a goal is active, the extension:
 - treats completed goals as terminal for automatic transitions while allowing `/goal <objective>` to replace them without extra friction
 - marks the goal `budgetLimited` when a positive token budget is reached
 - sends hidden steering messages when budget is reached or when the agent is idle but the goal is still active
+- compacts repeated hidden goal continuations before provider context so only the latest active continuation stays runnable, older ones become short bookkeeping markers, and auto-queued continuations use a compact prompt after `/goal` start or resume
 - shows Codex-style status labels with compact token or elapsed-time usage in the pi footer when UI is available
 
 Token counts are formatted with commas and compact abbreviations, for example `123M (123,456,789) tokens`. Token totals use pi's completed assistant turn input plus output usage. Cache read and cache write channels are excluded because they are provider cache accounting fields, not extra sent and received text tokens. Pi does not currently expose a separate extension usage total for automatic compaction summary calls.

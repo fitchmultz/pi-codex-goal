@@ -2,7 +2,13 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 
 import { registerGoalCommand } from "./commands.js";
 import { formatFooterStatus } from "./format.js";
-import { budgetLimitPrompt, continuationGoalIdFromPrompt, continuationPrompt } from "./prompts.js";
+import {
+  budgetLimitPrompt,
+  compactContinuationPrompt,
+  continuationGoalIdFromPrompt,
+  continuationPrompt,
+  supersededContinuationMessage,
+} from "./prompts.js";
 import { applyUsage, clearEntry, goalWithLiveUsage, goalsEquivalent, reconstructGoal, setEntry, updateGoalStatus } from "./state.js";
 import { registerGoalTools } from "./tools.js";
 import { CUSTOM_ENTRY_TYPE, type GoalEntrySource, type GoalResult, type ThreadGoal } from "./types.js";
@@ -56,6 +62,10 @@ function isToolUseAssistantMessage(message: { role: string; stopReason?: string 
 
 function isQueuedGoalWorkKind(kind: unknown): boolean {
   return kind === "continuation" || kind === "command_start" || kind === "command_resume";
+}
+
+function isSupersededContinuationDetails(details: unknown): boolean {
+  return isQueuedGoalMessageDetails(details) && details.kind === "superseded_continuation";
 }
 
 function isQueuedGoalMessageDetails(details: unknown): details is QueuedGoalMessageDetails {
@@ -116,6 +126,10 @@ function queuedGoalWorkMessageId(message: {
     return null;
   }
 
+  if (isSupersededContinuationDetails(message.details)) {
+    return null;
+  }
+
   if (isQueuedGoalMessageDetails(message.details)) {
     const { kind, goalId } = message.details;
     if (isQueuedGoalWorkKind(kind) && typeof goalId === "string") {
@@ -124,6 +138,113 @@ function queuedGoalWorkMessageId(message: {
   }
 
   return continuationGoalIdFromMessageContent(message.content);
+}
+
+function supersededContinuationContextMessage<TMessage extends { role: string; content?: unknown; display?: boolean; details?: unknown }>(
+  message: TMessage,
+  goalId: string,
+): TMessage {
+  const content = supersededContinuationMessage(goalId);
+
+  if (message.role === "custom") {
+    return {
+      ...message,
+      content,
+      display: false,
+      details: {
+        kind: "superseded_continuation",
+        goalId,
+      },
+    } as TMessage;
+  }
+
+  return {
+    ...message,
+    content: [{ type: "text", text: content }],
+  } as TMessage;
+}
+
+function continuationPromptForProviderContext(
+  goal: ThreadGoal,
+  message: { details?: unknown },
+): string {
+  if (isQueuedGoalMessageDetails(message.details)) {
+    const kind = message.details.kind;
+    if (kind === "command_start" || kind === "command_resume") {
+      return continuationPrompt(goal);
+    }
+  }
+
+  return compactContinuationPrompt(goal);
+}
+
+function dedupeActiveGoalContinuations<TMessage extends {
+  role: string;
+  customType?: string;
+  details?: unknown;
+  content?: unknown;
+  display?: boolean;
+}>(
+  messages: TMessage[],
+  goal: ThreadGoal,
+): { messages: TMessage[]; changed: boolean } {
+  const activeGoalId = goal.goalId;
+  const indices: number[] = [];
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index];
+    if (!message) {
+      continue;
+    }
+    const queuedGoalId = queuedGoalWorkMessageId(message);
+    if (queuedGoalId === activeGoalId) {
+      indices.push(index);
+    }
+  }
+
+  const latestIndex = indices.at(-1);
+  if (latestIndex === undefined) {
+    return { messages, changed: false };
+  }
+
+  let changed = false;
+  const nextMessages = messages.slice();
+
+  for (const index of indices.slice(0, -1)) {
+    const message = nextMessages[index];
+    if (!message) {
+      continue;
+    }
+    nextMessages[index] = supersededContinuationContextMessage(message, activeGoalId);
+    changed = true;
+  }
+
+  const latestMessage = nextMessages[latestIndex];
+  if (!latestMessage) {
+    return { messages, changed };
+  }
+  const refreshedContent = continuationPromptForProviderContext(goal, latestMessage);
+  if (latestMessage.role === "custom") {
+    if (latestMessage.content !== refreshedContent) {
+      nextMessages[latestIndex] = {
+        ...latestMessage,
+        content: refreshedContent,
+        display: false,
+      };
+      changed = true;
+    }
+  } else {
+    const refreshedUserContent = [{ type: "text", text: refreshedContent }];
+    const currentContent = textContentFromMessageContent(latestMessage.content);
+    if (currentContent !== refreshedContent) {
+      nextMessages[latestIndex] = {
+        ...latestMessage,
+        content: refreshedUserContent,
+      } as TMessage;
+      changed = true;
+    }
+  }
+
+  return { messages: nextMessages, changed };
 }
 
 function staleGoalContinuationContextMessage<TMessage extends { role: string; content?: unknown }>(
@@ -550,7 +671,7 @@ export default function (pi: ExtensionAPI): void {
     pi.sendMessage(
       {
         customType: CUSTOM_ENTRY_TYPE,
-        content: continuationPrompt(goalToContinue),
+        content: compactContinuationPrompt(goalToContinue),
         display: false,
         details: { kind: "continuation", goalId: goalToContinue.goalId },
       },
@@ -639,15 +760,27 @@ export default function (pi: ExtensionAPI): void {
 
   pi.on("context", async (event, ctx): Promise<{ messages: typeof event.messages } | undefined> => {
     let changed = false;
-    const messages: typeof event.messages = event.messages.map((message) => {
+    let messages: typeof event.messages = event.messages.map((message) => {
       const queuedGoalId = queuedGoalWorkMessageIdForRuntime(message);
-      if (queuedGoalId === null || (goal?.goalId === queuedGoalId && goal.status === "active")) {
+      if (queuedGoalId === null) {
+        return message;
+      }
+
+      if (goal?.goalId === queuedGoalId && goal.status === "active") {
         return message;
       }
 
       changed = true;
       return staleGoalContinuationContextMessage(message, queuedGoalId, goal);
     });
+
+    if (goal?.status === "active") {
+      const deduped = dedupeActiveGoalContinuations(messages, goal);
+      if (deduped.changed) {
+        changed = true;
+        messages = deduped.messages;
+      }
+    }
 
     if (startedStaleQueuedGoalWorkThisTurn && !startedRunnableWorkThisTurn) {
       if (!staleQueuedGoalWorkTurnActive) {
