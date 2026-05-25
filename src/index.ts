@@ -24,7 +24,7 @@ import {
   type GoalRecoveryMachineState,
 } from "./recovery-machine.js";
 import { createGoalRecoveryRuntime } from "./recovery-runtime.js";
-import { isContextOverflowError, isErrorAssistantMessage, type AssistantErrorMessage } from "./recovery.js";
+import { isAssistantContextOverflow, isContextOverflowError, isErrorAssistantMessage, type AssistantErrorMessage } from "./recovery.js";
 import { clearEntry, goalWithLiveUsage, goalsEquivalent, reconstructGoal, setEntry, updateGoalStatus } from "./state.js";
 import { registerGoalTools } from "./tools.js";
 import { CUSTOM_ENTRY_TYPE, type GoalEntrySource, type GoalResult, type ThreadGoal } from "./types.js";
@@ -286,8 +286,11 @@ export default function (pi: ExtensionAPI): void {
       bumpRecoveryGeneration(recoveryState);
       clearStoppedRuntimeState();
     }
-    if (nextGoal.status === "paused" || nextGoal.status === "complete") {
+    if (nextGoal.status === "complete") {
       clearStoppedRuntimeState();
+    } else if (nextGoal.status === "paused") {
+      clearContinuationState();
+      clearActiveAccounting();
     } else if (nextGoal.status === "budgetLimited") {
       clearContinuationState();
     }
@@ -408,6 +411,8 @@ export default function (pi: ExtensionAPI): void {
     sendContinuation(goal);
   };
 
+  const getContextWindow = (ctx: ExtensionContext): number => ctx.model?.contextWindow ?? 0;
+
   const recoveryRuntime = createGoalRecoveryRuntime({
     getGoal: () => goal,
     getRecoveryState: () => recoveryState,
@@ -422,6 +427,28 @@ export default function (pi: ExtensionAPI): void {
     refreshUi,
     maybeContinue,
   });
+
+  const beginOverflowRecoveryAttention = (ctx: ExtensionContext): void => {
+    hostOverflowRecoveryInProgress = true;
+    recoveryRuntime.beginOverflowRecovery(ctx);
+  };
+
+  const recordAssistantContextOverflow = (
+    message: AssistantErrorMessage,
+    ctx: ExtensionContext,
+  ): boolean => {
+    if (!isAssistantContextOverflow(message, getContextWindow(ctx))) {
+      return false;
+    }
+
+    beginOverflowRecoveryAttention(ctx);
+    if (isErrorAssistantMessage(message)) {
+      recoveryRuntime.handlePersistentAssistantError(message, ctx);
+    } else {
+      recoveryRuntime.handleSilentContextOverflow(ctx);
+    }
+    return true;
+  };
 
   registerGoalTools(pi, {
     getGoal: () => goalForDisplay(),
@@ -599,6 +626,10 @@ export default function (pi: ExtensionAPI): void {
     if (isErrorAssistantMessage(_event.message)) {
       return;
     }
+    if (isAssistantContextOverflow(_event.message, getContextWindow(ctx))) {
+      beginOverflowRecoveryAttention(ctx);
+      return;
+    }
     recoveryRuntime.finishSuccessfulAssistantTurn(_event.message, ctx, {
       continueGoal: !isToolUseAssistantMessage(_event.message),
     });
@@ -623,14 +654,20 @@ export default function (pi: ExtensionAPI): void {
     if (errorMessages.length > 0) {
       const lastError = errorMessages.at(-1) as AssistantErrorMessage | undefined;
       if (lastError) {
-        if (isContextOverflowError(lastError.errorMessage)) {
-          hostOverflowRecoveryInProgress = true;
+        recordAssistantContextOverflow(lastError, ctx);
+        if (!isContextOverflowError(lastError.errorMessage)) {
+          recoveryRuntime.handlePersistentAssistantError(lastError, ctx);
         }
-        recoveryRuntime.handlePersistentAssistantError(lastError, ctx);
       }
       return;
     }
+
+    const lastAssistant = [...event.messages].reverse().find((message) => message.role === "assistant");
+    if (lastAssistant && recordAssistantContextOverflow(lastAssistant as AssistantErrorMessage, ctx)) {
+      return;
+    }
     resetErrorRecovery();
+    hostOverflowRecoveryInProgress = false;
     maybeContinue(ctx);
   });
 

@@ -132,7 +132,7 @@ export function formatFooterStatus(goal: ThreadGoal | null, recoveryAttention: s
     return undefined;
   }
 
-  if (goal.status === "paused" && recoveryAttention) {
+  if (recoveryAttention) {
     return recoveryAttention;
   }
 

@@ -6,14 +6,20 @@ import {
   countersForFailureSignature,
   createErrorRecoveryCounters,
   failureSignature,
+  HOST_OVERFLOW_RECOVERY_REASON,
+  isAssistantContextOverflow,
   isContextOverflowError,
   isErrorAssistantMessage,
+  isRetryableTransientError,
   isSuccessfulAssistantTurn,
+  recoveryAttentionMessage,
 } from "../src/recovery.js";
 import {
+  beginHostOverflowRecovery,
   createGoalRecoveryMachine,
   onRecoverySessionCompact,
   planRecoveryForAssistantError,
+  planRecoveryForSilentContextOverflow,
 } from "../src/recovery-machine.js";
 
 test("detects context overflow error messages with host overflow classifier", () => {
@@ -29,6 +35,52 @@ test("detects context overflow error messages with host overflow classifier", ()
   assert.equal(isContextOverflowError("too many tokens"), true);
   assert.equal(isContextOverflowError("token limit exceeded"), true);
   assert.equal(isContextOverflowError("rate limit exceeded"), false);
+});
+
+test("isAssistantContextOverflow detects silent stop and zero-output length overflows", () => {
+  const contextWindow = 128_000;
+
+  assert.equal(
+    isAssistantContextOverflow(
+      {
+        role: "assistant",
+        stopReason: "stop",
+        usage: { input: 130_000, output: 0, cacheRead: 0 },
+      },
+      contextWindow,
+    ),
+    true,
+  );
+  assert.equal(
+    isAssistantContextOverflow(
+      {
+        role: "assistant",
+        stopReason: "length",
+        usage: { input: 127_000, output: 0, cacheRead: 1_000 },
+      },
+      contextWindow,
+    ),
+    true,
+  );
+  assert.equal(
+    isAssistantContextOverflow(
+      {
+        role: "assistant",
+        stopReason: "stop",
+        usage: { input: 1_000, output: 500 },
+      },
+      contextWindow,
+    ),
+    false,
+  );
+});
+
+test("isRetryableTransientError mirrors host retry classification", () => {
+  assert.equal(isRetryableTransientError("HTTP 500 internal server error"), true);
+  assert.equal(isRetryableTransientError("HTTP 502 bad gateway"), true);
+  assert.equal(isRetryableTransientError("websocket closed"), true);
+  assert.equal(isRetryableTransientError("context_length_exceeded"), false);
+  assert.equal(isRetryableTransientError("invalid api key"), false);
 });
 
 test("failure signatures canonicalize context overflow regardless of volatile token counts", () => {
@@ -68,18 +120,46 @@ test("changing context overflow messages share one recovery signature and reach 
   assert.equal(state.counters.signature, CONTEXT_OVERFLOW_SIGNATURE);
 });
 
-test("counters reset when the failure signature changes", () => {
+test("counters reset per-signature fields but preserve consecutive transient count", () => {
   const counters = countersForFailureSignature(
     {
-      signature: "old",
+      signature: "HTTP <n>",
       transientAttempts: 3,
+      consecutiveTransientAttempts: 2,
       compactionAttempts: 2,
     },
-    "new",
+    "HTTP <n> service unavailable",
   );
-  assert.equal(counters.signature, "new");
+  assert.equal(counters.signature, "HTTP <n> service unavailable");
   assert.equal(counters.transientAttempts, 0);
+  assert.equal(counters.consecutiveTransientAttempts, 2);
   assert.equal(counters.compactionAttempts, 0);
+});
+
+test("varied retryable transient errors pause on fourth consecutive failure", () => {
+  const state = createGoalRecoveryMachine();
+  const errors = [
+    "HTTP 500 internal server error",
+    "HTTP 502 bad gateway",
+    "HTTP 503 service unavailable",
+    "HTTP 504 gateway timeout",
+  ];
+
+  for (let index = 0; index < 3; index += 1) {
+    const action = planRecoveryForAssistantError(
+      state,
+      { role: "assistant", stopReason: "error", errorMessage: errors[index]! },
+    );
+    assert.equal(action.type, "noop", `attempt ${index + 1} should stay active`);
+    assert.equal(state.counters.consecutiveTransientAttempts, index + 1);
+  }
+
+  const finalAction = planRecoveryForAssistantError(
+    state,
+    { role: "assistant", stopReason: "error", errorMessage: errors[3]! },
+  );
+  assert.equal(finalAction.type, "pause");
+  assert.equal(state.counters.consecutiveTransientAttempts, 4);
 });
 
 test("successful assistant turns exclude errors and aborts", () => {
@@ -93,23 +173,36 @@ test("createErrorRecoveryCounters starts empty", () => {
   assert.deepEqual(createErrorRecoveryCounters(), {
     signature: null,
     transientAttempts: 0,
+    consecutiveTransientAttempts: 0,
     compactionAttempts: 0,
   });
 });
 
+test("beginHostOverflowRecovery surfaces pending attention without pausing", () => {
+  const state = createGoalRecoveryMachine();
+  assert.equal(
+    beginHostOverflowRecovery(state),
+    recoveryAttentionMessage(HOST_OVERFLOW_RECOVERY_REASON),
+  );
+});
+
 test("recovery session compact preserves overflow attempt counts after host compaction", () => {
   const state = createGoalRecoveryMachine();
+  beginHostOverflowRecovery(state);
   state.counters = {
     signature: CONTEXT_OVERFLOW_SIGNATURE,
     transientAttempts: 2,
-    compactionAttempts: 2,
+    consecutiveTransientAttempts: 2,
+    compactionAttempts: 1,
   };
 
   onRecoverySessionCompact(state);
 
-  assert.equal(state.counters.compactionAttempts, 2);
+  assert.equal(state.counters.compactionAttempts, 1);
   assert.equal(state.counters.transientAttempts, 0);
+  assert.equal(state.counters.consecutiveTransientAttempts, 0);
   assert.equal(state.counters.signature, CONTEXT_OVERFLOW_SIGNATURE);
+  assert.equal(state.attention, null);
 });
 
 test("recovery plans pause after compaction cap even when compaction attempts are already exhausted", () => {
@@ -117,6 +210,7 @@ test("recovery plans pause after compaction cap even when compaction attempts ar
   state.counters = {
     signature: CONTEXT_OVERFLOW_SIGNATURE,
     transientAttempts: 0,
+    consecutiveTransientAttempts: 0,
     compactionAttempts: 1,
   };
   const action = planRecoveryForAssistantError(
@@ -126,11 +220,20 @@ test("recovery plans pause after compaction cap even when compaction attempts ar
   assert.equal(action.type, "pause");
 });
 
+test("silent context overflow increments compaction attempts like error overflows", () => {
+  const state = createGoalRecoveryMachine();
+  const action = planRecoveryForSilentContextOverflow(state);
+  assert.equal(action.type, "noop");
+  assert.equal(state.counters.compactionAttempts, 1);
+  assert.equal(state.counters.signature, CONTEXT_OVERFLOW_SIGNATURE);
+});
+
 test("recovery plans pause after host default transient retry cap", () => {
   const state = createGoalRecoveryMachine();
   state.counters = {
     signature: "websocket closed",
     transientAttempts: 3,
+    consecutiveTransientAttempts: 3,
     compactionAttempts: 0,
   };
   const action = planRecoveryForAssistantError(
@@ -139,6 +242,7 @@ test("recovery plans pause after host default transient retry cap", () => {
   );
   assert.equal(action.type, "pause");
   assert.equal(state.counters.transientAttempts, 4);
+  assert.equal(state.counters.consecutiveTransientAttempts, 4);
 });
 
 test("recovery plans noop while under host-owned overflow and transient caps", () => {

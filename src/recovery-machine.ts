@@ -3,7 +3,9 @@ import {
   countersForFailureSignature,
   createErrorRecoveryCounters,
   failureSignature,
+  HOST_OVERFLOW_RECOVERY_REASON,
   isContextOverflowError,
+  isRetryableTransientError,
   isSuccessfulAssistantTurn,
   MAX_CONTEXT_COMPACTION_RETRIES,
   MAX_TRANSIENT_ERROR_RETRIES,
@@ -39,6 +41,7 @@ export function resetRecoveryMachine(state: GoalRecoveryMachineState): void {
 
 export function resetRecoveryCounters(state: GoalRecoveryMachineState): void {
   state.counters = createErrorRecoveryCounters();
+  state.attention = null;
 }
 
 export function onRecoveryUserInput(state: GoalRecoveryMachineState): void {
@@ -57,10 +60,15 @@ export function onRecoverySuccessfulTurn(
 }
 
 export function onRecoverySessionCompact(state: GoalRecoveryMachineState): void {
+  if (state.attention === recoveryAttentionMessage(HOST_OVERFLOW_RECOVERY_REASON)) {
+    state.attention = null;
+  }
+
   if (state.counters.signature === CONTEXT_OVERFLOW_SIGNATURE) {
     state.counters = {
       signature: state.counters.signature,
       transientAttempts: 0,
+      consecutiveTransientAttempts: 0,
       compactionAttempts: state.counters.compactionAttempts,
     };
     return;
@@ -75,6 +83,25 @@ export function setRecoveryAttention(state: GoalRecoveryMachineState, reason: st
   return message;
 }
 
+export function beginHostOverflowRecovery(state: GoalRecoveryMachineState): string {
+  return setRecoveryAttention(state, HOST_OVERFLOW_RECOVERY_REASON);
+}
+
+function incrementOverflowCompactionAttempts(state: GoalRecoveryMachineState): RecoveryAction {
+  state.counters = countersForFailureSignature(state.counters, CONTEXT_OVERFLOW_SIGNATURE);
+  state.counters = {
+    ...state.counters,
+    compactionAttempts: state.counters.compactionAttempts + 1,
+  };
+  if (state.counters.compactionAttempts > MAX_CONTEXT_COMPACTION_RETRIES) {
+    return {
+      type: "pause",
+      reason: "context window recovery failed after repeated compaction attempts",
+    };
+  }
+  return { type: "noop" };
+}
+
 /**
  * Plans extension recovery only after pi host post-run retry/compaction has finished.
  * Host AgentSession._handlePostAgentRun() owns retry and overflow compaction; this
@@ -84,32 +111,31 @@ export function planRecoveryForAssistantError(
   state: GoalRecoveryMachineState,
   message: AssistantErrorMessage,
 ): RecoveryAction {
+  if (isContextOverflowError(message.errorMessage)) {
+    return incrementOverflowCompactionAttempts(state);
+  }
+
   const signature = failureSignature(message.errorMessage);
   state.counters = countersForFailureSignature(state.counters, signature);
 
-  if (isContextOverflowError(message.errorMessage)) {
-    state.counters = {
-      ...state.counters,
-      compactionAttempts: state.counters.compactionAttempts + 1,
-    };
-    if (state.counters.compactionAttempts > MAX_CONTEXT_COMPACTION_RETRIES) {
-      return {
-        type: "pause",
-        reason: "context window recovery failed after repeated compaction attempts",
-      };
-    }
+  if (!isRetryableTransientError(message.errorMessage)) {
     return { type: "noop" };
   }
 
   state.counters = {
     ...state.counters,
     transientAttempts: state.counters.transientAttempts + 1,
+    consecutiveTransientAttempts: state.counters.consecutiveTransientAttempts + 1,
   };
-  if (state.counters.transientAttempts > MAX_TRANSIENT_ERROR_RETRIES) {
+  if (state.counters.consecutiveTransientAttempts > MAX_TRANSIENT_ERROR_RETRIES) {
     return {
       type: "pause",
       reason: `provider error persisted (${signature})`,
     };
   }
   return { type: "noop" };
+}
+
+export function planRecoveryForSilentContextOverflow(state: GoalRecoveryMachineState): RecoveryAction {
+  return incrementOverflowCompactionAttempts(state);
 }

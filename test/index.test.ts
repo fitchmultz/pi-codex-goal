@@ -10,7 +10,7 @@ import {
   continuationGoalIdFromPrompt,
   continuationPrompt,
 } from "../src/prompts.js";
-import { recoveryAttentionMessage } from "../src/recovery.js";
+import { recoveryAttentionMessage, HOST_OVERFLOW_RECOVERY_REASON } from "../src/recovery.js";
 import { isGoalCustomEntry, reconstructGoal } from "../src/state.js";
 import { CUSTOM_ENTRY_TYPE } from "../src/types.js";
 
@@ -26,6 +26,7 @@ function createRuntimeHarness(options: {
   pendingMessages?: boolean;
   compactBehavior?: "success" | "error" | "unavailable";
   compactCompletion?: "immediate" | "manual";
+  contextWindow?: number;
 } = {}) {
   const entries: ReturnType<ExtensionCommandContext["sessionManager"]["getBranch"]> = [];
   const handlers = new Map<string, EventHandler[]>();
@@ -184,6 +185,14 @@ function createRuntimeHarness(options: {
     waitForIdle: async () => {},
   } as unknown as ExtensionCommandContext;
 
+  if (options.contextWindow !== undefined) {
+    ctx.model = {
+      id: "test-model",
+      provider: "test",
+      contextWindow: options.contextWindow,
+    } as ExtensionCommandContext["model"];
+  }
+
   if (runtime.compactBehavior !== "unavailable") {
     ctx.compact = (options) => {
       const call: (typeof compactCalls)[number] = {};
@@ -245,6 +254,13 @@ function createRuntimeHarness(options: {
     },
     setPendingMessages(pendingMessages: boolean) {
       runtime.pendingMessages = pendingMessages;
+    },
+    setContextWindow(contextWindow: number) {
+      ctx.model = {
+        id: "test-model",
+        provider: "test",
+        contextWindow,
+      } as ExtensionCommandContext["model"];
     },
     get abortCount() {
       return runtime.abortCount;
@@ -2120,4 +2136,129 @@ test("successful toolUse turns reset context overflow recovery counters", async 
 
   assert.equal(harness.compactCalls.length, 0);
   assert.equal(harness.snapshot().goal?.status, "active");
+});
+
+test("first overflow error shows recoverable attention while host recovery is pending", async () => {
+  const harness = createRuntimeHarness({ compactBehavior: "unavailable" });
+  await harness.runCommand("ship it");
+  const goal = harness.snapshot().goal;
+  assert.ok(goal);
+  harness.sentMessages.length = 0;
+  harness.footerStatuses.length = 0;
+
+  await emitPersistentAssistantError(harness, 0, "context_length_exceeded");
+
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 0);
+  assert.equal(
+    harness.footerStatuses.at(-1),
+    formatFooterStatus(goal, recoveryAttentionMessage(HOST_OVERFLOW_RECOVERY_REASON)),
+  );
+});
+
+test("overflow without session_compact keeps attention and does not queue continuation", async () => {
+  const harness = createRuntimeHarness({ compactBehavior: "unavailable" });
+  await harness.runCommand("ship it");
+  harness.sentMessages.length = 0;
+
+  await emitPersistentAssistantError(harness, 0, "context_length_exceeded");
+  await waitForContinuationRetry();
+
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 0);
+  assert.equal(
+    harness.footerStatuses.at(-1),
+    formatFooterStatus(
+      harness.snapshot().goal,
+      recoveryAttentionMessage(HOST_OVERFLOW_RECOVERY_REASON),
+    ),
+  );
+});
+
+test("varied retryable transient errors pause after host default retry cap", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  harness.sentMessages.length = 0;
+
+  const errors = [
+    "HTTP 500 internal server error",
+    "HTTP 502 bad gateway",
+    "HTTP 503 service unavailable",
+    "HTTP 504 gateway timeout",
+  ];
+
+  for (let attempt = 0; attempt < errors.length; attempt += 1) {
+    await emitPersistentAssistantError(harness, attempt, errors[attempt]!);
+    if (attempt < 3) {
+      assert.equal(harness.snapshot().goal?.status, "active");
+    }
+  }
+
+  assert.equal(harness.snapshot().goal?.status, "paused");
+  assert.equal(harness.sentMessages.length, 0);
+});
+
+test("silent stop overflow suppresses continuation and shows overflow recovery attention", async () => {
+  const harness = createRuntimeHarness({ contextWindow: 128_000 });
+  await harness.runCommand("ship it");
+  const goal = harness.snapshot().goal;
+  assert.ok(goal);
+  harness.sentMessages.length = 0;
+  harness.footerStatuses.length = 0;
+
+  const overflowMessage = assistantMessage("stop", {
+    input: 130_000,
+    output: 0,
+    cacheRead: 0,
+  });
+  await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+  await harness.emit("turn_end", {
+    type: "turn_end",
+    turnIndex: 0,
+    message: overflowMessage,
+    toolResults: [],
+  });
+  await harness.emit("agent_end", {
+    type: "agent_end",
+    messages: [overflowMessage],
+  });
+
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 0);
+  assert.equal(
+    harness.footerStatuses.at(-1),
+    formatFooterStatus(goal, recoveryAttentionMessage(HOST_OVERFLOW_RECOVERY_REASON)),
+  );
+});
+
+test("zero-output length overflow suppresses continuation and shows overflow recovery attention", async () => {
+  const harness = createRuntimeHarness({ contextWindow: 128_000 });
+  await harness.runCommand("ship it");
+  const goal = harness.snapshot().goal;
+  assert.ok(goal);
+  harness.sentMessages.length = 0;
+
+  const overflowMessage = assistantMessage("length", {
+    input: 127_000,
+    output: 0,
+    cacheRead: 1_000,
+  });
+  await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+  await harness.emit("turn_end", {
+    type: "turn_end",
+    turnIndex: 0,
+    message: overflowMessage,
+    toolResults: [],
+  });
+  await harness.emit("agent_end", {
+    type: "agent_end",
+    messages: [overflowMessage],
+  });
+
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 0);
+  assert.equal(
+    harness.footerStatuses.at(-1),
+    formatFooterStatus(goal, recoveryAttentionMessage(HOST_OVERFLOW_RECOVERY_REASON)),
+  );
 });
