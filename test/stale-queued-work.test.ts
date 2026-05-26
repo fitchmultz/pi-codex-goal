@@ -255,6 +255,44 @@ test("stale prompt-based queued work does not pause or charge a replacement goal
   assert.equal(harness.sentMessages.length, 0);
 });
 
+test("stale prompt-based queued work with stop terminal does not corrupt replacement goal", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("old goal");
+  const oldQueued = harness.sentMessages[0];
+  assert.ok(oldQueued);
+  const oldPrompt = oldQueued.message.content;
+  if (typeof oldPrompt !== "string") {
+    assert.fail("Expected queued goal message content to be a string.");
+  }
+  const oldMessage = goalUserContextMessage(oldPrompt, 1);
+
+  await harness.runCommand("new goal");
+  const replacement = harness.snapshot().goal;
+  assert.equal(replacement?.objective, "new goal");
+  harness.sentMessages.length = 0;
+
+  await emitQueuedTurnThroughContext(harness, [oldMessage]);
+  assert.equal(harness.abortCount, 1);
+
+  await harness.emit("turn_end", {
+    type: "turn_end",
+    turnIndex: 0,
+    message: assistantMessage("stop", { input: 20, output: 5 }),
+    toolResults: [],
+  });
+  await harness.emit("agent_end", {
+    type: "agent_end",
+    messages: [assistantMessage("stop", { input: 20, output: 5 })],
+  });
+
+  const goal = harness.snapshot().goal;
+  assert.equal(goal?.goalId, replacement?.goalId);
+  assert.equal(goal?.status, "active");
+  assert.equal(goal?.usage.tokensUsed, 0);
+  assert.equal(harness.abortCount, 1);
+  assert.equal(harness.sentMessages.length, 0);
+});
+
 test("stale custom queued work aborts without pausing, charging, or requeueing a replacement goal", async () => {
   const originalNow = Date.now;
   let now = 1_000;
