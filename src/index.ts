@@ -518,10 +518,7 @@ export default function (pi: ExtensionAPI): void {
     if (event.source !== "extension") {
       hostOverflowRecoveryInProgress = false;
       recoveryRuntime.onUserInput();
-      const { cleared, effects } = staleQueuedWorkGuard.clearAbortingTurn();
-      if (cleared) {
-        applyStaleQueuedWorkEffects([...effects, { type: "refreshUi" }], ctx);
-      }
+      applyStaleQueuedWorkEffects(staleQueuedWorkGuard.planUserInputClearAbort().effects, ctx);
       if (continuationGoalId !== null) {
         passthroughContinuationInput = { text: event.text, turnIndex: null };
       }
@@ -532,7 +529,7 @@ export default function (pi: ExtensionAPI): void {
       return undefined;
     }
 
-    staleQueuedWorkGuard.clearAbortingTurn();
+    applyStaleQueuedWorkEffects(staleQueuedWorkGuard.planExtensionContinuationClearAbort().effects, ctx);
     clearContinuationStateFor(continuationGoalId);
     if (isCurrentActiveGoalId(continuationGoalId)) {
       return { action: "continue" } as const;
@@ -549,9 +546,9 @@ export default function (pi: ExtensionAPI): void {
       resolveActiveContinuationQueuedGoalWorkMessageId: extensionQueuedGoalWorkMessageId,
     });
 
-    const contextAbortEffects = staleQueuedWorkGuard.planContextAbort(currentTurnIndex);
-    if (contextAbortEffects !== null) {
-      applyStaleQueuedWorkEffects(contextAbortEffects, ctx);
+    const contextAbortPlan = staleQueuedWorkGuard.planContextAbort(currentTurnIndex);
+    if (contextAbortPlan !== null) {
+      applyStaleQueuedWorkEffects(contextAbortPlan.effects, ctx);
     }
 
     return changed ? { messages } : undefined;
@@ -588,9 +585,9 @@ export default function (pi: ExtensionAPI): void {
         refreshUi(ctx);
         return undefined;
       }
-      staleQueuedWorkGuard.clearAbortingTurn();
+      applyStaleQueuedWorkEffects(staleQueuedWorkGuard.planBeforeAgentStartClearAbort().effects, ctx);
     } else {
-      staleQueuedWorkGuard.clearAbortingTurn();
+      applyStaleQueuedWorkEffects(staleQueuedWorkGuard.planBeforeAgentStartClearAbort().effects, ctx);
       clearContinuationState();
     }
   });
@@ -624,8 +621,9 @@ export default function (pi: ExtensionAPI): void {
   pi.on("turn_start", async (_event, ctx) => {
     currentTurnIndex = _event.turnIndex;
     bindPassthroughContinuationInputToTurn(_event.turnIndex);
-    applyStaleQueuedWorkEffects(staleQueuedWorkGuard.planTurnStart(), ctx);
+    applyStaleQueuedWorkEffects(staleQueuedWorkGuard.planTurnStart().effects, ctx);
     goalAccounting.beginAccounting();
+    refreshUi(ctx);
   });
 
   pi.on("tool_execution_end", async (_event, ctx) => {
@@ -732,7 +730,7 @@ export default function (pi: ExtensionAPI): void {
 
   pi.on("session_shutdown", async (_event, ctx) => {
     clearPassthroughContinuationInput();
-    applyStaleQueuedWorkEffects(staleQueuedWorkGuard.planSessionShutdown(), ctx);
+    applyStaleQueuedWorkEffects(staleQueuedWorkGuard.planSessionShutdown().effects, ctx);
 
     goalAccounting.accountProgress(ctx, false, 0, true);
     flushGoalPersistence("runtime");
