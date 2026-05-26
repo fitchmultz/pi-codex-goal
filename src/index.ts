@@ -32,7 +32,16 @@ import {
   reasonFromRecoveryPendingAttention,
   type AssistantErrorMessage,
 } from "./recovery.js";
-import { clearEntry, goalWithLiveUsage, goalsEquivalent, reconstructGoal, setEntry, updateGoalStatus } from "./state.js";
+import {
+  clearEntry,
+  goalWithLiveUsage,
+  goalsEquivalent,
+  hostOverflowCapResetEntry,
+  reconstructGoal,
+  reconstructHostOverflowCapNeedsUserReset,
+  setEntry,
+  updateGoalStatus,
+} from "./state.js";
 import { registerGoalTools } from "./tools.js";
 import { CUSTOM_ENTRY_TYPE, type GoalEntrySource, type GoalResult, type ThreadGoal } from "./types.js";
 
@@ -352,9 +361,19 @@ export default function (pi: ExtensionAPI): void {
     refreshUi(ctx);
   };
 
+  const setHostOverflowCapNeedsUserReset = (needsReset: boolean): void => {
+    if (hostOverflowCapNeedsUserReset === needsReset) {
+      return;
+    }
+    hostOverflowCapNeedsUserReset = needsReset;
+    pi.appendEntry(CUSTOM_ENTRY_TYPE, hostOverflowCapResetEntry(needsReset));
+  };
+
   const reloadFromSession = (ctx: ExtensionContext): void => {
     const previousGoalId = goal?.goalId ?? null;
-    goal = reconstructGoal(ctx.sessionManager.getBranch()).goal;
+    const branch = ctx.sessionManager.getBranch();
+    goal = reconstructGoal(branch).goal;
+    hostOverflowCapNeedsUserReset = reconstructHostOverflowCapNeedsUserReset(branch);
     clearContinuationState();
     if (goal?.status !== "active") {
       clearActiveAccounting();
@@ -478,7 +497,7 @@ export default function (pi: ExtensionAPI): void {
   };
 
   const beginOverflowRecoveryAttention = (ctx: ExtensionContext): void => {
-    hostOverflowCapNeedsUserReset = true;
+    setHostOverflowCapNeedsUserReset(true);
     hostOverflowRecoveryInProgress = true;
     recoveryRuntime.beginOverflowRecovery(ctx);
   };
@@ -640,7 +659,7 @@ export default function (pi: ExtensionAPI): void {
 
   pi.on("message_start", async (event) => {
     if (event.message.role === "user") {
-      hostOverflowCapNeedsUserReset = false;
+      setHostOverflowCapNeedsUserReset(false);
     }
 
     const queuedGoalId = queuedGoalWorkMessageIdForRuntime(event.message);

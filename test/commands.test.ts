@@ -144,8 +144,8 @@ test("/goal objective after overflow recovery sends a user start turn", async ()
   if (typeof content !== "string") {
     assert.fail("Expected queued goal start content to be a string.");
   }
-  assert.match(content, /<untrusted_objective>\nship the feature\n<\/untrusted_objective>/);
   assert.match(content, /<pi_goal_continuation goal_id="/);
+  assert.doesNotMatch(content, /<untrusted_objective>/);
 
   needsHostOverflowCapReset = false;
   harness.sentUserMessages.length = 0;

@@ -108,6 +108,15 @@ export function clearEntry(
   };
 }
 
+export function hostOverflowCapResetEntry(active: boolean, at = unixSeconds()): GoalCustomEntry {
+  return {
+    version: 1,
+    kind: "host_overflow_cap_reset",
+    active,
+    at,
+  };
+}
+
 export function isGoalCustomEntry(data: unknown): data is GoalCustomEntry {
   if (!data || typeof data !== "object") {
     return false;
@@ -118,6 +127,9 @@ export function isGoalCustomEntry(data: unknown): data is GoalCustomEntry {
   }
   if (entry.kind === "clear") {
     return entry.clearedGoalId === null || typeof entry.clearedGoalId === "string";
+  }
+  if (entry.kind === "host_overflow_cap_reset") {
+    return typeof entry.active === "boolean";
   }
   return entry.kind === "set" && isThreadGoal(entry.goal);
 }
@@ -156,7 +168,7 @@ export function reconstructGoal(entries: Iterable<SessionEntryLike>): GoalSnapsh
     }
     if (entry.data.kind === "clear") {
       goal = null;
-    } else {
+    } else if (entry.data.kind === "set") {
       goal = cloneGoal(entry.data.goal);
     }
   }
@@ -165,6 +177,24 @@ export function reconstructGoal(entries: Iterable<SessionEntryLike>): GoalSnapsh
     goal,
     hasGoal: goal !== null,
   };
+}
+
+export function reconstructHostOverflowCapNeedsUserReset(entries: Iterable<SessionEntryLike>): boolean {
+  let needsReset = false;
+
+  for (const entry of entries) {
+    if (entry.type !== "custom" || entry.customType !== CUSTOM_ENTRY_TYPE) {
+      continue;
+    }
+    if (!isGoalCustomEntry(entry.data)) {
+      continue;
+    }
+    if (entry.data.kind === "host_overflow_cap_reset") {
+      needsReset = entry.data.active;
+    }
+  }
+
+  return needsReset;
 }
 
 export function createGoal(current: ThreadGoal | null, objective: string, tokenBudget?: number | null): GoalResult {

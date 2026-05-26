@@ -46,7 +46,7 @@ function queueGoalUserResumeTurn(pi: GoalCommandPi, goal: ThreadGoal): void {
 }
 
 function queueGoalUserStartTurn(pi: GoalCommandPi, goal: ThreadGoal): void {
-  pi.sendUserMessage(continuationPrompt(goal), { deliverAs: "followUp" });
+  pi.sendUserMessage(compactContinuationPrompt(goal), { deliverAs: "followUp" });
 }
 
 export async function handleGoalCommand(

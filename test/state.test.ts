@@ -9,7 +9,9 @@ import {
   createGoal,
   goalWithLiveUsage,
   goalsEquivalent,
+  hostOverflowCapResetEntry,
   reconstructGoal,
+  reconstructHostOverflowCapNeedsUserReset,
   setEntry,
   updateGoalStatus,
 } from "../src/state.js";
@@ -37,6 +39,34 @@ test("reconstructGoal follows branch-local set and clear entries", () => {
     { type: "message", message: { role: "assistant" } },
   ];
 
+  assert.deepEqual(reconstructGoal(branch), { goal: null, hasGoal: false });
+});
+
+test("reconstructHostOverflowCapNeedsUserReset follows branch-local reset markers", () => {
+  const branch = [
+    { type: "custom", customType: CUSTOM_ENTRY_TYPE, data: hostOverflowCapResetEntry(true, 1) },
+    { type: "custom", customType: CUSTOM_ENTRY_TYPE, data: hostOverflowCapResetEntry(false, 2) },
+    { type: "custom", customType: CUSTOM_ENTRY_TYPE, data: hostOverflowCapResetEntry(true, 3) },
+  ];
+
+  assert.equal(reconstructHostOverflowCapNeedsUserReset(branch), true);
+  assert.equal(
+    reconstructHostOverflowCapNeedsUserReset(branch.slice(0, 2)),
+    false,
+  );
+});
+
+test("reconstructHostOverflowCapNeedsUserReset survives goal clear entries", () => {
+  const created = createGoal(null, "finish").goal;
+  assert.ok(created);
+
+  const branch = [
+    { type: "custom", customType: CUSTOM_ENTRY_TYPE, data: setEntry(created, "tool", 1) },
+    { type: "custom", customType: CUSTOM_ENTRY_TYPE, data: hostOverflowCapResetEntry(true, 2) },
+    { type: "custom", customType: CUSTOM_ENTRY_TYPE, data: clearEntry(created.goalId, "command", 3) },
+  ];
+
+  assert.equal(reconstructHostOverflowCapNeedsUserReset(branch), true);
   assert.deepEqual(reconstructGoal(branch), { goal: null, hasGoal: false });
 });
 

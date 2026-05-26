@@ -235,6 +235,16 @@ function createRuntimeHarness(options: {
 
   goalExtension(pi);
 
+  function reloadExtension(): void {
+    handlers.clear();
+    goalExtension(pi);
+  }
+
+  async function reloadSession(reason: "startup" | "resume" = "startup"): Promise<void> {
+    reloadExtension();
+    await emit("session_start", { type: "session_start", reason });
+  }
+
   async function runCommand(args: string): Promise<void> {
     assert.ok(commandHandler);
     await commandHandler(args, ctx);
@@ -267,6 +277,8 @@ function createRuntimeHarness(options: {
     entries,
     runCommand,
     runTool,
+    reloadExtension,
+    reloadSession,
     sentMessages,
     sentUserMessages,
     setIdle(idle: boolean) {
@@ -2931,7 +2943,8 @@ test("/goal new objective after overflow pause sends user turn and resets host o
   if (typeof content !== "string") {
     assert.fail("Expected overflow replacement start to send a user continuation prompt.");
   }
-  assert.match(content, /<untrusted_objective>\nship the replacement\n<\/untrusted_objective>/);
+  assert.match(content, /<pi_goal_continuation goal_id="/);
+  assert.doesNotMatch(content, /<untrusted_objective>/);
   assert.equal(continuationGoalIdFromPrompt(content), goal.goalId);
 
   await harness.emit("message_start", {
@@ -2977,6 +2990,106 @@ test("/goal clear then start after overflow pause sends user turn and resets hos
   if (typeof content !== "string") {
     assert.fail("Expected overflow clear-and-start to send a user continuation prompt.");
   }
+
+  await harness.emit("message_start", {
+    type: "message_start",
+    message: { role: "user", content },
+  });
+  assert.equal(harness.hostOverflowRecoveryAttempted, false);
+
+  await emitPersistentAssistantError(harness, 2, "context_length_exceeded");
+  assert.equal(harness.snapshot().goal?.status, "active");
+});
+
+test("/goal new objective after overflow pause survives extension reload and resets host overflow cap", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  const previousGoal = harness.snapshot().goal;
+  assert.ok(previousGoal);
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await emitPersistentAssistantError(harness, attempt, "context_length_exceeded");
+    await harness.emit("session_compact", {
+      type: "session_compact",
+      summary: "compact summary",
+      tokensBefore: 100,
+    });
+  }
+  assert.equal(harness.snapshot().goal?.status, "paused");
+  assert.equal(harness.hostOverflowRecoveryAttempted, true);
+
+  await harness.reloadSession();
+  assert.equal(harness.snapshot().goal?.status, "paused");
+  assert.equal(harness.hostOverflowRecoveryAttempted, true);
+
+  harness.sentMessages.length = 0;
+  harness.sentUserMessages.length = 0;
+  await harness.runCommand("ship the replacement");
+  const goal = harness.snapshot().goal;
+  assert.ok(goal);
+  assert.equal(goal.status, "active");
+  assert.equal(goal.objective, "ship the replacement");
+  assert.notEqual(goal.goalId, previousGoal.goalId);
+  assert.equal(harness.sentMessages.length, 0);
+  assert.equal(harness.sentUserMessages.length, 1);
+
+  const startMessage = harness.sentUserMessages[0];
+  assert.ok(startMessage);
+  const content = startMessage.content;
+  if (typeof content !== "string") {
+    assert.fail("Expected overflow replacement after reload to send a user continuation prompt.");
+  }
+  assert.doesNotMatch(content, /<untrusted_objective>/);
+  assert.equal(continuationGoalIdFromPrompt(content), goal.goalId);
+
+  await harness.emit("message_start", {
+    type: "message_start",
+    message: { role: "user", content },
+  });
+  assert.equal(harness.hostOverflowRecoveryAttempted, false);
+
+  await emitPersistentAssistantError(harness, 2, "context_length_exceeded");
+  assert.equal(harness.snapshot().goal?.status, "active");
+});
+
+test("/goal clear then start after overflow pause survives extension reload and resets host overflow cap", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await emitPersistentAssistantError(harness, attempt, "context_length_exceeded");
+    await harness.emit("session_compact", {
+      type: "session_compact",
+      summary: "compact summary",
+      tokensBefore: 100,
+    });
+  }
+  assert.equal(harness.snapshot().goal?.status, "paused");
+  assert.equal(harness.hostOverflowRecoveryAttempted, true);
+
+  await harness.reloadSession();
+  assert.equal(harness.snapshot().goal?.status, "paused");
+  assert.equal(harness.hostOverflowRecoveryAttempted, true);
+
+  await harness.runCommand("clear");
+  assert.equal(harness.snapshot().goal, null);
+
+  harness.sentMessages.length = 0;
+  harness.sentUserMessages.length = 0;
+  await harness.runCommand("ship the replacement");
+  const goal = harness.snapshot().goal;
+  assert.ok(goal);
+  assert.equal(goal.status, "active");
+  assert.equal(harness.sentMessages.length, 0);
+  assert.equal(harness.sentUserMessages.length, 1);
+
+  const startMessage = harness.sentUserMessages[0];
+  assert.ok(startMessage);
+  const content = startMessage.content;
+  if (typeof content !== "string") {
+    assert.fail("Expected overflow clear-and-start after reload to send a user continuation prompt.");
+  }
+  assert.doesNotMatch(content, /<untrusted_objective>/);
 
   await harness.emit("message_start", {
     type: "message_start",

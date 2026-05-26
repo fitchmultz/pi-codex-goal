@@ -34,6 +34,12 @@ export type GoalCustomEntry =
 			source: GoalEntrySource;
 			clearedGoalId: string | null;
 			at: number;
+	  }
+	| {
+			version: 1;
+			kind: "host_overflow_cap_reset";
+			active: boolean;
+			at: number;
 	  };
 
 export interface GoalResult {
