@@ -393,12 +393,6 @@ function parseProviderContextHandlerResult(result: unknown): ProviderContextHand
   return { messages };
 }
 
-export function firstProviderContextResult(
-  results: ProviderContextHandlerResult[],
-): ProviderContextResult | undefined {
-  return results[0];
-}
-
 export function requireProviderContextResult(
   results: ProviderContextHandlerResult[],
 ): ProviderContextResult {
