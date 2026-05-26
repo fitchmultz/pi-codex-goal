@@ -10,6 +10,8 @@ import { CUSTOM_ENTRY_TYPE } from "../../src/types.js";
 import {
   createRuntimeHarness,
   emitPersistentAssistantError,
+  emitQueuedTurnThroughContext,
+  queuedCustomMessage,
   type RuntimeHarness,
 } from "./runtime-harness.js";
 
@@ -110,6 +112,44 @@ export async function emitPendingRecoveryShutdown(
     );
   }
   return pausedGoal;
+}
+
+export async function givenPendingRecoveryWithStaleQueuedAbort(
+  kind: "overflow" | "transient",
+): Promise<{
+  harness: RuntimeHarness;
+  activeGoal: NonNullable<ReturnType<RuntimeHarness["snapshot"]>["goal"]>;
+  pausedGoal: NonNullable<ReturnType<RuntimeHarness["snapshot"]>["goal"]>;
+}> {
+  const harness =
+    kind === "overflow"
+      ? createRuntimeHarness({ compactBehavior: "unavailable" })
+      : createRuntimeHarness();
+
+  await harness.runCommand("old goal");
+  const oldQueued = harness.sentMessages[0];
+  assert.ok(oldQueued);
+  const oldMessage = queuedCustomMessage(oldQueued);
+
+  await harness.runCommand("ship it");
+  const activeGoal = harness.snapshot().goal;
+  assert.ok(activeGoal);
+  harness.sentMessages.length = 0;
+  harness.footerStatuses.length = 0;
+
+  const errorMessage = kind === "overflow" ? "context_length_exceeded" : "websocket closed";
+  await emitPersistentAssistantError(harness, 0, errorMessage);
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.doesNotMatch(harness.footerStatuses.at(-1) ?? "", /\/goal resume/);
+
+  await emitQueuedTurnThroughContext(harness, [oldMessage]);
+  assert.equal(harness.abortCount, 1);
+
+  const pausedGoal = await emitPendingRecoveryShutdown(harness, kind);
+  assert.ok(pausedGoal);
+  assert.equal(pausedGoal.goalId, activeGoal.goalId);
+
+  return { harness, activeGoal, pausedGoal };
 }
 
 export async function replaceGoalAfterOverflowPause(

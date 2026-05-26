@@ -1,20 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { formatFooterStatus } from "../src/format.js";
-import {
-  HOST_OVERFLOW_RECOVERY_REASON,
-  recoveryAttentionMessage,
-} from "../src/recovery.js";
-import { CUSTOM_ENTRY_TYPE } from "../src/types.js";
 import {
   createRuntimeHarness,
   emitPersistentAssistantError,
-  emitQueuedTurnThroughContext,
 } from "./support/runtime-harness.js";
 import {
   emitPendingRecoveryShutdown,
   givenPendingOverflowRecovery,
+  givenPendingRecoveryWithStaleQueuedAbort,
   givenPendingTransientRecovery,
   replaceHarnessBranchWithGoal,
 } from "./support/scenarios.js";
@@ -112,98 +106,17 @@ test("session_start after pending overflow shutdown does not auto-continue", asy
   assert.equal(harness.sentMessages.length, 0);
 });
 
-test("pending transient shutdown with stale queued abort pauses before session_tree", async () => {
-  const harness = createRuntimeHarness();
-  await harness.runCommand("old goal");
-  const oldQueued = harness.sentMessages[0];
-  assert.ok(oldQueued);
-  const oldMessage = {
-    role: "custom",
-    customType: CUSTOM_ENTRY_TYPE,
-    content: oldQueued.message.content,
-    display: false,
-    details: oldQueued.message.details,
-    timestamp: 1,
-  };
+for (const kind of ["transient", "overflow"] as const) {
+  test(`pending ${kind} shutdown with stale queued abort pauses before session_tree`, async () => {
+    const { harness } = await givenPendingRecoveryWithStaleQueuedAbort(kind);
 
-  await harness.runCommand("ship it");
-  const activeGoal = harness.snapshot().goal;
-  assert.ok(activeGoal);
-  harness.sentMessages.length = 0;
-  harness.footerStatuses.length = 0;
+    harness.sentMessages.length = 0;
+    await harness.emit("session_tree", { type: "session_tree" });
 
-  await emitPersistentAssistantError(harness, 0, "websocket closed");
-  assert.equal(harness.snapshot().goal?.status, "active");
-  assert.doesNotMatch(harness.footerStatuses.at(-1) ?? "", /\/goal resume/);
-
-  await emitQueuedTurnThroughContext(harness, [oldMessage]);
-  assert.equal(harness.abortCount, 1);
-
-  await harness.emit("session_shutdown", { type: "session_shutdown" });
-
-  const pausedGoal = harness.snapshot().goal;
-  assert.equal(pausedGoal?.goalId, activeGoal.goalId);
-  assert.equal(pausedGoal?.status, "paused");
-  assert.match(harness.footerStatuses.at(-1) ?? "", /\/goal resume/);
-  assert.equal(
-    harness.footerStatuses.at(-1),
-    formatFooterStatus(
-      pausedGoal,
-      recoveryAttentionMessage("provider error (websocket closed)"),
-    ),
-  );
-
-  harness.sentMessages.length = 0;
-  await harness.emit("session_tree", { type: "session_tree" });
-
-  assert.equal(harness.snapshot().goal?.status, "paused");
-  assert.equal(harness.sentMessages.length, 0);
-});
-
-test("pending overflow shutdown with stale queued abort pauses before session_tree", async () => {
-  const harness = createRuntimeHarness({ compactBehavior: "unavailable" });
-  await harness.runCommand("old goal");
-  const oldQueued = harness.sentMessages[0];
-  assert.ok(oldQueued);
-  const oldMessage = {
-    role: "custom",
-    customType: CUSTOM_ENTRY_TYPE,
-    content: oldQueued.message.content,
-    display: false,
-    details: oldQueued.message.details,
-    timestamp: 1,
-  };
-
-  await harness.runCommand("ship it");
-  const activeGoal = harness.snapshot().goal;
-  assert.ok(activeGoal);
-  harness.sentMessages.length = 0;
-  harness.footerStatuses.length = 0;
-
-  await emitPersistentAssistantError(harness, 0, "context_length_exceeded");
-  assert.equal(harness.snapshot().goal?.status, "active");
-  assert.doesNotMatch(harness.footerStatuses.at(-1) ?? "", /\/goal resume/);
-
-  await emitQueuedTurnThroughContext(harness, [oldMessage]);
-  assert.equal(harness.abortCount, 1);
-
-  await harness.emit("session_shutdown", { type: "session_shutdown" });
-
-  const pausedGoal = harness.snapshot().goal;
-  assert.equal(pausedGoal?.goalId, activeGoal.goalId);
-  assert.equal(pausedGoal?.status, "paused");
-  assert.match(harness.footerStatuses.at(-1) ?? "", /\/goal resume/);
-  assert.equal(
-    harness.footerStatuses.at(-1),
-    formatFooterStatus(pausedGoal, recoveryAttentionMessage(HOST_OVERFLOW_RECOVERY_REASON)),
-  );
-
-  harness.sentMessages.length = 0;
-  await harness.emit("session_tree", { type: "session_tree" });
-
-  assert.equal(harness.snapshot().goal?.status, "paused");
-  assert.equal(harness.sentMessages.length, 0);
-});
+    assert.equal(harness.snapshot().goal?.status, "paused");
+    assert.equal(harness.sentMessages.length, 0);
+  });
+}
 
 test("session_tree keeps same-goal pending transient recovery suppressed", async () => {
   const harness = createRuntimeHarness();
