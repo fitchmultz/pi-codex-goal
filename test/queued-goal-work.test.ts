@@ -4,11 +4,10 @@ import { test } from "node:test";
 import { toQueuedGoalContextCarrier, toQueuedGoalWorkSource, userContentFromUnknown } from "../src/queued-goal-messages.js";
 import {
   applyQueuedGoalProviderContextRewrites,
-  dedupeActiveGoalContinuations,
   extensionQueuedGoalWorkMessageId,
-  queuedGoalWorkMessageId,
+  extensionQueuedGoalWorkMessageIdForRuntime,
 } from "../src/queued-goal-work.js";
-import { compactContinuationPrompt, continuationPrompt } from "../src/prompts.js";
+import { compactContinuationPrompt, continuationGoalIdFromPrompt, continuationPrompt } from "../src/prompts.js";
 import type { ThreadGoal } from "../src/types.js";
 import { goalCustomContextMessage, goalUserContextMessage } from "./support/runtime-harness.js";
 
@@ -21,6 +20,9 @@ const activeGoal: ThreadGoal = {
   createdAt: 0,
   updatedAt: 0,
 };
+
+const resolveStaleQueuedGoalWorkMessageId = (message: Parameters<typeof extensionQueuedGoalWorkMessageIdForRuntime>[0]) =>
+  extensionQueuedGoalWorkMessageIdForRuntime(message, continuationGoalIdFromPrompt);
 
 test("toQueuedGoalWorkSource ignores unrelated custom messages", () => {
   const unrelated = toQueuedGoalContextCarrier({
@@ -44,7 +46,7 @@ test("applyQueuedGoalProviderContextRewrites rewrites stale custom and user queu
 
   const customResult = applyQueuedGoalProviderContextRewrites([staleCustom], {
     goal: completedGoal,
-    resolveStaleQueuedGoalWorkMessageId: queuedGoalWorkMessageId,
+    resolveStaleQueuedGoalWorkMessageId,
     resolveActiveContinuationQueuedGoalWorkMessageId: extensionQueuedGoalWorkMessageId,
   });
 
@@ -60,7 +62,7 @@ test("applyQueuedGoalProviderContextRewrites rewrites stale custom and user queu
 
   const userResult = applyQueuedGoalProviderContextRewrites([staleUser], {
     goal: completedGoal,
-    resolveStaleQueuedGoalWorkMessageId: queuedGoalWorkMessageId,
+    resolveStaleQueuedGoalWorkMessageId,
     resolveActiveContinuationQueuedGoalWorkMessageId: extensionQueuedGoalWorkMessageId,
   });
 
@@ -68,7 +70,7 @@ test("applyQueuedGoalProviderContextRewrites rewrites stale custom and user queu
   assert.match(String(userContentFromUnknown(userResult.messages[0]?.content)[0]?.text), /queued hidden goal continuation was stale/);
 });
 
-test("dedupeActiveGoalContinuations supersedes older custom continuations and refreshes the latest", () => {
+test("applyQueuedGoalProviderContextRewrites supersedes older custom continuations and refreshes the latest", () => {
   const older = goalCustomContextMessage({
     content: continuationPrompt(activeGoal),
     details: { kind: "continuation", goalId: activeGoal.goalId },
@@ -83,11 +85,11 @@ test("dedupeActiveGoalContinuations supersedes older custom continuations and re
     timestamp: 2,
   });
 
-  const { messages, changed } = dedupeActiveGoalContinuations(
-    [older, latest],
-    activeGoal,
-    extensionQueuedGoalWorkMessageId,
-  );
+  const { messages, changed } = applyQueuedGoalProviderContextRewrites([older, latest], {
+    goal: activeGoal,
+    resolveStaleQueuedGoalWorkMessageId,
+    resolveActiveContinuationQueuedGoalWorkMessageId: extensionQueuedGoalWorkMessageId,
+  });
 
   assert.equal(changed, true);
   assert.equal(messages.length, 2);
@@ -108,7 +110,7 @@ test("applyQueuedGoalProviderContextRewrites marks stale continuations for compl
 
   const { messages, changed } = applyQueuedGoalProviderContextRewrites([staleContinuation], {
     goal: { ...activeGoal, status: "complete" },
-    resolveStaleQueuedGoalWorkMessageId: queuedGoalWorkMessageId,
+    resolveStaleQueuedGoalWorkMessageId,
     resolveActiveContinuationQueuedGoalWorkMessageId: extensionQueuedGoalWorkMessageId,
   });
 
@@ -122,7 +124,7 @@ test("applyQueuedGoalProviderContextRewrites marks stale continuations for compl
   });
 });
 
-test("dedupeActiveGoalContinuations leaves an active user marker verbatim", () => {
+test("applyQueuedGoalProviderContextRewrites leaves an active user marker verbatim", () => {
   const userMarker = goalUserContextMessage(continuationPrompt(activeGoal), 2);
   const olderHidden = goalCustomContextMessage({
     content: continuationPrompt({
@@ -138,10 +140,13 @@ test("dedupeActiveGoalContinuations leaves an active user marker verbatim", () =
     timestamp: 3,
   });
 
-  const { messages, changed } = dedupeActiveGoalContinuations(
+  const { messages, changed } = applyQueuedGoalProviderContextRewrites(
     [olderHidden, userMarker, latestHidden],
-    activeGoal,
-    extensionQueuedGoalWorkMessageId,
+    {
+      goal: activeGoal,
+      resolveStaleQueuedGoalWorkMessageId,
+      resolveActiveContinuationQueuedGoalWorkMessageId: extensionQueuedGoalWorkMessageId,
+    },
   );
 
   assert.equal(changed, true);

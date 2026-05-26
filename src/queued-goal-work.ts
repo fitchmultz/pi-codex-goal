@@ -128,7 +128,7 @@ export function extensionQueuedGoalWorkMessageId(message: QueuedGoalContextInput
   return continuationGoalIdFromMessageContent(message.content);
 }
 
-export function queuedGoalWorkMessageId(message: QueuedGoalContextInput): string | null {
+function queuedGoalWorkMessageId(message: QueuedGoalContextInput): string | null {
   if (message.role === "user") {
     return continuationGoalIdFromMessageContent(message.content);
   }
@@ -175,7 +175,7 @@ function continuationPromptForProviderContext(
   return compactContinuationPrompt(goal);
 }
 
-export function dedupeActiveGoalContinuations<TMessage extends QueuedGoalContextInput>(
+function dedupeActiveGoalContinuations<TMessage extends QueuedGoalContextInput>(
   messages: readonly TMessage[],
   goal: ThreadGoal,
   resolveQueuedGoalWorkMessageId: (message: QueuedGoalContextInput) => string | null,

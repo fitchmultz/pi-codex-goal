@@ -1,6 +1,6 @@
 import { CUSTOM_ENTRY_TYPE } from "./types.js";
 
-export type GoalQueuedWorkKind = "continuation" | "command_start" | "command_resume";
+type GoalQueuedWorkKind = "continuation" | "command_start" | "command_resume";
 
 export interface ActiveGoalQueuedDetails {
   kind: GoalQueuedWorkKind;
