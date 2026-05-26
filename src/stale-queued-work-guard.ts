@@ -1,4 +1,4 @@
-import { isAbortedAssistantMessage, type AssistantTurnMessage } from "./goal-accounting.js";
+import type { AssistantTurnMessage } from "./goal-accounting.js";
 import { pendingStaleQueuedGoalWorkIdsFromMessages } from "./queued-goal-work.js";
 
 export type StaleQueuedWorkEffect =
@@ -189,13 +189,9 @@ function resolveLifecycleAfterTerminalCleanup(
 function consumePendingStaleTurnEnd(
   cleanup: TerminalCleanup,
   turnIndex: number | null,
-  message: AssistantTurnMessage,
+  _message: AssistantTurnMessage,
 ): boolean {
-  if (
-    turnIndex === null ||
-    !isAbortedAssistantMessage(message) ||
-    !cleanup.pendingTurnEndIndexes.has(turnIndex)
-  ) {
+  if (turnIndex === null || !cleanup.pendingTurnEndIndexes.has(turnIndex)) {
     return false;
   }
   cleanup.pendingTurnEndIndexes.delete(turnIndex);
@@ -206,9 +202,6 @@ function consumePendingStaleAgentEnd(
   cleanup: TerminalCleanup,
   messages: Array<{ role: string; customType?: string; details?: unknown; content?: unknown; stopReason?: string }>,
 ): string[] {
-  if (!messages.some(isAbortedAssistantMessage)) {
-    return [];
-  }
   return pendingStaleQueuedGoalWorkIdsFromMessages(messages, cleanup.pendingAgentEndGoalIds);
 }
 
@@ -442,9 +435,6 @@ export function createStaleQueuedWorkGuard(): StaleQueuedWorkGuard {
         }
 
         if (olderGoalIds.length > 0) {
-          if (!messages.some(isAbortedAssistantMessage)) {
-            return emptyPlan();
-          }
           for (const goalId of olderGoalIds) {
             aborting.terminalCleanup.pendingAgentEndGoalIds.delete(goalId);
           }
