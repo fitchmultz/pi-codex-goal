@@ -13,11 +13,21 @@ export type StaleQueuedWorkPlan = {
 
 export type StaleQueuedWorkLifecycleKind =
   | "idle"
+  | "observingTurn"
   | "abortingTurn"
   | "awaitingTerminalCleanup";
 
+type ObservingTurnState = {
+  kind: "observingTurn";
+  staleGoalIds: Set<string>;
+  hasRunnableWork: boolean;
+  pendingTurnEndIndexes?: Set<number>;
+  pendingAgentEndGoalIds?: Set<string>;
+};
+
 type StaleQueuedWorkLifecycleState =
   | { kind: "idle" }
+  | ObservingTurnState
   | {
       kind: "abortingTurn";
       turnIndex: number | null;
@@ -29,11 +39,6 @@ type StaleQueuedWorkLifecycleState =
       pendingTurnEndIndexes: Set<number>;
       pendingAgentEndGoalIds: Set<string>;
     };
-
-interface TurnObservation {
-  staleGoalIds: Set<string>;
-  hasRunnableWork: boolean;
-}
 
 export interface StaleQueuedWorkGuard {
   lifecycleKind(): StaleQueuedWorkLifecycleKind;
@@ -84,19 +89,52 @@ function skipPlan(...effects: StaleQueuedWorkEffect[]): StaleQueuedWorkPlan {
   return { skip: true, effects };
 }
 
+function beginObservingTurn(
+  lifecycle: Exclude<StaleQueuedWorkLifecycleState, { kind: "abortingTurn" }>,
+): ObservingTurnState {
+  switch (lifecycle.kind) {
+    case "observingTurn":
+      return lifecycle;
+    case "idle":
+      return {
+        kind: "observingTurn",
+        staleGoalIds: new Set(),
+        hasRunnableWork: false,
+      };
+    case "awaitingTerminalCleanup":
+      return {
+        kind: "observingTurn",
+        staleGoalIds: new Set(),
+        hasRunnableWork: false,
+        pendingTurnEndIndexes: lifecycle.pendingTurnEndIndexes,
+        pendingAgentEndGoalIds: lifecycle.pendingAgentEndGoalIds,
+      };
+    default: {
+      const _exhaustive: never = lifecycle;
+      return _exhaustive;
+    }
+  }
+}
+
+function finishObservingTurn(observing: ObservingTurnState): StaleQueuedWorkLifecycleState {
+  const pendingTurnEndIndexes = observing.pendingTurnEndIndexes;
+  const pendingAgentEndGoalIds = observing.pendingAgentEndGoalIds;
+  if (
+    pendingTurnEndIndexes !== undefined &&
+    pendingAgentEndGoalIds !== undefined &&
+    (pendingTurnEndIndexes.size > 0 || pendingAgentEndGoalIds.size > 0)
+  ) {
+    return {
+      kind: "awaitingTerminalCleanup",
+      pendingTurnEndIndexes,
+      pendingAgentEndGoalIds,
+    };
+  }
+  return { kind: "idle" };
+}
+
 export function createStaleQueuedWorkGuard(): StaleQueuedWorkGuard {
   let lifecycle: StaleQueuedWorkLifecycleState = { kind: "idle" };
-  let turnObservation: TurnObservation = {
-    staleGoalIds: new Set(),
-    hasRunnableWork: false,
-  };
-
-  const resetTurnObservation = (): void => {
-    turnObservation = {
-      staleGoalIds: new Set(),
-      hasRunnableWork: false,
-    };
-  };
 
   const transitionToAwaitingTerminalCleanup = (
     pendingTurnEndIndexes: Set<number>,
@@ -147,6 +185,13 @@ export function createStaleQueuedWorkGuard(): StaleQueuedWorkGuard {
     return skipPlan({ type: "clearAccounting" }, { type: "refreshUi" });
   };
 
+  const clearTurnObservation = (): void => {
+    if (lifecycle.kind !== "observingTurn") {
+      return;
+    }
+    lifecycle = finishObservingTurn(lifecycle);
+  };
+
   return {
     lifecycleKind(): StaleQueuedWorkLifecycleKind {
       return lifecycleKindFromState(lifecycle);
@@ -157,18 +202,22 @@ export function createStaleQueuedWorkGuard(): StaleQueuedWorkGuard {
     },
 
     noteRunnableWorkStarted(): void {
-      turnObservation.hasRunnableWork = true;
+      if (lifecycle.kind === "abortingTurn") {
+        return;
+      }
+      lifecycle = { ...beginObservingTurn(lifecycle), hasRunnableWork: true };
     },
 
     noteStaleWorkStarted(goalId: string): void {
-      turnObservation.staleGoalIds.add(goalId);
+      if (lifecycle.kind === "abortingTurn") {
+        return;
+      }
+      const observing = beginObservingTurn(lifecycle);
+      observing.staleGoalIds.add(goalId);
+      lifecycle = observing;
     },
 
     planContextAbort(currentTurnIndex: number | null): StaleQueuedWorkPlan | null {
-      if (turnObservation.staleGoalIds.size === 0 || turnObservation.hasRunnableWork) {
-        return null;
-      }
-
       if (lifecycle.kind === "abortingTurn") {
         return {
           skip: false,
@@ -176,21 +225,32 @@ export function createStaleQueuedWorkGuard(): StaleQueuedWorkGuard {
         };
       }
 
-      const pendingTurnEndIndexes = new Set<number>();
-      const pendingAgentEndGoalIds = new Set<string>();
-      if (lifecycle.kind === "awaitingTerminalCleanup") {
-        for (const turnIndex of lifecycle.pendingTurnEndIndexes) {
-          pendingTurnEndIndexes.add(turnIndex);
-        }
-        for (const goalId of lifecycle.pendingAgentEndGoalIds) {
-          pendingAgentEndGoalIds.add(goalId);
-        }
+      if (lifecycle.kind !== "observingTurn") {
+        return null;
       }
+
+      const observing = lifecycle;
+      if (observing.staleGoalIds.size === 0 || observing.hasRunnableWork) {
+        if (
+          observing.pendingTurnEndIndexes !== undefined &&
+          observing.pendingAgentEndGoalIds !== undefined
+        ) {
+          lifecycle = {
+            kind: "awaitingTerminalCleanup",
+            pendingTurnEndIndexes: observing.pendingTurnEndIndexes,
+            pendingAgentEndGoalIds: observing.pendingAgentEndGoalIds,
+          };
+        }
+        return null;
+      }
+
+      const pendingTurnEndIndexes = new Set(observing.pendingTurnEndIndexes ?? []);
+      const pendingAgentEndGoalIds = new Set(observing.pendingAgentEndGoalIds ?? []);
       noteTerminalEvents(
         pendingTurnEndIndexes,
         pendingAgentEndGoalIds,
         currentTurnIndex,
-        turnObservation.staleGoalIds,
+        observing.staleGoalIds,
       );
 
       lifecycle = {
@@ -222,7 +282,7 @@ export function createStaleQueuedWorkGuard(): StaleQueuedWorkGuard {
     },
 
     planTurnStart(): StaleQueuedWorkPlan {
-      resetTurnObservation();
+      clearTurnObservation();
       return releaseAbortingTurn();
     },
 
@@ -306,7 +366,7 @@ export function createStaleQueuedWorkGuard(): StaleQueuedWorkGuard {
     },
 
     planSessionShutdown(): StaleQueuedWorkPlan {
-      resetTurnObservation();
+      clearTurnObservation();
       return { skip: false, effects: clearAllStaleState() };
     },
   };

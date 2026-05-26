@@ -12,19 +12,45 @@ function effectTypes(plan: { effects: Array<{ type: string }> }): string[] {
   return plan.effects.map((effect) => effect.type);
 }
 
-test("idle: mixed stale and current work does not abort", () => {
+test("idle -> observingTurn when stale work is noted", () => {
+  const guard = createStaleQueuedWorkGuard();
+  guard.noteStaleWorkStarted("goal-1");
+
+  assert.equal(guard.lifecycleKind(), "observingTurn");
+});
+
+test("idle -> observingTurn when runnable work is noted", () => {
+  const guard = createStaleQueuedWorkGuard();
+  guard.noteRunnableWorkStarted();
+
+  assert.equal(guard.lifecycleKind(), "observingTurn");
+  assert.equal(guard.planContextAbort(0), null);
+});
+
+test("observingTurn: mixed stale and current work does not abort", () => {
   const guard = createStaleQueuedWorkGuard();
   guard.noteStaleWorkStarted("stale-goal");
   guard.noteRunnableWorkStarted();
 
   assert.equal(guard.planContextAbort(0), null);
-  assert.equal(guard.lifecycleKind(), "idle");
+  assert.equal(guard.lifecycleKind(), "observingTurn");
   assert.equal(guard.isBlockingContinuation(), false);
 });
 
-test("idle -> abortingTurn on context abort with stale-only work", () => {
+test("observingTurn -> idle on turn_start clears observation", () => {
   const guard = createStaleQueuedWorkGuard();
   guard.noteStaleWorkStarted("goal-1");
+  guard.noteRunnableWorkStarted();
+
+  const plan = guard.planTurnStart();
+  assert.deepEqual(plan, { skip: false, effects: [] });
+  assert.equal(guard.lifecycleKind(), "idle");
+});
+
+test("observingTurn -> abortingTurn on context abort with stale-only work", () => {
+  const guard = createStaleQueuedWorkGuard();
+  guard.noteStaleWorkStarted("goal-1");
+  assert.equal(guard.lifecycleKind(), "observingTurn");
 
   const plan = guard.planContextAbort(2);
   assert.ok(plan !== null);
@@ -77,6 +103,21 @@ test("abortingTurn -> idle on agent_end finishes lifecycle", () => {
   assert.deepEqual(effectTypes(agentEndPlan), ["clearAccounting", "refreshUi"]);
   assert.equal(guard.lifecycleKind(), "idle");
   assert.equal(guard.isBlockingContinuation(), false);
+});
+
+test("awaitingTerminalCleanup + mixed observation restores awaiting without abort", () => {
+  const guard = createStaleQueuedWorkGuard();
+  guard.noteStaleWorkStarted("goal-1");
+  guard.planContextAbort(0);
+  guard.planUserInputClearAbort();
+  assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
+
+  guard.noteStaleWorkStarted("goal-2");
+  guard.noteRunnableWorkStarted();
+  assert.equal(guard.lifecycleKind(), "observingTurn");
+
+  assert.equal(guard.planContextAbort(1), null);
+  assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
 });
 
 test("awaitingTerminalCleanup: late agent_end for pending stale goal is skipped", () => {
