@@ -154,9 +154,19 @@ export function isPiCodexGoalCustomMessage(message: QueuedGoalContextCarrier): m
   return isGoalCustomMessage(message) && message.customType === CUSTOM_ENTRY_TYPE;
 }
 
-export function applyQueuedGoalRewrite<C extends QueuedGoalContextCarrier>(
-  carrier: C,
-  rewritten: RewrittenQueuedGoalWorkMessage,
-): C {
-  return { ...carrier, ...rewritten };
+export function isActiveGoalQueuedDetails(details: unknown): details is ActiveGoalQueuedDetails {
+  if (details === null || typeof details !== "object") {
+    return false;
+  }
+
+  const candidate = details as { kind?: unknown; goalId?: unknown };
+  const kind = candidate.kind;
+  return (
+    (kind === "continuation" || kind === "command_start" || kind === "command_resume") &&
+    typeof candidate.goalId === "string"
+  );
+}
+
+export function isCommandResumeQueuedGoalMessage(message: QueuedGoalContextCarrier): boolean {
+  return isGoalCustomMessage(message) && isActiveGoalQueuedDetails(message.details) && message.details.kind === "command_resume";
 }

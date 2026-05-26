@@ -10,6 +10,7 @@ import {
   isToolUseAssistantMessage,
 } from "./goal-accounting.js";
 import { compactContinuationPrompt, continuationGoalIdFromPrompt } from "./prompts.js";
+import { isCommandResumeQueuedGoalMessage } from "./queued-goal-messages.js";
 import {
   dedupeActiveGoalContinuations,
   extensionQueuedGoalWorkMessageId,
@@ -638,7 +639,7 @@ export default function (pi: ExtensionAPI): void {
       }
 
       changed = true;
-      return rewriteStaleQueuedGoalContextMessage(message, queuedGoalId, goal);
+      return rewriteStaleQueuedGoalContextMessage(message, queuedGoalId, goal) as typeof message;
     });
 
     if (goal?.status === "active") {
@@ -717,13 +718,7 @@ export default function (pi: ExtensionAPI): void {
     clearContinuationStateFor(queuedGoalId);
     if (isCurrentActiveGoalId(queuedGoalId)) {
       startedRunnableWorkThisTurn = true;
-      const details = (event.message as { details?: unknown }).details;
-      if (
-        details !== null &&
-        typeof details === "object" &&
-        "kind" in details &&
-        (details as { kind?: unknown }).kind === "command_resume"
-      ) {
+      if (isCommandResumeQueuedGoalMessage(event.message)) {
         resetErrorRecovery();
       }
       return;

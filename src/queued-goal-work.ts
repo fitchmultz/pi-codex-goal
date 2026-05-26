@@ -5,8 +5,7 @@ import {
   supersededContinuationMessage,
 } from "./prompts.js";
 import {
-  applyQueuedGoalRewrite,
-  type ActiveGoalQueuedDetails,
+  isActiveGoalQueuedDetails,
   type QueuedGoalContextCarrier,
   type QueuedGoalTextPart,
   type QueuedGoalWorkSourceMessage,
@@ -21,21 +20,8 @@ import {
 } from "./queued-goal-messages.js";
 import { CUSTOM_ENTRY_TYPE, type ThreadGoal } from "./types.js";
 
-interface QueuedGoalMessageDetails {
-  kind?: unknown;
-  goalId?: unknown;
-}
-
-function isQueuedGoalMessageDetails(details: unknown): details is QueuedGoalMessageDetails {
-  return details !== null && typeof details === "object";
-}
-
 function isSupersededContinuationDetails(details: unknown): boolean {
-  return isQueuedGoalMessageDetails(details) && details.kind === "superseded_continuation";
-}
-
-function isQueuedGoalWorkKind(kind: unknown): kind is ActiveGoalQueuedDetails["kind"] {
-  return kind === "continuation" || kind === "command_start" || kind === "command_resume";
+  return details !== null && typeof details === "object" && (details as { kind?: unknown }).kind === "superseded_continuation";
 }
 
 function textContentFromMessageContent(content: unknown): string | null {
@@ -77,11 +63,8 @@ export function extensionQueuedGoalWorkMessageId(message: QueuedGoalContextCarri
     return null;
   }
 
-  if (isQueuedGoalMessageDetails(message.details)) {
-    const { kind, goalId } = message.details;
-    if (isQueuedGoalWorkKind(kind) && typeof goalId === "string") {
-      return goalId;
-    }
+  if (isActiveGoalQueuedDetails(message.details)) {
+    return message.details.goalId;
   }
 
   return continuationGoalIdFromMessageContent(message.content);
@@ -124,7 +107,7 @@ function continuationPromptForProviderContext(
   goal: ThreadGoal,
   message: Pick<QueuedGoalWorkSourceMessage, "details">,
 ): string {
-  if (isQueuedGoalMessageDetails(message.details)) {
+  if (isActiveGoalQueuedDetails(message.details)) {
     const kind = message.details.kind;
     if (kind === "command_start" || kind === "command_resume") {
       return continuationPrompt(goal);
@@ -170,7 +153,7 @@ export function dedupeActiveGoalContinuations(
       continue;
     }
     const rewritten = supersededContinuationContextMessage(source, activeGoalId);
-    nextMessages[index] = applyQueuedGoalRewrite(message, rewritten);
+    nextMessages[index] = rewritten;
     changed = true;
   }
 
@@ -191,7 +174,7 @@ export function dedupeActiveGoalContinuations(
         content: refreshedContent,
         display: false,
       };
-      nextMessages[latestIndex] = applyQueuedGoalRewrite(latestMessage, refreshed);
+      nextMessages[latestIndex] = refreshed;
       changed = true;
     }
   } else {
@@ -202,7 +185,7 @@ export function dedupeActiveGoalContinuations(
         ...latestSource,
         content: refreshedUserContent,
       };
-      nextMessages[latestIndex] = applyQueuedGoalRewrite(latestMessage, refreshed);
+      nextMessages[latestIndex] = refreshed;
       changed = true;
     }
   }
@@ -238,17 +221,18 @@ export function staleGoalContinuationContextMessage(
   };
 }
 
-export function rewriteStaleQueuedGoalContextMessage<C extends QueuedGoalContextCarrier>(
-  message: C,
+export type QueuedGoalStaleRewriteResult = StaleQueuedGoalCustomMessage | StaleQueuedGoalUserMessage;
+
+export function rewriteStaleQueuedGoalContextMessage(
+  message: QueuedGoalContextCarrier,
   queuedGoalId: string,
   currentGoal: ThreadGoal | null,
-): C {
+): QueuedGoalContextCarrier | QueuedGoalStaleRewriteResult {
   const source = toQueuedGoalWorkSource(message);
   if (!source) {
     return message;
   }
-  const rewritten = staleGoalContinuationContextMessage(source, queuedGoalId, currentGoal);
-  return applyQueuedGoalRewrite(message, rewritten);
+  return staleGoalContinuationContextMessage(source, queuedGoalId, currentGoal);
 }
 
 export function extensionQueuedGoalWorkMessageIdForRuntime(
