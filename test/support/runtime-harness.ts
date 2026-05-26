@@ -6,6 +6,11 @@ import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@e
 import goalExtension, { __testHooks } from "../../src/index.js";
 import { isContextOverflowError } from "../../src/recovery.js";
 import { isGoalCustomEntry, reconstructGoal } from "../../src/state.js";
+import type {
+  ActiveGoalQueuedDetails,
+  QueuedGoalContextCarrier,
+  QueuedGoalUserContent,
+} from "../../src/queued-goal-messages.js";
 import { CUSTOM_ENTRY_TYPE } from "../../src/types.js";
 
 type EventHandler = (event: object, ctx: ExtensionContext) => unknown | Promise<unknown>;
@@ -334,7 +339,7 @@ export async function emitToolExecutionEnd(harness: ReturnType<typeof createRunt
   });
 }
 
-export function queuedCustomMessage(sent: SentMessage, timestamp = 1) {
+export function queuedCustomMessage(sent: SentMessage, timestamp = 1): QueuedGoalContextCarrier {
   return {
     role: "custom",
     customType: sent.message.customType,
@@ -345,11 +350,46 @@ export function queuedCustomMessage(sent: SentMessage, timestamp = 1) {
   };
 }
 
+export function goalCustomContextMessage(options: {
+  content: string;
+  details: ActiveGoalQueuedDetails | Record<string, unknown>;
+  display?: boolean;
+  timestamp?: number;
+}): QueuedGoalContextCarrier {
+  const message: QueuedGoalContextCarrier = {
+    role: "custom",
+    customType: CUSTOM_ENTRY_TYPE,
+    content: options.content,
+    display: options.display ?? false,
+    details: options.details,
+  };
+  if (options.timestamp !== undefined) {
+    message.timestamp = options.timestamp;
+  }
+  return message;
+}
+
+export function goalUserContextMessage(text: string, timestamp = 1): QueuedGoalContextCarrier {
+  const content: QueuedGoalUserContent = [{ type: "text", text }];
+  return {
+    role: "user",
+    content,
+    timestamp,
+  };
+}
+
+export async function emitProviderContext(
+  harness: RuntimeHarness,
+  messages: QueuedGoalContextCarrier[],
+): Promise<unknown[]> {
+  return harness.emit("context", { type: "context", messages });
+}
+
 export type RuntimeHarness = ReturnType<typeof createRuntimeHarness>;
 
 export async function emitQueuedTurnThroughContext(
   harness: RuntimeHarness,
-  messages: Array<Record<string, unknown>>,
+  messages: QueuedGoalContextCarrier[],
   turnIndex = 0,
 ): Promise<unknown[]> {
   await harness.emit("turn_start", { type: "turn_start", turnIndex, timestamp: turnIndex + 1 });

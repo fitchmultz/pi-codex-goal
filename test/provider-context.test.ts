@@ -6,11 +6,13 @@ import {
   continuationGoalIdFromPrompt,
   continuationPrompt,
 } from "../src/prompts.js";
-import { CUSTOM_ENTRY_TYPE } from "../src/types.js";
 import {
   assistantMessage,
   createRuntimeHarness,
+  emitProviderContext,
   emitQueuedTurnThroughContext,
+  goalCustomContextMessage,
+  goalUserContextMessage,
 } from "./support/runtime-harness.js";
 
 test("provider context dedupes many active continuations to one refreshed prompt", async () => {
@@ -30,36 +32,24 @@ test("provider context dedupes many active continuations to one refreshed prompt
   });
 
   const messages = [
-    {
-      role: "custom",
-      customType: CUSTOM_ENTRY_TYPE,
+    goalCustomContextMessage({
       content: fullStart,
-      display: false,
       details: { kind: "command_start", goalId: goal.goalId },
       timestamp: 1,
-    },
-    {
-      role: "custom",
-      customType: CUSTOM_ENTRY_TYPE,
+    }),
+    goalCustomContextMessage({
       content: olderContinuation,
-      display: false,
       details: { kind: "continuation", goalId: goal.goalId },
       timestamp: 2,
-    },
-    {
-      role: "custom",
-      customType: CUSTOM_ENTRY_TYPE,
+    }),
+    goalCustomContextMessage({
       content: latestContinuation,
-      display: false,
       details: { kind: "continuation", goalId: goal.goalId },
       timestamp: 3,
-    },
+    }),
   ];
 
-  const results = await harness.emit("context", {
-    type: "context",
-    messages,
-  });
+  const results = await emitProviderContext(harness, messages);
   const result = results[0] as { messages?: Array<{ content?: unknown; details?: unknown }> } | undefined;
   assert.ok(result?.messages);
   assert.equal(result.messages.length, 3);
@@ -85,16 +75,9 @@ test("active provider-context user marker without passthrough binding remains ve
   assert.ok(goal);
 
   const userPrompt = continuationPrompt(goal);
-  const userMessage = {
-    role: "user",
-    content: [{ type: "text", text: userPrompt }],
-    timestamp: 1,
-  };
+  const userMessage = goalUserContextMessage(userPrompt, 1);
 
-  const contextResults = await harness.emit("context", {
-    type: "context",
-    messages: [userMessage],
-  });
+  const contextResults = await emitProviderContext(harness, [userMessage]);
 
   assert.equal(contextResults[0], undefined);
   assert.match(userPrompt, /<untrusted_objective>/);
@@ -116,35 +99,22 @@ test("active provider-context dedupe preserves historical user marker mixed with
     usage: { ...goal.usage, tokensUsed: 99, activeSeconds: 42 },
   });
 
-  const userMessage = {
-    role: "user",
-    content: [{ type: "text", text: userPrompt }],
-    timestamp: 2,
-  };
+  const userMessage = goalUserContextMessage(userPrompt, 2);
   const messages = [
-    {
-      role: "custom",
-      customType: CUSTOM_ENTRY_TYPE,
+    goalCustomContextMessage({
       content: olderContinuation,
-      display: false,
       details: { kind: "continuation", goalId: goal.goalId },
       timestamp: 1,
-    },
+    }),
     userMessage,
-    {
-      role: "custom",
-      customType: CUSTOM_ENTRY_TYPE,
+    goalCustomContextMessage({
       content: latestContinuation,
-      display: false,
       details: { kind: "continuation", goalId: goal.goalId },
       timestamp: 3,
-    },
+    }),
   ];
 
-  const contextResults = await harness.emit("context", {
-    type: "context",
-    messages,
-  });
+  const contextResults = await emitProviderContext(harness, messages);
   const result = contextResults[0] as { messages?: Array<{ role: string; content?: unknown; details?: unknown }> } | undefined;
   assert.ok(result?.messages);
   assert.equal(result.messages.length, 3);
@@ -178,11 +148,7 @@ for (const source of ["interactive", "rpc"] as const) {
       source,
     });
 
-    const userMessage = {
-      role: "user",
-      content: [{ type: "text", text: prompt }],
-      timestamp: 1,
-    };
+    const userMessage = goalUserContextMessage(prompt, 1);
     const contextResults = await emitQueuedTurnThroughContext(harness, [userMessage], 0);
 
     assert.equal(contextResults[0], undefined);
@@ -213,29 +179,19 @@ test("active goal provider-context dedupe preserves pasted marker input mixed wi
     source: "interactive",
   });
 
-  const userMessage = {
-    role: "user",
-    content: [{ type: "text", text: pastedPrompt }],
-    timestamp: 2,
-  };
+  const userMessage = goalUserContextMessage(pastedPrompt, 2);
   const messages = [
-    {
-      role: "custom",
-      customType: CUSTOM_ENTRY_TYPE,
+    goalCustomContextMessage({
       content: olderContinuation,
-      display: false,
       details: { kind: "continuation", goalId: goal.goalId },
       timestamp: 1,
-    },
+    }),
     userMessage,
-    {
-      role: "custom",
-      customType: CUSTOM_ENTRY_TYPE,
+    goalCustomContextMessage({
       content: latestContinuation,
-      display: false,
       details: { kind: "continuation", goalId: goal.goalId },
       timestamp: 3,
-    },
+    }),
   ];
 
   const contextResults = await emitQueuedTurnThroughContext(harness, messages, 0);
@@ -261,27 +217,18 @@ test("latest active continuation remains runnable after provider-context dedupe"
 
   const staleInBranch = continuationPrompt(goal);
   const latestInBranch = compactContinuationPrompt(goal);
-  const contextResults = await harness.emit("context", {
-    type: "context",
-    messages: [
-      {
-        role: "custom",
-        customType: CUSTOM_ENTRY_TYPE,
-        content: staleInBranch,
-        display: false,
-        details: { kind: "continuation", goalId: goal.goalId },
-        timestamp: 1,
-      },
-      {
-        role: "custom",
-        customType: CUSTOM_ENTRY_TYPE,
-        content: latestInBranch,
-        display: false,
-        details: { kind: "continuation", goalId: goal.goalId },
-        timestamp: 2,
-      },
-    ],
-  });
+  const contextResults = await emitProviderContext(harness, [
+    goalCustomContextMessage({
+      content: staleInBranch,
+      details: { kind: "continuation", goalId: goal.goalId },
+      timestamp: 1,
+    }),
+    goalCustomContextMessage({
+      content: latestInBranch,
+      details: { kind: "continuation", goalId: goal.goalId },
+      timestamp: 2,
+    }),
+  ]);
   const contextResult = contextResults[0] as { messages?: Array<{ content?: unknown }> } | undefined;
   const latestContent = String(contextResult?.messages?.[1]?.content);
   assert.equal(continuationGoalIdFromPrompt(latestContent), goal.goalId);
@@ -314,27 +261,18 @@ test("completed goals are not treated as active during continuation dedupe", asy
   const prompt = continuationPrompt(harness.snapshot().goal!);
 
   await harness.runTool("update_goal", { status: "complete" });
-  const results = await harness.emit("context", {
-    type: "context",
-    messages: [
-      {
-        role: "custom",
-        customType: CUSTOM_ENTRY_TYPE,
-        content: prompt,
-        display: false,
-        details: { kind: "continuation", goalId },
-        timestamp: 1,
-      },
-      {
-        role: "custom",
-        customType: CUSTOM_ENTRY_TYPE,
-        content: prompt,
-        display: false,
-        details: { kind: "continuation", goalId },
-        timestamp: 2,
-      },
-    ],
-  });
+  const results = await emitProviderContext(harness, [
+    goalCustomContextMessage({
+      content: prompt,
+      details: { kind: "continuation", goalId },
+      timestamp: 1,
+    }),
+    goalCustomContextMessage({
+      content: prompt,
+      details: { kind: "continuation", goalId },
+      timestamp: 2,
+    }),
+  ]);
 
   const result = results[0] as { messages?: Array<{ content?: unknown; details?: unknown }> } | undefined;
   assert.match(String(result?.messages?.[0]?.content), /queued hidden goal continuation was stale/);

@@ -15,7 +15,7 @@ import {
   extensionQueuedGoalWorkMessageId,
   extensionQueuedGoalWorkMessageIdForRuntime,
   pendingStaleQueuedGoalWorkIdsFromMessages,
-  staleGoalContinuationContextMessage,
+  rewriteStaleQueuedGoalContextMessage,
 } from "./queued-goal-work.js";
 import {
   createGoalRecoveryMachine,
@@ -638,14 +638,14 @@ export default function (pi: ExtensionAPI): void {
       }
 
       changed = true;
-      return staleGoalContinuationContextMessage(message, queuedGoalId, goal);
+      return rewriteStaleQueuedGoalContextMessage(message, queuedGoalId, goal);
     });
 
     if (goal?.status === "active") {
       const deduped = dedupeActiveGoalContinuations(messages, goal, extensionQueuedGoalWorkMessageId);
       if (deduped.changed) {
         changed = true;
-        messages = deduped.messages;
+        messages = deduped.messages as typeof messages;
       }
     }
 

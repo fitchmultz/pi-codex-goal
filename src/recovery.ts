@@ -1,4 +1,6 @@
-import { isContextOverflow, type AssistantMessage } from "@earendil-works/pi-ai";
+import { isContextOverflow } from "@earendil-works/pi-ai";
+
+import { assistantMessageForOverflowCheck } from "./recovery-adapters.js";
 
 export const CONTEXT_OVERFLOW_SIGNATURE = "context_overflow";
 
@@ -56,15 +58,16 @@ export function isAssistantContextOverflow(
   if (contextWindow <= 0) {
     return isContextOverflowError(message.errorMessage);
   }
-  return isContextOverflow(message as AssistantMessage, contextWindow);
+  return isContextOverflow(assistantMessageForOverflowCheck(message), contextWindow);
 }
 
 export function isContextOverflowError(errorMessage: string | undefined): boolean {
-  return isContextOverflow({
-    role: "assistant",
-    stopReason: "error",
-    errorMessage: errorMessage ?? "",
-  } as AssistantMessage);
+  return isContextOverflow(
+    assistantMessageForOverflowCheck({
+      stopReason: "error",
+      errorMessage: errorMessage ?? "",
+    }),
+  );
 }
 
 /**

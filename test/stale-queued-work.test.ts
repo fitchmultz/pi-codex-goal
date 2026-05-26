@@ -5,6 +5,7 @@ import { CUSTOM_ENTRY_TYPE } from "../src/types.js";
 import {
   assistantMessage,
   createRuntimeHarness,
+  emitProviderContext,
   emitQueuedTurnThroughContext,
   queuedCustomMessage,
 } from "./support/runtime-harness.js";
@@ -149,25 +150,12 @@ test("stale custom goal work messages are replaced before provider context", asy
   const queued = harness.sentMessages[0];
   assert.ok(queued);
 
-  const contextMessage = {
-    role: "custom",
-    customType: CUSTOM_ENTRY_TYPE,
-    content: queued.message.content,
-    display: false,
-    details: queued.message.details,
-    timestamp: 1,
-  };
-  const activeResults = await harness.emit("context", {
-    type: "context",
-    messages: [contextMessage],
-  });
+  const contextMessage = queuedCustomMessage(queued, 1);
+  const activeResults = await emitProviderContext(harness, [contextMessage]);
   assert.equal(activeResults[0], undefined);
 
   await harness.runTool("update_goal", { status: "complete" });
-  const results = await harness.emit("context", {
-    type: "context",
-    messages: [contextMessage],
-  });
+  const results = await emitProviderContext(harness, [contextMessage]);
 
   const result = results[0] as { messages?: Array<{ content?: unknown; details?: unknown }> } | undefined;
   const replacedMessage = result?.messages?.[0];
