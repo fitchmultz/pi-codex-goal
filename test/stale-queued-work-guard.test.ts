@@ -340,6 +340,62 @@ test("abortingTurn: late stale turn 0 agent_end during turn 1 abort is skipped",
   assert.equal(guard.lifecycleKind(), "abortingTurn");
 });
 
+test("abortingTurn: combined older and active agent_end with aborted finishes active lifecycle", () => {
+  const guard = createStaleQueuedWorkGuard();
+  guard.noteStaleWorkStarted("goal-0");
+  guard.planContextAbort(0);
+  guard.planTurnStart();
+
+  guard.noteStaleWorkStarted("goal-1");
+  guard.planContextAbort(1);
+
+  const agentEndPlan = guard.planAgentEnd([
+    {
+      role: "custom",
+      customType: CUSTOM_ENTRY_TYPE,
+      details: { kind: "continuation", goalId: "goal-0" },
+    },
+    {
+      role: "custom",
+      customType: CUSTOM_ENTRY_TYPE,
+      details: { kind: "continuation", goalId: "goal-1" },
+    },
+    abortedAssistant,
+  ]);
+  assert.equal(agentEndPlan.skip, true);
+  assert.deepEqual(effectTypes(agentEndPlan), ["clearAccounting", "refreshUi"]);
+  assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
+  assert.equal(guard.isBlockingContinuation(), false);
+});
+
+test("abortingTurn: combined older and active agent_end with stop finishes active lifecycle", () => {
+  const guard = createStaleQueuedWorkGuard();
+  guard.noteStaleWorkStarted("goal-0");
+  guard.planContextAbort(0);
+  guard.planTurnStart();
+
+  guard.noteStaleWorkStarted("goal-1");
+  guard.planContextAbort(1);
+
+  const agentEndPlan = guard.planAgentEnd([
+    {
+      role: "custom",
+      customType: CUSTOM_ENTRY_TYPE,
+      details: { kind: "continuation", goalId: "goal-0" },
+    },
+    {
+      role: "custom",
+      customType: CUSTOM_ENTRY_TYPE,
+      details: { kind: "continuation", goalId: "goal-1" },
+    },
+    stoppedAssistant,
+  ]);
+  assert.equal(agentEndPlan.skip, true);
+  assert.deepEqual(effectTypes(agentEndPlan), ["clearAccounting", "refreshUi"]);
+  assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
+  assert.equal(guard.isBlockingContinuation(), false);
+});
+
 test("abortingTurn: active turn 1 agent_end preserves awaiting cleanup for turn 0", () => {
   const guard = createStaleQueuedWorkGuard();
   guard.noteStaleWorkStarted("goal-0");

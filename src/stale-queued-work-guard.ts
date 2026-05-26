@@ -427,9 +427,20 @@ export function createStaleQueuedWorkGuard(): StaleQueuedWorkGuard {
           messages,
           aborting.terminalCleanup.pendingAgentEndGoalIds,
         );
+        const activeGoalIds = matchedGoalIds.filter((goalId) =>
+          aborting.activeStaleGoalIds.has(goalId),
+        );
         const olderGoalIds = matchedGoalIds.filter(
           (goalId) => !aborting.activeStaleGoalIds.has(goalId),
         );
+
+        if (activeGoalIds.length > 0) {
+          for (const goalId of olderGoalIds) {
+            aborting.terminalCleanup.pendingAgentEndGoalIds.delete(goalId);
+          }
+          return skipPlan(...finishActiveAbortingLifecycle(aborting));
+        }
+
         if (olderGoalIds.length > 0) {
           if (!messages.some(isAbortedAssistantMessage)) {
             return emptyPlan();

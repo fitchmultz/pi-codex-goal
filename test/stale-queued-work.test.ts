@@ -665,6 +665,67 @@ test("back-to-back stale aborts consume late first-turn terminals without pausin
   }
 });
 
+for (const stopReason of ["aborted", "stop"] as const) {
+  test(`combined older and active agent_end with ${stopReason} clears aborting continuation block`, async () => {
+    const originalNow = Date.now;
+    let now = 1_000;
+    Date.now = () => now;
+    try {
+      const harness = createRuntimeHarness();
+      await harness.runCommand("goal A");
+      const queuedA = harness.sentMessages[0];
+      assert.ok(queuedA);
+      const messageA = queuedCustomMessage(queuedA, 1);
+      const goalAId = harness.snapshot().goal?.goalId;
+      assert.ok(goalAId);
+
+      await harness.runCommand("goal B");
+      const queuedB = harness.sentMessages.at(-1);
+      assert.ok(queuedB);
+      const messageB = queuedCustomMessage(queuedB, 2);
+      const goalBId = harness.snapshot().goal?.goalId;
+      assert.ok(goalBId);
+
+      await harness.runCommand("goal C");
+      const replacement = harness.snapshot().goal;
+      assert.equal(replacement?.objective, "goal C");
+      harness.sentMessages.length = 0;
+
+      await emitQueuedTurnThroughContext(harness, [messageA], 0);
+      assert.equal(harness.abortCount, 1);
+
+      await emitQueuedTurnThroughContext(harness, [messageB], 1);
+      assert.equal(harness.abortCount, 2);
+
+      now = 4_000;
+      await harness.emit("agent_end", {
+        type: "agent_end",
+        messages: [
+          {
+            role: "custom",
+            customType: CUSTOM_ENTRY_TYPE,
+            details: { kind: "continuation", goalId: goalAId },
+          },
+          {
+            role: "custom",
+            customType: CUSTOM_ENTRY_TYPE,
+            details: { kind: "continuation", goalId: goalBId },
+          },
+          assistantMessage(stopReason, { input: 20, output: 5 }),
+        ],
+      });
+
+      const goal = harness.snapshot().goal;
+      assert.equal(goal?.goalId, replacement?.goalId);
+      assert.equal(goal?.status, "active");
+      assert.equal(goal?.usage.tokensUsed, 0);
+      assert.equal(harness.sentMessages.length, 0);
+    } finally {
+      Date.now = originalNow;
+    }
+  });
+}
+
 test("current follow-up abort is not swallowed by a pending late stale turn_end", async () => {
   const originalNow = Date.now;
   let now = 1_000;
