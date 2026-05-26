@@ -2954,7 +2954,36 @@ test("zero-output length overflow suppresses continuation and shows overflow rec
   );
 });
 
-test("repeated silent stop overflow after host compaction pauses and cancels further compaction", async () => {
+test("threshold session_compact after transient provider error preserves pending attention", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  const goal = harness.snapshot().goal;
+  assert.ok(goal);
+  harness.sentMessages.length = 0;
+  harness.footerStatuses.length = 0;
+
+  await emitPersistentAssistantError(harness, 0, "websocket closed");
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 0);
+
+  await harness.emit("session_compact", {
+    type: "session_compact",
+    summary: "threshold compact",
+    tokensBefore: 100,
+  });
+
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 0);
+  assert.equal(
+    harness.footerStatuses.at(-1),
+    formatFooterStatus(
+      harness.snapshot().goal,
+      recoveryPendingAttentionMessage("provider error (websocket closed)"),
+    ),
+  );
+});
+
+test("repeated silent stop overflow after host compaction pauses without blocking manual compaction", async () => {
   const harness = createRuntimeHarness({ contextWindow: 128_000 });
   await harness.runCommand("ship it");
   harness.sentMessages.length = 0;
@@ -2993,17 +3022,17 @@ test("repeated silent stop overflow after host compaction pauses and cancels fur
   assert.equal(harness.sentMessages.length, 0);
   assert.match(harness.footerStatuses.at(-1) ?? "", /Goal needs attention/);
 
-  const blockedCompaction = await harness.emit("session_before_compact", {
+  const manualCompaction = await harness.emit("session_before_compact", {
     type: "session_before_compact",
     preparation: {},
     branchEntries: [],
     signal: new AbortController().signal,
   });
-  assert.deepEqual(blockedCompaction[0], { cancel: true });
+  assert.notDeepEqual(manualCompaction[0], { cancel: true });
   assert.equal(harness.sentMessages.length, 0);
 });
 
-test("repeated zero-output length overflow after host compaction pauses and cancels further compaction", async () => {
+test("repeated zero-output length overflow after host compaction pauses without blocking manual compaction", async () => {
   const harness = createRuntimeHarness({ contextWindow: 128_000 });
   await harness.runCommand("ship it");
   harness.sentMessages.length = 0;
@@ -3028,11 +3057,11 @@ test("repeated zero-output length overflow after host compaction pauses and canc
   assert.equal(harness.snapshot().goal?.status, "paused");
   assert.equal(harness.sentMessages.length, 0);
 
-  const blockedCompaction = await harness.emit("session_before_compact", {
+  const manualCompaction = await harness.emit("session_before_compact", {
     type: "session_before_compact",
     preparation: {},
     branchEntries: [],
     signal: new AbortController().signal,
   });
-  assert.deepEqual(blockedCompaction[0], { cancel: true });
+  assert.notDeepEqual(manualCompaction[0], { cancel: true });
 });

@@ -25,6 +25,7 @@ import {
   planRecoveryForAssistantError,
   planRecoveryForSilentContextOverflow,
   setRecoveryPausedAttention,
+  setRecoveryPendingAttention,
 } from "../src/recovery-machine.js";
 
 test("detects context overflow error messages with host overflow classifier", () => {
@@ -222,6 +223,22 @@ test("recovery session compact preserves overflow attempt counts after host comp
   assert.equal(state.attention, null);
 });
 
+test("recovery session compact preserves non-overflow pending attention and counters", () => {
+  const state = createGoalRecoveryMachine();
+  const action = planRecoveryForAssistantError(
+    state,
+    { role: "assistant", stopReason: "error", errorMessage: "websocket closed" },
+  );
+  assert.equal(action.type, "pending");
+  setRecoveryPendingAttention(state, action.reason);
+
+  onRecoverySessionCompact(state);
+
+  assert.equal(state.counters.transientAttempts, 1);
+  assert.equal(state.counters.signature, "websocket closed");
+  assert.equal(state.attention, recoveryPendingAttentionMessage("provider error (websocket closed)"));
+});
+
 test("recovery plans pause after compaction cap even when compaction attempts are already exhausted", () => {
   const state = createGoalRecoveryMachine();
   state.counters = {
@@ -234,9 +251,6 @@ test("recovery plans pause after compaction cap even when compaction attempts ar
     { role: "assistant", stopReason: "error", errorMessage: "context_length_exceeded" },
   );
   assert.equal(action.type, "pause");
-  if (action.type === "pause") {
-    assert.equal(action.blockHostOverflowCompaction, true);
-  }
 });
 
 test("silent context overflow increments compaction attempts like error overflows", () => {
@@ -292,6 +306,5 @@ test("non-retryable provider errors pause immediately", () => {
   assert.equal(action.type, "pause");
   if (action.type === "pause") {
     assert.match(action.reason, /non-retryable provider error/);
-    assert.notEqual(action.blockHostOverflowCompaction, true);
   }
 });

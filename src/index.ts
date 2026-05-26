@@ -19,7 +19,6 @@ import {
 } from "./queued-goal-work.js";
 import {
   createGoalRecoveryMachine,
-  isRepeatOverflowCompactionDue,
   resetRecoveryMachine,
   setRecoveryPausedAttention,
   type GoalRecoveryMachineState,
@@ -68,7 +67,6 @@ export default function (pi: ExtensionAPI): void {
   const accounting = createAccountingState();
   let recoveryState: GoalRecoveryMachineState = createGoalRecoveryMachine();
   let hostOverflowRecoveryInProgress = false;
-  let hostOverflowRecoveryBlocked = false;
 
   const goalForDisplay = (): ThreadGoal | null =>
     goalWithLiveUsage(goal, accounting.activeGoalId, accounting.lastAccountedAt);
@@ -91,7 +89,6 @@ export default function (pi: ExtensionAPI): void {
   const resetErrorRecovery = (): void => {
     resetRecoveryMachine(recoveryState);
     hostOverflowRecoveryInProgress = false;
-    hostOverflowRecoveryBlocked = false;
   };
 
   const clearContinuationState = (): void => {
@@ -442,19 +439,14 @@ export default function (pi: ExtensionAPI): void {
 
   const getContextWindow = (ctx: ExtensionContext): number => ctx.model?.contextWindow ?? 0;
 
-  const shouldBlockHostOverflowCompaction = (): boolean => hostOverflowRecoveryBlocked;
-
   const recoveryRuntime = createGoalRecoveryRuntime({
     getGoal: () => goal,
     getRecoveryState: () => recoveryState,
     clearContinuationState,
-    pauseGoalForRecovery(ctx, activeGoal, blockHostOverflowCompaction = false) {
+    pauseGoalForRecovery(ctx, activeGoal) {
       const result = updateGoalStatus(activeGoal, "paused");
       if (!result.ok || !result.goal) {
         return;
-      }
-      if (blockHostOverflowCompaction) {
-        hostOverflowRecoveryBlocked = true;
       }
       persistGoal(result.goal, "runtime");
     },
@@ -704,9 +696,6 @@ export default function (pi: ExtensionAPI): void {
       return;
     }
     if (isAssistantContextOverflow(_event.message, getContextWindow(ctx))) {
-      if (isRepeatOverflowCompactionDue(recoveryState)) {
-        hostOverflowRecoveryBlocked = true;
-      }
       beginOverflowRecoveryAttention(ctx);
       return;
     }
@@ -754,10 +743,6 @@ export default function (pi: ExtensionAPI): void {
   pi.on("session_before_compact", async (_event, ctx) => {
     if (skipStaleQueuedGoalWorkLifecycle(ctx)) {
       return;
-    }
-
-    if (shouldBlockHostOverflowCompaction()) {
-      return { cancel: true };
     }
 
     goalAccounting.accountProgress(ctx, false, 0, true);

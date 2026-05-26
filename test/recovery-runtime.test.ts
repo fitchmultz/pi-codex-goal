@@ -103,6 +103,21 @@ test("successful toolUse turns reset recovery counters without continuing the go
   assert.equal(harness.recoveryState.counters.signature, null);
 });
 
+test("session compact after pending transient error preserves attention without continuing", () => {
+  const harness = createRecoveryTestRuntime();
+
+  harness.runtime.handlePersistentAssistantError(
+    { role: "assistant", stopReason: "error", errorMessage: "websocket closed" },
+    harness.ctx,
+  );
+  assert.equal(harness.continueCount, 0);
+
+  harness.runtime.onSessionCompact();
+
+  assert.equal(harness.continueCount, 0);
+  assert.equal(harness.recoveryState.counters.transientAttempts, 1);
+  assert.match(harness.recoveryState.attention ?? "", /Goal recovery pending/);
+});
 test("successful non-toolUse turns reset recovery counters and continue the goal", () => {
   const harness = createRecoveryTestRuntime();
 
