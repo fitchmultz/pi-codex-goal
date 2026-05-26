@@ -313,6 +313,7 @@ export default function (pi: ExtensionAPI): void {
       clearActiveAccounting();
     } else if (nextGoal.status === "budgetLimited") {
       clearContinuationState();
+      clearActiveAccounting();
       resetErrorRecovery();
     }
     if (nextGoal.status !== "budgetLimited") {

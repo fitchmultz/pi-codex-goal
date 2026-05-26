@@ -1752,9 +1752,12 @@ test("compaction with unchanged budgetLimited goal appends no new entry", async 
     const goal = harness.snapshot().goal;
     assert.equal(goal?.status, "budgetLimited");
     assert.equal(goal?.usage.tokensUsed, 11);
+    const activeSecondsAtBudgetLimit = goal?.usage.activeSeconds ?? 0;
     const entryCountAfterBudgetLimit = harness.entries.length;
     const setEntriesAfterBudgetLimit = countGoalSetEntries(harness.entries, goalId);
     assert.equal(setEntriesAfterBudgetLimit, 2);
+
+    now += 60_000;
 
     await harness.emit("session_before_compact", {
       type: "session_before_compact",
@@ -1772,6 +1775,47 @@ test("compaction with unchanged budgetLimited goal appends no new entry", async 
     assert.equal(harness.snapshot().goal?.status, "budgetLimited");
     assert.equal(countGoalSetEntries(harness.entries, goalId), setEntriesAfterBudgetLimit);
     assert.equal(harness.snapshot().goal?.usage.tokensUsed, 11);
+    assert.equal(harness.snapshot().goal?.usage.activeSeconds, activeSecondsAtBudgetLimit);
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
+test("session_shutdown with unchanged budgetLimited goal appends no new entry", async () => {
+  const originalNow = Date.now;
+  let now = 1_000;
+  Date.now = () => now;
+  try {
+    const harness = createRuntimeHarness();
+    await harness.runTool("create_goal", { objective: "ship it", token_budget: 10 });
+    const goalId = harness.snapshot().goal?.goalId;
+    assert.ok(goalId);
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("turn_end", {
+      type: "turn_end",
+      turnIndex: 0,
+      message: assistantMessage("stop", { input: 8, output: 3 }),
+      toolResults: [],
+    });
+
+    const goal = harness.snapshot().goal;
+    assert.equal(goal?.status, "budgetLimited");
+    assert.equal(goal?.usage.tokensUsed, 11);
+    const activeSecondsAtBudgetLimit = goal?.usage.activeSeconds ?? 0;
+    const entryCountAfterBudgetLimit = harness.entries.length;
+    const setEntriesAfterBudgetLimit = countGoalSetEntries(harness.entries, goalId);
+    assert.equal(setEntriesAfterBudgetLimit, 2);
+
+    now += 60_000;
+
+    await harness.emit("session_shutdown", { type: "session_shutdown" });
+
+    assert.equal(harness.entries.length, entryCountAfterBudgetLimit);
+    assert.equal(harness.snapshot().goal?.status, "budgetLimited");
+    assert.equal(countGoalSetEntries(harness.entries, goalId), setEntriesAfterBudgetLimit);
+    assert.equal(harness.snapshot().goal?.usage.tokensUsed, 11);
+    assert.equal(harness.snapshot().goal?.usage.activeSeconds, activeSecondsAtBudgetLimit);
   } finally {
     Date.now = originalNow;
   }
