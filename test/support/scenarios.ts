@@ -34,18 +34,12 @@ export function replaceHarnessBranchWithGoal(
 
 export async function givenOverflowPausedGoal(
   objective = "ship it",
-  options?: { clearTelemetryAfterStart?: boolean },
 ): Promise<{
   harness: RuntimeHarness;
   goal: NonNullable<ReturnType<RuntimeHarness["snapshot"]>["goal"]>;
 }> {
   const harness = createRuntimeHarness();
   await harness.runCommand(objective);
-
-  if (options?.clearTelemetryAfterStart) {
-    harness.sentMessages.length = 0;
-    harness.footerStatuses.length = 0;
-  }
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     await emitPersistentAssistantError(harness, attempt, "context_length_exceeded");
@@ -116,11 +110,7 @@ export async function emitPendingRecoveryShutdown(
 
 export async function givenPendingRecoveryWithStaleQueuedAbort(
   kind: "overflow" | "transient",
-): Promise<{
-  harness: RuntimeHarness;
-  activeGoal: NonNullable<ReturnType<RuntimeHarness["snapshot"]>["goal"]>;
-  pausedGoal: NonNullable<ReturnType<RuntimeHarness["snapshot"]>["goal"]>;
-}> {
+): Promise<{ harness: RuntimeHarness }> {
   const harness =
     kind === "overflow"
       ? createRuntimeHarness({ compactBehavior: "unavailable" })
@@ -149,14 +139,13 @@ export async function givenPendingRecoveryWithStaleQueuedAbort(
   assert.ok(pausedGoal);
   assert.equal(pausedGoal.goalId, activeGoal.goalId);
 
-  return { harness, activeGoal, pausedGoal };
+  return { harness };
 }
 
 export async function replaceGoalAfterOverflowPause(
   harness: RuntimeHarness,
   replacementObjective: string,
 ): Promise<{
-  harness: RuntimeHarness;
   previousGoalId: string;
   goal: NonNullable<ReturnType<RuntimeHarness["snapshot"]>["goal"]>;
 }> {
@@ -172,5 +161,5 @@ export async function replaceGoalAfterOverflowPause(
   assert.equal(goal.objective, replacementObjective);
   assert.notEqual(goal.goalId, previousGoal.goalId);
 
-  return { harness, previousGoalId: previousGoal.goalId, goal };
+  return { previousGoalId: previousGoal.goalId, goal };
 }

@@ -326,9 +326,7 @@ test("successful turns reset transient error counters and continue active goals"
 });
 
 test("exhausted context overflow retries show recoverable attention in footer", async () => {
-  const { harness, goal } = await givenOverflowPausedGoal("ship it", {
-    clearTelemetryAfterStart: true,
-  });
+  const { harness, goal } = await givenOverflowPausedGoal("ship it");
   assert.equal(
     harness.footerStatuses.at(-1),
     formatFooterStatus(
