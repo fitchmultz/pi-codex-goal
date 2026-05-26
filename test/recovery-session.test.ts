@@ -315,4 +315,3 @@ test("delayed session_compact keeps goal active without premature pause or exten
   assert.equal(harness.snapshot().goal?.status, "active");
   assert.equal(harness.sentMessages.length, 0);
 });
-

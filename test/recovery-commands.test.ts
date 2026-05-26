@@ -362,4 +362,3 @@ test("/goal clear then start after overflow pause survives extension reload and 
   await emitPersistentAssistantError(harness, 2, "context_length_exceeded");
   assert.equal(harness.snapshot().goal?.status, "active");
 });
-

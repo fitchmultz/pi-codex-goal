@@ -451,4 +451,3 @@ test("overflow without session_compact stays active with pending overflow attent
   );
   assert.doesNotMatch(harness.footerStatuses.at(-1) ?? "", /\/goal resume/);
 });
-

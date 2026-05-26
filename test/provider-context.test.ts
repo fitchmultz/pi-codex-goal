@@ -341,4 +341,3 @@ test("completed goals are not treated as active during continuation dedupe", asy
   assert.match(String(result?.messages?.[1]?.content), /queued hidden goal continuation was stale/);
   assert.equal(harness.snapshot().goal?.status, "complete");
 });
-

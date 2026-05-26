@@ -698,4 +698,3 @@ test("goal follow-up guard resets when the queued prompt-based agent turn starts
     goalId: goal?.goalId,
   });
 });
-

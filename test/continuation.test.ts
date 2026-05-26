@@ -457,4 +457,3 @@ test("assistant error turns do not immediately queue continuation", async () => 
   assert.equal(goal?.usage.tokensUsed, 42);
   assert.equal(harness.sentMessages.length, 0);
 });
-

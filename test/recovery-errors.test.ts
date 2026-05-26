@@ -255,4 +255,3 @@ test("repeated zero-output length overflow after host compaction pauses without 
   });
   assert.notDeepEqual(manualCompaction[0], { cancel: true });
 });
-

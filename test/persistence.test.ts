@@ -357,4 +357,3 @@ test("failed create_goal throws so pi marks the tool result as an error", async 
 
   await assert.rejects(() => harness.runTool("create_goal", { objective: "duplicate" }), /already has a non-complete goal/);
 });
-
