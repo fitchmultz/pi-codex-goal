@@ -75,6 +75,7 @@ While a goal is active, the extension:
 
 - tracks elapsed active time between turns and tool completions
 - adds completed assistant turn input plus output token usage when the active model reports it
+- coalesces runtime goal custom-entry writes so unchanged status and usage are not appended on every tool completion; live footer usage stays current, and meaningful usage is flushed at turn boundaries, shutdown, compaction, budget crossings, and bounded intervals during long tool-heavy runs
 - pauses when an active assistant turn is aborted, such as when you press Esc
 - recovers from provider assistant errors without immediate hidden continuation loops: context-window overflow triggers automatic compaction and then resumes the active goal, transient errors use bounded backoff retries, and repeated unrecoverable failures pause with a clear `/goal resume` path
 - prompts on session resume before reactivating a paused goal, and resumes explicitly with `/goal resume` (only from paused)
