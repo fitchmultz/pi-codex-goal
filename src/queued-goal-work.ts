@@ -243,13 +243,11 @@ export function staleGoalContinuationContextMessage(
   };
 }
 
-export type QueuedGoalStaleRewriteResult = StaleQueuedGoalCustomMessage | StaleQueuedGoalUserMessage;
-
-export function rewriteStaleQueuedGoalContextMessage(
+function rewriteStaleQueuedGoalContextMessage(
   message: QueuedGoalContextCarrier,
   queuedGoalId: string,
   currentGoal: ThreadGoal | null,
-): QueuedGoalStaleRewriteResult | null {
+): StaleQueuedGoalCustomMessage | StaleQueuedGoalUserMessage | null {
   const source = toQueuedGoalWorkSource(message);
   if (!source) {
     return null;

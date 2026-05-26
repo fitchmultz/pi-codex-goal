@@ -127,7 +127,7 @@ export function userContentFromUnknown(content: unknown): QueuedGoalUserContent 
   return parts;
 }
 
-export function customContentFromUnknown(content: unknown): string | QueuedGoalUserContent {
+function customContentFromUnknown(content: unknown): string | QueuedGoalUserContent {
   if (typeof content === "string") {
     return content;
   }
