@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { isGoalCustomEntry } from "../src/state.js";
 import { CUSTOM_ENTRY_TYPE } from "../src/types.js";
 import {
   assistantMessage,

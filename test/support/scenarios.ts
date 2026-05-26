@@ -1,7 +1,5 @@
 import assert from "node:assert/strict";
 
-import type { ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-
 import { formatFooterStatus } from "../../src/format.js";
 import {
   HOST_OVERFLOW_RECOVERY_REASON,
@@ -34,9 +32,18 @@ export function replaceHarnessBranchWithGoal(
 
 export async function givenOverflowPausedGoal(
   objective = "ship it",
-): Promise<RuntimeHarness> {
+  options?: { clearTelemetryAfterStart?: boolean },
+): Promise<{
+  harness: RuntimeHarness;
+  goal: NonNullable<ReturnType<RuntimeHarness["snapshot"]>["goal"]>;
+}> {
   const harness = createRuntimeHarness();
   await harness.runCommand(objective);
+
+  if (options?.clearTelemetryAfterStart) {
+    harness.sentMessages.length = 0;
+    harness.footerStatuses.length = 0;
+  }
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     await emitPersistentAssistantError(harness, attempt, "context_length_exceeded");
@@ -47,9 +54,11 @@ export async function givenOverflowPausedGoal(
     });
   }
 
-  assert.equal(harness.snapshot().goal?.status, "paused");
+  const goal = harness.snapshot().goal;
+  assert.ok(goal);
+  assert.equal(goal.status, "paused");
   assert.equal(harness.hostOverflowRecoveryAttempted, true);
-  return harness;
+  return { harness, goal };
 }
 
 export async function givenPendingTransientRecovery(

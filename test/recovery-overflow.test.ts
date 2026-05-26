@@ -7,22 +7,13 @@ import {
   recoveryAttentionMessage,
   recoveryPendingAttentionMessage,
 } from "../src/recovery.js";
-import { CUSTOM_ENTRY_TYPE } from "../src/types.js";
 import {
   assistantMessage,
   createRuntimeHarness,
-  emitHostSessionCompact,
   emitPersistentAssistantError,
-  emitQueuedTurnThroughContext,
-  emitSilentContextOverflow,
   queuedCustomMessage,
 } from "./support/runtime-harness.js";
-import {
-  emitPendingRecoveryShutdown,
-  givenPendingOverflowRecovery,
-  givenPendingTransientRecovery,
-  replaceHarnessBranchWithGoal,
-} from "./support/scenarios.js";
+import { givenOverflowPausedGoal } from "./support/scenarios.js";
 
 test("turn_end provider errors defer recovery to agent_end without hidden continuation or extension compaction", async () => {
   const harness = createRuntimeHarness();
@@ -301,9 +292,6 @@ test("/goal pause after pending overflow error clears recovery attention", async
 test("successful turns reset transient error counters and continue active goals", async () => {
   const harness = createRuntimeHarness();
   await harness.runCommand("ship it");
-  const queued = harness.sentMessages[0];
-  assert.ok(queued);
-  const queuedMessage = queuedCustomMessage(queued);
   harness.sentMessages.length = 0;
 
   await emitPersistentAssistantError(harness, 0, "websocket closed");
@@ -338,23 +326,9 @@ test("successful turns reset transient error counters and continue active goals"
 });
 
 test("exhausted context overflow retries show recoverable attention in footer", async () => {
-  const harness = createRuntimeHarness();
-  await harness.runCommand("ship it");
-  const goal = harness.snapshot().goal;
-  assert.ok(goal);
-  harness.sentMessages.length = 0;
-  harness.footerStatuses.length = 0;
-
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    await emitPersistentAssistantError(harness, attempt, "context_length_exceeded");
-    await harness.emit("session_compact", {
-      type: "session_compact",
-      summary: "compact summary",
-      tokensBefore: 100,
-    });
-  }
-
-  assert.equal(harness.snapshot().goal?.status, "paused");
+  const { harness, goal } = await givenOverflowPausedGoal("ship it", {
+    clearTelemetryAfterStart: true,
+  });
   assert.equal(
     harness.footerStatuses.at(-1),
     formatFooterStatus(

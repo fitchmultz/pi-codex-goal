@@ -2,19 +2,12 @@ import assert from "node:assert/strict";
 import { mock, test } from "node:test";
 
 import { formatFooterStatus } from "../src/format.js";
-import { __testHooks } from "../src/index.js";
-import {
-  compactContinuationPrompt,
-  continuationPrompt,
-} from "../src/prompts.js";
 import { isGoalCustomEntry } from "../src/state.js";
 import { CUSTOM_ENTRY_TYPE } from "../src/types.js";
 import {
   assistantMessage,
   createRuntimeHarness,
   emitPersistentAssistantError,
-  emitQueuedTurnThroughContext,
-  emitToolExecutionEnd,
   flushContinuationScheduler,
   queuedCustomMessage,
 } from "./support/runtime-harness.js";

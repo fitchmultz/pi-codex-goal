@@ -37,22 +37,7 @@ test("/goal resume after non-retryable pause resets recovery counters", async ()
 });
 
 test("/goal resume after overflow pause resets recovery counters", async () => {
-  const harness = createRuntimeHarness();
-  await harness.runCommand("ship it");
-  harness.sentMessages.length = 0;
-  harness.sentUserMessages.length = 0;
-
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    await emitPersistentAssistantError(harness, attempt, "context_length_exceeded");
-    await harness.emit("session_compact", {
-      type: "session_compact",
-      summary: "compact summary",
-      tokensBefore: 100,
-    });
-  }
-  assert.equal(harness.snapshot().goal?.status, "paused");
-  assert.equal(harness.hostOverflowRecoveryAttempted, true);
-
+  const { harness } = await givenOverflowPausedGoal();
   harness.sentMessages.length = 0;
   harness.sentUserMessages.length = 0;
   await harness.runCommand("resume");
@@ -92,21 +77,7 @@ test("/goal resume after overflow pause resets recovery counters", async () => {
 });
 
 test("/goal resume after overflow pause and session shutdown sends user turn and resets host overflow cap", async () => {
-  const harness = createRuntimeHarness();
-  await harness.runCommand("ship it");
-  const goal = harness.snapshot().goal;
-  assert.ok(goal);
-
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    await emitPersistentAssistantError(harness, attempt, "context_length_exceeded");
-    await harness.emit("session_compact", {
-      type: "session_compact",
-      summary: "compact summary",
-      tokensBefore: 100,
-    });
-  }
-  assert.equal(harness.snapshot().goal?.status, "paused");
-  assert.equal(harness.hostOverflowRecoveryAttempted, true);
+  const { harness } = await givenOverflowPausedGoal();
 
   await harness.emit("session_shutdown", { type: "session_shutdown" });
   assert.equal(harness.snapshot().goal?.status, "paused");
@@ -132,21 +103,7 @@ test("/goal resume after overflow pause and session shutdown sends user turn and
 });
 
 test("custom command_resume turn after host overflow exhaustion does not reset host recovery cap", async () => {
-  const harness = createRuntimeHarness();
-  await harness.runCommand("ship it");
-  const goal = harness.snapshot().goal;
-  assert.ok(goal);
-
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    await emitPersistentAssistantError(harness, attempt, "context_length_exceeded");
-    await harness.emit("session_compact", {
-      type: "session_compact",
-      summary: "compact summary",
-      tokensBefore: 100,
-    });
-  }
-  assert.equal(harness.snapshot().goal?.status, "paused");
-  assert.equal(harness.hostOverflowRecoveryAttempted, true);
+  const { harness, goal } = await givenOverflowPausedGoal();
 
   await harness.emit("message_start", {
     type: "message_start",
@@ -162,21 +119,7 @@ test("custom command_resume turn after host overflow exhaustion does not reset h
 });
 
 test("custom command_start turn after host overflow exhaustion does not reset host recovery cap", async () => {
-  const harness = createRuntimeHarness();
-  await harness.runCommand("ship it");
-  const goal = harness.snapshot().goal;
-  assert.ok(goal);
-
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    await emitPersistentAssistantError(harness, attempt, "context_length_exceeded");
-    await harness.emit("session_compact", {
-      type: "session_compact",
-      summary: "compact summary",
-      tokensBefore: 100,
-    });
-  }
-  assert.equal(harness.snapshot().goal?.status, "paused");
-  assert.equal(harness.hostOverflowRecoveryAttempted, true);
+  const { harness, goal } = await givenOverflowPausedGoal();
 
   await harness.emit("message_start", {
     type: "message_start",
@@ -192,7 +135,7 @@ test("custom command_start turn after host overflow exhaustion does not reset ho
 });
 
 test("/goal new objective after overflow pause sends user turn and resets host overflow cap", async () => {
-  const harness = await givenOverflowPausedGoal();
+  const { harness } = await givenOverflowPausedGoal();
   const { goal, previousGoalId } = await replaceGoalAfterOverflowPause(harness, "ship the replacement");
   assert.notEqual(goal.goalId, previousGoalId);
   assert.equal(harness.sentMessages.length, 0);
@@ -220,19 +163,7 @@ test("/goal new objective after overflow pause sends user turn and resets host o
 });
 
 test("/goal clear then start after overflow pause sends user turn and resets host overflow cap", async () => {
-  const harness = createRuntimeHarness();
-  await harness.runCommand("ship it");
-
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    await emitPersistentAssistantError(harness, attempt, "context_length_exceeded");
-    await harness.emit("session_compact", {
-      type: "session_compact",
-      summary: "compact summary",
-      tokensBefore: 100,
-    });
-  }
-  assert.equal(harness.snapshot().goal?.status, "paused");
-  assert.equal(harness.hostOverflowRecoveryAttempted, true);
+  const { harness } = await givenOverflowPausedGoal();
 
   await harness.runCommand("clear");
   assert.equal(harness.snapshot().goal, null);
@@ -264,21 +195,7 @@ test("/goal clear then start after overflow pause sends user turn and resets hos
 });
 
 test("/goal new objective after overflow pause survives extension reload and resets host overflow cap", async () => {
-  const harness = createRuntimeHarness();
-  await harness.runCommand("ship it");
-  const previousGoal = harness.snapshot().goal;
-  assert.ok(previousGoal);
-
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    await emitPersistentAssistantError(harness, attempt, "context_length_exceeded");
-    await harness.emit("session_compact", {
-      type: "session_compact",
-      summary: "compact summary",
-      tokensBefore: 100,
-    });
-  }
-  assert.equal(harness.snapshot().goal?.status, "paused");
-  assert.equal(harness.hostOverflowRecoveryAttempted, true);
+  const { harness, goal: previousGoal } = await givenOverflowPausedGoal();
 
   await harness.reloadSession();
   assert.equal(harness.snapshot().goal?.status, "paused");
@@ -315,19 +232,7 @@ test("/goal new objective after overflow pause survives extension reload and res
 });
 
 test("/goal clear then start after overflow pause survives extension reload and resets host overflow cap", async () => {
-  const harness = createRuntimeHarness();
-  await harness.runCommand("ship it");
-
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    await emitPersistentAssistantError(harness, attempt, "context_length_exceeded");
-    await harness.emit("session_compact", {
-      type: "session_compact",
-      summary: "compact summary",
-      tokensBefore: 100,
-    });
-  }
-  assert.equal(harness.snapshot().goal?.status, "paused");
-  assert.equal(harness.hostOverflowRecoveryAttempted, true);
+  const { harness } = await givenOverflowPausedGoal();
 
   await harness.reloadSession();
   assert.equal(harness.snapshot().goal?.status, "paused");
