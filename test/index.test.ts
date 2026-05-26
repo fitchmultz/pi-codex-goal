@@ -1620,6 +1620,56 @@ test("session_shutdown flushes pending runtime usage", async () => {
   }
 });
 
+test("runtime persistence interval flush appends one entry then coalesces until turn_end", async () => {
+  const originalNow = Date.now;
+  let now = 1_000;
+  Date.now = () => now;
+  try {
+    const harness = createRuntimeHarness();
+    await harness.runCommand("ship it");
+    const goalId = harness.snapshot().goal?.goalId;
+    assert.ok(goalId);
+    const initialSetEntries = countGoalSetEntries(harness.entries, goalId);
+    assert.equal(initialSetEntries, 1);
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+
+    now += __testHooks.runtimePersistIntervalMs + 1_000;
+    await emitToolExecutionEnd(harness);
+
+    assert.equal(countGoalSetEntries(harness.entries, goalId), initialSetEntries + 1);
+    const afterIntervalFlush = harness.snapshot().goal;
+    assert.equal(
+      afterIntervalFlush?.usage.activeSeconds,
+      Math.floor((__testHooks.runtimePersistIntervalMs + 1_000) / 1_000),
+    );
+
+    for (let index = 0; index < 3; index += 1) {
+      now += 2_000;
+      await emitToolExecutionEnd(harness);
+    }
+
+    assert.equal(countGoalSetEntries(harness.entries, goalId), initialSetEntries + 1);
+
+    await harness.emit("turn_end", {
+      type: "turn_end",
+      turnIndex: 0,
+      message: assistantMessage("toolUse", { input: 10, output: 2 }),
+      toolResults: [],
+    });
+
+    assert.equal(countGoalSetEntries(harness.entries, goalId), initialSetEntries + 2);
+    const goal = harness.snapshot().goal;
+    assert.equal(goal?.usage.tokensUsed, 12);
+    assert.equal(
+      goal?.usage.activeSeconds,
+      Math.floor((__testHooks.runtimePersistIntervalMs + 1_000 + 6_000) / 1_000),
+    );
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
 test("reconstructGoal uses the latest snapshot across dense legacy and coalesced entries", () => {
   const goal = createThreadGoal("ship it", 100);
   const denseEntries = Array.from({ length: 20 }, (_, index) => ({
@@ -1679,6 +1729,52 @@ test("compaction with unchanged paused goal appends no new entry", async () => {
   assert.equal(harness.entries.length, entryCountAfterPause);
   assert.equal(harness.snapshot().goal?.status, "paused");
   assert.equal(countGoalSetEntries(harness.entries, goalId), 2);
+});
+
+test("compaction with unchanged budgetLimited goal appends no new entry", async () => {
+  const originalNow = Date.now;
+  let now = 1_000;
+  Date.now = () => now;
+  try {
+    const harness = createRuntimeHarness();
+    await harness.runTool("create_goal", { objective: "ship it", token_budget: 10 });
+    const goalId = harness.snapshot().goal?.goalId;
+    assert.ok(goalId);
+
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("turn_end", {
+      type: "turn_end",
+      turnIndex: 0,
+      message: assistantMessage("stop", { input: 8, output: 3 }),
+      toolResults: [],
+    });
+
+    const goal = harness.snapshot().goal;
+    assert.equal(goal?.status, "budgetLimited");
+    assert.equal(goal?.usage.tokensUsed, 11);
+    const entryCountAfterBudgetLimit = harness.entries.length;
+    const setEntriesAfterBudgetLimit = countGoalSetEntries(harness.entries, goalId);
+    assert.equal(setEntriesAfterBudgetLimit, 2);
+
+    await harness.emit("session_before_compact", {
+      type: "session_before_compact",
+      preparation: {},
+      branchEntries: [],
+      signal: new AbortController().signal,
+    });
+    await harness.emit("session_compact", {
+      type: "session_compact",
+      compactionEntry: {},
+      fromExtension: false,
+    });
+
+    assert.equal(harness.entries.length, entryCountAfterBudgetLimit);
+    assert.equal(harness.snapshot().goal?.status, "budgetLimited");
+    assert.equal(countGoalSetEntries(harness.entries, goalId), setEntriesAfterBudgetLimit);
+    assert.equal(harness.snapshot().goal?.usage.tokensUsed, 11);
+  } finally {
+    Date.now = originalNow;
+  }
 });
 
 test("create_goal replaces a completed goal", async () => {
