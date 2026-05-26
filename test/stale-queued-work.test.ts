@@ -519,11 +519,7 @@ test("compaction between stale context abort and cleanup does not persist, accou
     assert.equal(harness.snapshot().goal?.status, "active");
     assert.equal(harness.snapshot().goal?.usage.tokensUsed, 0);
 
-    const userMessage = {
-      role: "user",
-      content: [{ type: "text", text: "continue now" }],
-      timestamp: 2,
-    };
+    const userMessage = goalUserContextMessage("continue now", 2);
     now = 6_000;
     await emitQueuedTurnThroughContext(harness, [userMessage], 1);
     now = 8_000;

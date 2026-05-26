@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { toQueuedGoalWorkSource, userContentFromUnknown } from "../src/queued-goal-messages.js";
+import { toQueuedGoalContextCarrier, toQueuedGoalWorkSource, userContentFromUnknown } from "../src/queued-goal-messages.js";
 import {
   applyQueuedGoalProviderContextRewrites,
   dedupeActiveGoalContinuations,
@@ -22,6 +22,17 @@ const activeGoal: ThreadGoal = {
   createdAt: 0,
   updatedAt: 0,
 };
+
+test("toQueuedGoalWorkSource ignores unrelated custom messages", () => {
+  const unrelated = toQueuedGoalContextCarrier({
+    role: "custom",
+    customType: "other-extension",
+    content: "ignored",
+    timestamp: 1,
+  });
+  assert.ok(unrelated);
+  assert.equal(toQueuedGoalWorkSource(unrelated), null);
+});
 
 test("staleGoalContinuationContextMessage rewrites custom and user queued messages", () => {
   const customSource = toQueuedGoalWorkSource(

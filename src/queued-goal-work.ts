@@ -104,7 +104,7 @@ function supersededContinuationContextMessage(
       content,
       display: false,
       details: {
-        kind: "superseded_continuation",
+        kind: "superseded_continuation" as const,
         goalId,
       },
     };

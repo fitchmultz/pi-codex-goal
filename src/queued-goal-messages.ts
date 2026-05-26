@@ -1,4 +1,4 @@
-import type { GoalStatus } from "./types.js";
+import { CUSTOM_ENTRY_TYPE, type GoalStatus } from "./types.js";
 
 export type GoalQueuedWorkKind = "continuation" | "command_start" | "command_resume";
 
@@ -48,7 +48,7 @@ export interface QueuedGoalContextCarrier {
 
 export interface QueuedGoalCustomMessage extends QueuedGoalContextCarrier {
   role: "custom";
-  customType: string;
+  customType: typeof CUSTOM_ENTRY_TYPE;
   content: string | QueuedGoalUserContent;
   display: boolean;
 }
@@ -100,13 +100,13 @@ export type RewrittenQueuedGoalWorkMessage =
 /** Role/customType only — does not prove normalized content or display. */
 interface QueuedGoalCustomRoleCarrier {
   role: "custom";
-  customType: string;
+  customType: typeof CUSTOM_ENTRY_TYPE;
 }
 
 function isQueuedGoalCustomRole(
   message: QueuedGoalContextCarrier,
 ): message is QueuedGoalContextCarrier & QueuedGoalCustomRoleCarrier {
-  return message.role === "custom" && typeof message.customType === "string";
+  return message.role === "custom" && message.customType === CUSTOM_ENTRY_TYPE;
 }
 
 export function userContentFromUnknown(content: unknown): QueuedGoalUserContent {
