@@ -17,12 +17,16 @@ export type StaleQueuedWorkLifecycleKind =
   | "abortingTurn"
   | "awaitingTerminalCleanup";
 
+type TerminalCleanup = {
+  pendingTurnEndIndexes: Set<number>;
+  pendingAgentEndGoalIds: Set<string>;
+};
+
 type ObservingTurnState = {
   kind: "observingTurn";
   staleGoalIds: Set<string>;
   hasRunnableWork: boolean;
-  pendingTurnEndIndexes?: Set<number>;
-  pendingAgentEndGoalIds?: Set<string>;
+  terminalCleanup?: TerminalCleanup;
 };
 
 type StaleQueuedWorkLifecycleState =
@@ -106,8 +110,10 @@ function beginObservingTurn(
         kind: "observingTurn",
         staleGoalIds: new Set(),
         hasRunnableWork: false,
-        pendingTurnEndIndexes: lifecycle.pendingTurnEndIndexes,
-        pendingAgentEndGoalIds: lifecycle.pendingAgentEndGoalIds,
+        terminalCleanup: {
+          pendingTurnEndIndexes: lifecycle.pendingTurnEndIndexes,
+          pendingAgentEndGoalIds: lifecycle.pendingAgentEndGoalIds,
+        },
       };
     default: {
       const _exhaustive: never = lifecycle;
@@ -117,20 +123,91 @@ function beginObservingTurn(
 }
 
 function finishObservingTurn(observing: ObservingTurnState): StaleQueuedWorkLifecycleState {
-  const pendingTurnEndIndexes = observing.pendingTurnEndIndexes;
-  const pendingAgentEndGoalIds = observing.pendingAgentEndGoalIds;
+  const cleanup = observing.terminalCleanup;
   if (
-    pendingTurnEndIndexes !== undefined &&
-    pendingAgentEndGoalIds !== undefined &&
-    (pendingTurnEndIndexes.size > 0 || pendingAgentEndGoalIds.size > 0)
+    cleanup !== undefined &&
+    (cleanup.pendingTurnEndIndexes.size > 0 || cleanup.pendingAgentEndGoalIds.size > 0)
   ) {
     return {
       kind: "awaitingTerminalCleanup",
-      pendingTurnEndIndexes,
-      pendingAgentEndGoalIds,
+      pendingTurnEndIndexes: cleanup.pendingTurnEndIndexes,
+      pendingAgentEndGoalIds: cleanup.pendingAgentEndGoalIds,
     };
   }
   return { kind: "idle" };
+}
+
+function terminalCleanupFromLifecycle(
+  lifecycle: StaleQueuedWorkLifecycleState,
+): { cleanup: TerminalCleanup; observing: ObservingTurnState | null } | null {
+  switch (lifecycle.kind) {
+    case "awaitingTerminalCleanup":
+      return {
+        cleanup: {
+          pendingTurnEndIndexes: lifecycle.pendingTurnEndIndexes,
+          pendingAgentEndGoalIds: lifecycle.pendingAgentEndGoalIds,
+        },
+        observing: null,
+      };
+    case "observingTurn":
+      if (lifecycle.terminalCleanup === undefined) {
+        return null;
+      }
+      return { cleanup: lifecycle.terminalCleanup, observing: lifecycle };
+    default:
+      return null;
+  }
+}
+
+function resolveLifecycleAfterTerminalCleanup(
+  cleanup: TerminalCleanup,
+  observing: ObservingTurnState | null,
+): StaleQueuedWorkLifecycleState {
+  const hasPending =
+    cleanup.pendingTurnEndIndexes.size > 0 || cleanup.pendingAgentEndGoalIds.size > 0;
+
+  if (observing) {
+    if (hasPending) {
+      return { ...observing, terminalCleanup: cleanup };
+    }
+    const { terminalCleanup: _removed, ...withoutCleanup } = observing;
+    return withoutCleanup;
+  }
+
+  if (hasPending) {
+    return {
+      kind: "awaitingTerminalCleanup",
+      pendingTurnEndIndexes: cleanup.pendingTurnEndIndexes,
+      pendingAgentEndGoalIds: cleanup.pendingAgentEndGoalIds,
+    };
+  }
+  return { kind: "idle" };
+}
+
+function consumePendingStaleTurnEnd(
+  cleanup: TerminalCleanup,
+  turnIndex: number | null,
+  message: AssistantTurnMessage,
+): boolean {
+  if (
+    turnIndex === null ||
+    !isAbortedAssistantMessage(message) ||
+    !cleanup.pendingTurnEndIndexes.has(turnIndex)
+  ) {
+    return false;
+  }
+  cleanup.pendingTurnEndIndexes.delete(turnIndex);
+  return true;
+}
+
+function consumePendingStaleAgentEnd(
+  cleanup: TerminalCleanup,
+  messages: Array<{ role: string; customType?: string; details?: unknown; content?: unknown; stopReason?: string }>,
+): string[] {
+  if (!messages.some(isAbortedAssistantMessage)) {
+    return [];
+  }
+  return pendingStaleQueuedGoalWorkIdsFromMessages(messages, cleanup.pendingAgentEndGoalIds);
 }
 
 export function createStaleQueuedWorkGuard(): StaleQueuedWorkGuard {
@@ -231,21 +308,18 @@ export function createStaleQueuedWorkGuard(): StaleQueuedWorkGuard {
 
       const observing = lifecycle;
       if (observing.staleGoalIds.size === 0 || observing.hasRunnableWork) {
-        if (
-          observing.pendingTurnEndIndexes !== undefined &&
-          observing.pendingAgentEndGoalIds !== undefined
-        ) {
+        if (observing.terminalCleanup !== undefined) {
           lifecycle = {
             kind: "awaitingTerminalCleanup",
-            pendingTurnEndIndexes: observing.pendingTurnEndIndexes,
-            pendingAgentEndGoalIds: observing.pendingAgentEndGoalIds,
+            pendingTurnEndIndexes: observing.terminalCleanup.pendingTurnEndIndexes,
+            pendingAgentEndGoalIds: observing.terminalCleanup.pendingAgentEndGoalIds,
           };
         }
         return null;
       }
 
-      const pendingTurnEndIndexes = new Set(observing.pendingTurnEndIndexes ?? []);
-      const pendingAgentEndGoalIds = new Set(observing.pendingAgentEndGoalIds ?? []);
+      const pendingTurnEndIndexes = new Set(observing.terminalCleanup?.pendingTurnEndIndexes ?? []);
+      const pendingAgentEndGoalIds = new Set(observing.terminalCleanup?.pendingAgentEndGoalIds ?? []);
       noteTerminalEvents(
         pendingTurnEndIndexes,
         pendingAgentEndGoalIds,
@@ -310,25 +384,12 @@ export function createStaleQueuedWorkGuard(): StaleQueuedWorkGuard {
         return skipPlan({ type: "clearAccounting" }, { type: "refreshUi" });
       }
 
-      if (lifecycle.kind !== "awaitingTerminalCleanup") {
+      const pending = terminalCleanupFromLifecycle(lifecycle);
+      if (pending === null || !consumePendingStaleTurnEnd(pending.cleanup, turnIndex, message)) {
         return emptyPlan();
       }
 
-      const isPendingStaleTurnEnd =
-        turnIndex !== null &&
-        isAbortedAssistantMessage(message) &&
-        lifecycle.pendingTurnEndIndexes.has(turnIndex);
-      if (!isPendingStaleTurnEnd) {
-        return emptyPlan();
-      }
-
-      lifecycle.pendingTurnEndIndexes.delete(turnIndex);
-      if (
-        lifecycle.pendingTurnEndIndexes.size === 0 &&
-        lifecycle.pendingAgentEndGoalIds.size === 0
-      ) {
-        lifecycle = { kind: "idle" };
-      }
+      lifecycle = resolveLifecycleAfterTerminalCleanup(pending.cleanup, pending.observing);
       return skipPlan({ type: "refreshUi" });
     },
 
@@ -337,31 +398,20 @@ export function createStaleQueuedWorkGuard(): StaleQueuedWorkGuard {
         return skipPlan(...finishAbortingLifecycle());
       }
 
-      if (!messages.some(isAbortedAssistantMessage)) {
+      const pending = terminalCleanupFromLifecycle(lifecycle);
+      if (pending === null) {
         return emptyPlan();
       }
 
-      if (lifecycle.kind !== "awaitingTerminalCleanup") {
-        return emptyPlan();
-      }
-
-      const staleGoalIds = pendingStaleQueuedGoalWorkIdsFromMessages(
-        messages,
-        lifecycle.pendingAgentEndGoalIds,
-      );
+      const staleGoalIds = consumePendingStaleAgentEnd(pending.cleanup, messages);
       if (staleGoalIds.length === 0) {
         return emptyPlan();
       }
 
       for (const goalId of staleGoalIds) {
-        lifecycle.pendingAgentEndGoalIds.delete(goalId);
+        pending.cleanup.pendingAgentEndGoalIds.delete(goalId);
       }
-      if (
-        lifecycle.pendingTurnEndIndexes.size === 0 &&
-        lifecycle.pendingAgentEndGoalIds.size === 0
-      ) {
-        lifecycle = { kind: "idle" };
-      }
+      lifecycle = resolveLifecycleAfterTerminalCleanup(pending.cleanup, pending.observing);
       return skipPlan({ type: "refreshUi" });
     },
 

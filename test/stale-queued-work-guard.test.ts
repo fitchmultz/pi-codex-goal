@@ -212,6 +212,53 @@ test("late stale turn_end after current follow-up turn index is ignored", () => 
   assert.equal(stale.skip, true);
 });
 
+test("observingTurn with pending cleanup: late stale turn_end is skipped", () => {
+  const guard = createStaleQueuedWorkGuard();
+  guard.noteStaleWorkStarted("goal-1");
+  guard.planContextAbort(0);
+  guard.planUserInputClearAbort();
+  guard.noteRunnableWorkStarted();
+  assert.equal(guard.lifecycleKind(), "observingTurn");
+
+  const turnEndPlan = guard.planTurnEnd(0, abortedAssistant);
+  assert.equal(turnEndPlan.skip, true);
+  assert.deepEqual(effectTypes(turnEndPlan), ["refreshUi"]);
+  assert.equal(guard.lifecycleKind(), "observingTurn");
+});
+
+test("observingTurn with pending cleanup: late stale agent_end is skipped", () => {
+  const guard = createStaleQueuedWorkGuard();
+  guard.noteStaleWorkStarted("goal-1");
+  guard.planContextAbort(0);
+  guard.planUserInputClearAbort();
+  guard.noteRunnableWorkStarted();
+  assert.equal(guard.lifecycleKind(), "observingTurn");
+
+  const agentEndPlan = guard.planAgentEnd([
+    {
+      role: "custom",
+      customType: CUSTOM_ENTRY_TYPE,
+      details: { kind: "continuation", goalId: "goal-1" },
+    },
+    abortedAssistant,
+  ]);
+  assert.equal(agentEndPlan.skip, true);
+  assert.deepEqual(effectTypes(agentEndPlan), ["refreshUi"]);
+  assert.equal(guard.lifecycleKind(), "observingTurn");
+});
+
+test("observingTurn with pending cleanup: non-stale turn_end is not consumed", () => {
+  const guard = createStaleQueuedWorkGuard();
+  guard.noteStaleWorkStarted("goal-1");
+  guard.planContextAbort(0);
+  guard.planUserInputClearAbort();
+  guard.noteRunnableWorkStarted();
+
+  const plan = guard.planTurnEnd(0, stoppedAssistant);
+  assert.deepEqual(plan, { skip: false, effects: [] });
+  assert.equal(guard.lifecycleKind(), "observingTurn");
+});
+
 test("isAbortedAssistantMessage matches aborted assistant turns", () => {
   assert.equal(isAbortedAssistantMessage(abortedAssistant), true);
   assert.equal(isAbortedAssistantMessage(stoppedAssistant), false);
