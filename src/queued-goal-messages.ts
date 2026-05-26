@@ -1,4 +1,4 @@
-import { CUSTOM_ENTRY_TYPE, type GoalStatus } from "./types.js";
+import type { GoalStatus } from "./types.js";
 
 export type GoalQueuedWorkKind = "continuation" | "command_start" | "command_resume";
 
@@ -102,14 +102,16 @@ export type RewrittenQueuedGoalWorkMessage =
   | RefreshedActiveQueuedGoalCustomMessage
   | RefreshedActiveQueuedGoalUserMessage;
 
-export function isGoalCustomMessage(message: QueuedGoalContextCarrier): message is QueuedGoalCustomMessage {
-  return message.role === "custom" && typeof message.customType === "string";
+/** Role/customType only — does not prove normalized content or display. */
+interface QueuedGoalCustomRoleCarrier {
+  role: "custom";
+  customType: string;
 }
 
-export function isQueuedGoalWorkSourceMessage(
+function isQueuedGoalCustomRole(
   message: QueuedGoalContextCarrier,
-): message is QueuedGoalWorkSourceMessage {
-  return message.role === "user" || isGoalCustomMessage(message);
+): message is QueuedGoalContextCarrier & QueuedGoalCustomRoleCarrier {
+  return message.role === "custom" && typeof message.customType === "string";
 }
 
 export function userContentFromUnknown(content: unknown): QueuedGoalUserContent {
@@ -175,24 +177,25 @@ export function toQueuedGoalWorkSource(
         role: "user",
         content: userContentFromUnknown(message.content),
       };
-    case "custom":
-      if (!isGoalCustomMessage(message)) {
+    case "custom": {
+      if (!isQueuedGoalCustomRole(message)) {
         return null;
       }
-      return {
-        ...message,
+      const normalized: QueuedGoalCustomMessage = {
         role: "custom",
         customType: message.customType,
+        timestamp: message.timestamp,
         content: customContentFromUnknown(message.content),
         display: message.display ?? false,
       };
+      if (message.details !== undefined) {
+        normalized.details = message.details as NonNullable<QueuedGoalCustomMessage["details"]>;
+      }
+      return normalized;
+    }
     default:
       return null;
   }
-}
-
-export function isPiCodexGoalCustomMessage(message: QueuedGoalContextCarrier): message is QueuedGoalCustomMessage {
-  return isGoalCustomMessage(message) && message.customType === CUSTOM_ENTRY_TYPE;
 }
 
 export function isActiveGoalQueuedDetails(details: unknown): details is ActiveGoalQueuedDetails {
@@ -209,5 +212,9 @@ export function isActiveGoalQueuedDetails(details: unknown): details is ActiveGo
 }
 
 export function isCommandResumeQueuedGoalMessage(message: QueuedGoalContextCarrier): boolean {
-  return isGoalCustomMessage(message) && isActiveGoalQueuedDetails(message.details) && message.details.kind === "command_resume";
+  return (
+    isQueuedGoalCustomRole(message) &&
+    isActiveGoalQueuedDetails(message.details) &&
+    message.details.kind === "command_resume"
+  );
 }
