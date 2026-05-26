@@ -29,15 +29,17 @@ type ObservingTurnState = {
   terminalCleanup?: TerminalCleanup;
 };
 
+type AbortingTurnState = {
+  kind: "abortingTurn";
+  activeTurnIndex: number | null;
+  activeStaleGoalIds: Set<string>;
+  terminalCleanup: TerminalCleanup;
+};
+
 type StaleQueuedWorkLifecycleState =
   | { kind: "idle" }
   | ObservingTurnState
-  | {
-      kind: "abortingTurn";
-      turnIndex: number | null;
-      pendingTurnEndIndexes: Set<number>;
-      pendingAgentEndGoalIds: Set<string>;
-    }
+  | AbortingTurnState
   | {
       kind: "awaitingTerminalCleanup";
       pendingTurnEndIndexes: Set<number>;
@@ -233,18 +235,33 @@ export function createStaleQueuedWorkGuard(): StaleQueuedWorkGuard {
     if (lifecycle.kind !== "abortingTurn") {
       return emptyPlan();
     }
+    const { terminalCleanup } = lifecycle;
     const effects = transitionToAwaitingTerminalCleanup(
-      lifecycle.pendingTurnEndIndexes,
-      lifecycle.pendingAgentEndGoalIds,
+      terminalCleanup.pendingTurnEndIndexes,
+      terminalCleanup.pendingAgentEndGoalIds,
     );
     return { skip: false, effects };
   };
 
-  const finishAbortingLifecycle = (): StaleQueuedWorkEffect[] => {
-    if (lifecycle.kind !== "abortingTurn") {
-      return [];
+  const finishActiveAbortingLifecycle = (
+    aborting: AbortingTurnState,
+  ): StaleQueuedWorkEffect[] => {
+    const { terminalCleanup } = aborting;
+    for (const goalId of aborting.activeStaleGoalIds) {
+      terminalCleanup.pendingAgentEndGoalIds.delete(goalId);
     }
-    lifecycle = { kind: "idle" };
+    const hasPending =
+      terminalCleanup.pendingTurnEndIndexes.size > 0 ||
+      terminalCleanup.pendingAgentEndGoalIds.size > 0;
+    if (hasPending) {
+      lifecycle = {
+        kind: "awaitingTerminalCleanup",
+        pendingTurnEndIndexes: terminalCleanup.pendingTurnEndIndexes,
+        pendingAgentEndGoalIds: terminalCleanup.pendingAgentEndGoalIds,
+      };
+    } else {
+      lifecycle = { kind: "idle" };
+    }
     return [{ type: "clearAccounting" }, { type: "refreshUi" }];
   };
 
@@ -329,9 +346,12 @@ export function createStaleQueuedWorkGuard(): StaleQueuedWorkGuard {
 
       lifecycle = {
         kind: "abortingTurn",
-        turnIndex: currentTurnIndex,
-        pendingTurnEndIndexes,
-        pendingAgentEndGoalIds,
+        activeTurnIndex: currentTurnIndex,
+        activeStaleGoalIds: new Set(observing.staleGoalIds),
+        terminalCleanup: {
+          pendingTurnEndIndexes,
+          pendingAgentEndGoalIds,
+        },
       };
       return {
         skip: false,
@@ -374,14 +394,18 @@ export function createStaleQueuedWorkGuard(): StaleQueuedWorkGuard {
 
     planTurnEnd(turnIndex: number | null, message: AssistantTurnMessage): StaleQueuedWorkPlan {
       if (lifecycle.kind === "abortingTurn") {
-        const isActiveStaleTurn = turnIndex !== null && lifecycle.turnIndex === turnIndex;
-        if (!isActiveStaleTurn) {
-          return emptyPlan();
+        const aborting = lifecycle;
+        const { activeTurnIndex, terminalCleanup } = aborting;
+
+        if (consumePendingStaleTurnEnd(terminalCleanup, turnIndex, message)) {
+          const isActiveStaleTurn = turnIndex !== null && activeTurnIndex === turnIndex;
+          if (isActiveStaleTurn) {
+            return skipPlan({ type: "clearAccounting" }, { type: "refreshUi" });
+          }
+          return skipPlan({ type: "refreshUi" });
         }
-        if (turnIndex !== null) {
-          lifecycle.pendingTurnEndIndexes.delete(turnIndex);
-        }
-        return skipPlan({ type: "clearAccounting" }, { type: "refreshUi" });
+
+        return emptyPlan();
       }
 
       const pending = terminalCleanupFromLifecycle(lifecycle);
@@ -395,7 +419,26 @@ export function createStaleQueuedWorkGuard(): StaleQueuedWorkGuard {
 
     planAgentEnd(messages): StaleQueuedWorkPlan {
       if (lifecycle.kind === "abortingTurn") {
-        return skipPlan(...finishAbortingLifecycle());
+        const aborting = lifecycle;
+        if (!messages.some(isAbortedAssistantMessage)) {
+          return emptyPlan();
+        }
+
+        const matchedGoalIds = pendingStaleQueuedGoalWorkIdsFromMessages(
+          messages,
+          aborting.terminalCleanup.pendingAgentEndGoalIds,
+        );
+        const olderGoalIds = matchedGoalIds.filter(
+          (goalId) => !aborting.activeStaleGoalIds.has(goalId),
+        );
+        if (olderGoalIds.length > 0) {
+          for (const goalId of olderGoalIds) {
+            aborting.terminalCleanup.pendingAgentEndGoalIds.delete(goalId);
+          }
+          return skipPlan({ type: "refreshUi" });
+        }
+
+        return skipPlan(...finishActiveAbortingLifecycle(aborting));
       }
 
       const pending = terminalCleanupFromLifecycle(lifecycle);

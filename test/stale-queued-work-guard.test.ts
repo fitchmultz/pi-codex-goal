@@ -93,7 +93,7 @@ test("abortingTurn: active stale turn_end clears accounting and skips", () => {
   assert.equal(guard.lifecycleKind(), "abortingTurn");
 });
 
-test("abortingTurn -> idle on agent_end finishes lifecycle", () => {
+test("abortingTurn -> awaitingTerminalCleanup on agent_end when turn_end is still pending", () => {
   const guard = createStaleQueuedWorkGuard();
   guard.noteStaleWorkStarted("goal-1");
   guard.planContextAbort(0);
@@ -101,7 +101,7 @@ test("abortingTurn -> idle on agent_end finishes lifecycle", () => {
   const agentEndPlan = guard.planAgentEnd([abortedAssistant]);
   assert.equal(agentEndPlan.skip, true);
   assert.deepEqual(effectTypes(agentEndPlan), ["clearAccounting", "refreshUi"]);
-  assert.equal(guard.lifecycleKind(), "idle");
+  assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
   assert.equal(guard.isBlockingContinuation(), false);
 });
 
@@ -262,4 +262,71 @@ test("observingTurn with pending cleanup: non-stale turn_end is not consumed", (
 test("isAbortedAssistantMessage matches aborted assistant turns", () => {
   assert.equal(isAbortedAssistantMessage(abortedAssistant), true);
   assert.equal(isAbortedAssistantMessage(stoppedAssistant), false);
+});
+
+test("abortingTurn: late stale turn 0 turn_end during turn 1 abort is skipped", () => {
+  const guard = createStaleQueuedWorkGuard();
+  guard.noteStaleWorkStarted("goal-0");
+  guard.planContextAbort(0);
+  guard.planTurnStart();
+
+  guard.noteStaleWorkStarted("goal-1");
+  guard.planContextAbort(1);
+  assert.equal(guard.lifecycleKind(), "abortingTurn");
+
+  const turnEndPlan = guard.planTurnEnd(0, abortedAssistant);
+  assert.equal(turnEndPlan.skip, true);
+  assert.deepEqual(effectTypes(turnEndPlan), ["refreshUi"]);
+  assert.equal(guard.lifecycleKind(), "abortingTurn");
+});
+
+test("abortingTurn: late stale turn 0 agent_end during turn 1 abort is skipped", () => {
+  const guard = createStaleQueuedWorkGuard();
+  guard.noteStaleWorkStarted("goal-0");
+  guard.planContextAbort(0);
+  guard.planTurnStart();
+
+  guard.noteStaleWorkStarted("goal-1");
+  guard.planContextAbort(1);
+  assert.equal(guard.lifecycleKind(), "abortingTurn");
+
+  const agentEndPlan = guard.planAgentEnd([
+    {
+      role: "custom",
+      customType: CUSTOM_ENTRY_TYPE,
+      details: { kind: "continuation", goalId: "goal-0" },
+    },
+    abortedAssistant,
+  ]);
+  assert.equal(agentEndPlan.skip, true);
+  assert.deepEqual(effectTypes(agentEndPlan), ["refreshUi"]);
+  assert.equal(guard.lifecycleKind(), "abortingTurn");
+});
+
+test("abortingTurn: active turn 1 agent_end preserves awaiting cleanup for turn 0", () => {
+  const guard = createStaleQueuedWorkGuard();
+  guard.noteStaleWorkStarted("goal-0");
+  guard.planContextAbort(0);
+  guard.planTurnStart();
+
+  guard.noteStaleWorkStarted("goal-1");
+  guard.planContextAbort(1);
+
+  const agentEndPlan = guard.planAgentEnd([
+    {
+      role: "custom",
+      customType: CUSTOM_ENTRY_TYPE,
+      details: { kind: "continuation", goalId: "goal-1" },
+    },
+    abortedAssistant,
+  ]);
+  assert.equal(agentEndPlan.skip, true);
+  assert.deepEqual(effectTypes(agentEndPlan), ["clearAccounting", "refreshUi"]);
+  assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
+  assert.equal(guard.isBlockingContinuation(), false);
+
+  const lateTurnEndPlan = guard.planTurnEnd(0, abortedAssistant);
+  assert.equal(lateTurnEndPlan.skip, true);
+  assert.deepEqual(effectTypes(lateTurnEndPlan), ["refreshUi"]);
+  assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
 });
