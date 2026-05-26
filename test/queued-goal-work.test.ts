@@ -7,7 +7,6 @@ import {
   dedupeActiveGoalContinuations,
   extensionQueuedGoalWorkMessageId,
   queuedGoalWorkMessageId,
-  staleGoalContinuationContextMessage,
 } from "../src/queued-goal-work.js";
 import { compactContinuationPrompt, continuationPrompt } from "../src/prompts.js";
 import type { ThreadGoal } from "../src/types.js";
@@ -34,36 +33,39 @@ test("toQueuedGoalWorkSource ignores unrelated custom messages", () => {
   assert.equal(toQueuedGoalWorkSource(unrelated), null);
 });
 
-test("staleGoalContinuationContextMessage rewrites custom and user queued messages", () => {
-  const customSource = toQueuedGoalWorkSource(
-    goalCustomContextMessage({
-      content: "old",
-      details: { kind: "continuation", goalId: "goal-1" },
-      timestamp: 1,
-    }),
-  );
-  assert.ok(customSource);
-  const staleCustom = staleGoalContinuationContextMessage(
-    customSource,
-    "goal-1",
-    { ...activeGoal, status: "complete" },
-  );
+test("applyQueuedGoalProviderContextRewrites rewrites stale custom and user queued messages", () => {
+  const completedGoal = { ...activeGoal, status: "complete" as const };
+  const staleCustom = goalCustomContextMessage({
+    content: "old",
+    details: { kind: "continuation", goalId: activeGoal.goalId },
+    timestamp: 1,
+  });
+  const staleUser = goalUserContextMessage(continuationPrompt(activeGoal), 2);
 
-  assert.equal(staleCustom.role, "custom");
-  assert.equal(staleCustom.display, false);
-  assert.equal(staleCustom.details.kind, "stale_continuation");
-  assert.match(String(staleCustom.content), /queued hidden goal continuation was stale/);
+  const customResult = applyQueuedGoalProviderContextRewrites([staleCustom], {
+    goal: completedGoal,
+    resolveStaleQueuedGoalWorkMessageId: queuedGoalWorkMessageId,
+    resolveActiveContinuationQueuedGoalWorkMessageId: extensionQueuedGoalWorkMessageId,
+  });
 
-  const userSource = toQueuedGoalWorkSource(goalUserContextMessage(continuationPrompt(activeGoal)));
-  assert.ok(userSource);
-  const staleUser = staleGoalContinuationContextMessage(
-    userSource,
-    "goal-1",
-    { ...activeGoal, status: "complete" },
-  );
+  assert.equal(customResult.changed, true);
+  assert.equal(customResult.messages[0]?.display, false);
+  assert.match(String(customResult.messages[0]?.content), /queued hidden goal continuation was stale/);
+  assert.deepEqual(customResult.messages[0]?.details, {
+    kind: "stale_continuation",
+    goalId: activeGoal.goalId,
+    currentGoalId: activeGoal.goalId,
+    currentStatus: "complete",
+  });
 
-  assert.equal(staleUser.role, "user");
-  assert.match(String(staleUser.content[0]?.text), /queued hidden goal continuation was stale/);
+  const userResult = applyQueuedGoalProviderContextRewrites([staleUser], {
+    goal: completedGoal,
+    resolveStaleQueuedGoalWorkMessageId: queuedGoalWorkMessageId,
+    resolveActiveContinuationQueuedGoalWorkMessageId: extensionQueuedGoalWorkMessageId,
+  });
+
+  assert.equal(userResult.changed, true);
+  assert.match(String(userContentFromUnknown(userResult.messages[0]?.content)[0]?.text), /queued hidden goal continuation was stale/);
 });
 
 test("dedupeActiveGoalContinuations supersedes older custom continuations and refreshes the latest", () => {

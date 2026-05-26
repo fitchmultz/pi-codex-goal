@@ -8,20 +8,64 @@ import {
   isActiveGoalQueuedDetails,
   type QueuedGoalContextCarrier,
   type QueuedGoalContextInput,
+  type QueuedGoalCustomMessage,
   type QueuedGoalTextPart,
+  type QueuedGoalUserMessage,
   type QueuedGoalWorkSourceMessage,
-  type RefreshedActiveQueuedGoalCustomMessage,
-  type RefreshedActiveQueuedGoalUserMessage,
-  type RewrittenQueuedGoalWorkMessage,
-  type StaleQueuedGoalCustomMessage,
-  type StaleQueuedGoalUserMessage,
-  type SupersededQueuedGoalCustomMessage,
-  type SupersededQueuedGoalUserMessage,
   toQueuedGoalContextCarrier,
   toQueuedGoalWorkSource,
   userContentFromUnknown,
 } from "./queued-goal-messages.js";
-import { CUSTOM_ENTRY_TYPE, type ThreadGoal } from "./types.js";
+import { CUSTOM_ENTRY_TYPE, type GoalStatus, type ThreadGoal } from "./types.js";
+
+interface SupersededContinuationDetails {
+  kind: "superseded_continuation";
+  goalId: string;
+}
+
+interface StaleContinuationDetails {
+  kind: "stale_continuation";
+  goalId: string;
+  currentGoalId: string | null;
+  currentStatus: GoalStatus | null;
+}
+
+interface SupersededQueuedGoalCustomMessage extends QueuedGoalCustomMessage {
+  content: string;
+  display: false;
+  details: SupersededContinuationDetails;
+}
+
+interface SupersededQueuedGoalUserMessage extends QueuedGoalUserMessage {
+  content: QueuedGoalTextPart[];
+}
+
+interface StaleQueuedGoalCustomMessage extends QueuedGoalCustomMessage {
+  content: string;
+  display: false;
+  details: StaleContinuationDetails;
+}
+
+interface StaleQueuedGoalUserMessage extends QueuedGoalUserMessage {
+  content: QueuedGoalTextPart[];
+}
+
+interface RefreshedActiveQueuedGoalCustomMessage extends QueuedGoalCustomMessage {
+  content: string;
+  display: false;
+}
+
+interface RefreshedActiveQueuedGoalUserMessage extends QueuedGoalUserMessage {
+  content: QueuedGoalTextPart[];
+}
+
+type RewrittenQueuedGoalWorkMessage =
+  | SupersededQueuedGoalCustomMessage
+  | SupersededQueuedGoalUserMessage
+  | StaleQueuedGoalCustomMessage
+  | StaleQueuedGoalUserMessage
+  | RefreshedActiveQueuedGoalCustomMessage
+  | RefreshedActiveQueuedGoalUserMessage;
 
 /** Single bridge from concrete queued-goal rewrites back onto provider-context messages. */
 function mergeProviderContextMessage<TMessage extends QueuedGoalContextInput>(
@@ -215,7 +259,7 @@ export function dedupeActiveGoalContinuations<TMessage extends QueuedGoalContext
   return { messages: nextMessages, changed };
 }
 
-export function staleGoalContinuationContextMessage(
+function staleGoalContinuationContextMessage(
   message: QueuedGoalWorkSourceMessage,
   queuedGoalId: string,
   currentGoal: ThreadGoal | null,

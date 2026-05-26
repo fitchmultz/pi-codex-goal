@@ -1,22 +1,10 @@
-import { CUSTOM_ENTRY_TYPE, type GoalStatus } from "./types.js";
+import { CUSTOM_ENTRY_TYPE } from "./types.js";
 
 export type GoalQueuedWorkKind = "continuation" | "command_start" | "command_resume";
 
 export interface ActiveGoalQueuedDetails {
   kind: GoalQueuedWorkKind;
   goalId: string;
-}
-
-export interface SupersededContinuationDetails {
-  kind: "superseded_continuation";
-  goalId: string;
-}
-
-export interface StaleContinuationDetails {
-  kind: "stale_continuation";
-  goalId: string;
-  currentGoalId: string | null;
-  currentStatus: GoalStatus | null;
 }
 
 export interface QueuedGoalTextPart {
@@ -59,43 +47,6 @@ export interface QueuedGoalUserMessage extends QueuedGoalContextCarrier {
 }
 
 export type QueuedGoalWorkSourceMessage = QueuedGoalCustomMessage | QueuedGoalUserMessage;
-
-export interface SupersededQueuedGoalCustomMessage extends QueuedGoalCustomMessage {
-  content: string;
-  display: false;
-  details: SupersededContinuationDetails;
-}
-
-export interface SupersededQueuedGoalUserMessage extends QueuedGoalUserMessage {
-  content: QueuedGoalTextPart[];
-}
-
-export interface StaleQueuedGoalCustomMessage extends QueuedGoalCustomMessage {
-  content: string;
-  display: false;
-  details: StaleContinuationDetails;
-}
-
-export interface StaleQueuedGoalUserMessage extends QueuedGoalUserMessage {
-  content: QueuedGoalTextPart[];
-}
-
-export interface RefreshedActiveQueuedGoalCustomMessage extends QueuedGoalCustomMessage {
-  content: string;
-  display: false;
-}
-
-export interface RefreshedActiveQueuedGoalUserMessage extends QueuedGoalUserMessage {
-  content: QueuedGoalTextPart[];
-}
-
-export type RewrittenQueuedGoalWorkMessage =
-  | SupersededQueuedGoalCustomMessage
-  | SupersededQueuedGoalUserMessage
-  | StaleQueuedGoalCustomMessage
-  | StaleQueuedGoalUserMessage
-  | RefreshedActiveQueuedGoalCustomMessage
-  | RefreshedActiveQueuedGoalUserMessage;
 
 /** Role/customType only — does not prove normalized content or display. */
 interface QueuedGoalCustomRoleCarrier {
