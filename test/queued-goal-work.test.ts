@@ -26,6 +26,7 @@ test("staleGoalContinuationContextMessage rewrites custom and user queued messag
     goalCustomContextMessage({
       content: "old",
       details: { kind: "continuation", goalId: "goal-1" },
+      timestamp: 1,
     }),
   );
   assert.ok(customSource);

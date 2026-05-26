@@ -6,7 +6,9 @@ import {
 } from "./prompts.js";
 import {
   isActiveGoalQueuedDetails,
+  mergeProviderContextMessage,
   type QueuedGoalContextCarrier,
+  type QueuedGoalContextInput,
   type QueuedGoalTextPart,
   type QueuedGoalWorkSourceMessage,
   type RefreshedActiveQueuedGoalCustomMessage,
@@ -15,6 +17,7 @@ import {
   type StaleQueuedGoalUserMessage,
   type SupersededQueuedGoalCustomMessage,
   type SupersededQueuedGoalUserMessage,
+  toQueuedGoalContextCarrier,
   toQueuedGoalWorkSource,
   userContentFromUnknown,
 } from "./queued-goal-messages.js";
@@ -54,7 +57,7 @@ function staleGoalContinuationMessage(queuedGoalId: string, currentGoal: ThreadG
   ].join("\n");
 }
 
-export function extensionQueuedGoalWorkMessageId(message: QueuedGoalContextCarrier): string | null {
+export function extensionQueuedGoalWorkMessageId(message: QueuedGoalContextInput): string | null {
   if (message.role !== "custom" || message.customType !== CUSTOM_ENTRY_TYPE) {
     return null;
   }
@@ -70,7 +73,7 @@ export function extensionQueuedGoalWorkMessageId(message: QueuedGoalContextCarri
   return continuationGoalIdFromMessageContent(message.content);
 }
 
-export function queuedGoalWorkMessageId(message: QueuedGoalContextCarrier): string | null {
+export function queuedGoalWorkMessageId(message: QueuedGoalContextInput): string | null {
   if (message.role === "user") {
     return continuationGoalIdFromMessageContent(message.content);
   }
@@ -117,11 +120,11 @@ function continuationPromptForProviderContext(
   return compactContinuationPrompt(goal);
 }
 
-export function dedupeActiveGoalContinuations(
-  messages: QueuedGoalContextCarrier[],
+export function dedupeActiveGoalContinuations<TMessage extends QueuedGoalContextInput>(
+  messages: readonly TMessage[],
   goal: ThreadGoal,
-  resolveQueuedGoalWorkMessageId: (message: QueuedGoalContextCarrier) => string | null,
-): { messages: QueuedGoalContextCarrier[]; changed: boolean } {
+  resolveQueuedGoalWorkMessageId: (message: QueuedGoalContextInput) => string | null,
+): { messages: TMessage[]; changed: boolean } {
   const activeGoalId = goal.goalId;
   const indices: number[] = [];
   for (let index = 0; index < messages.length; index += 1) {
@@ -137,23 +140,27 @@ export function dedupeActiveGoalContinuations(
 
   const latestIndex = indices.at(-1);
   if (latestIndex === undefined) {
-    return { messages, changed: false };
+    return { messages: [...messages], changed: false };
   }
 
   let changed = false;
-  const nextMessages = messages.slice();
+  const nextMessages = [...messages];
 
   for (const index of indices.slice(0, -1)) {
     const message = nextMessages[index];
     if (!message) {
       continue;
     }
-    const source = toQueuedGoalWorkSource(message);
+    const carrier = toQueuedGoalContextCarrier(message);
+    if (!carrier) {
+      continue;
+    }
+    const source = toQueuedGoalWorkSource(carrier);
     if (!source) {
       continue;
     }
     const rewritten = supersededContinuationContextMessage(source, activeGoalId);
-    nextMessages[index] = rewritten;
+    nextMessages[index] = mergeProviderContextMessage(message, rewritten);
     changed = true;
   }
 
@@ -161,7 +168,11 @@ export function dedupeActiveGoalContinuations(
   if (!latestMessage) {
     return { messages: nextMessages, changed };
   }
-  const latestSource = toQueuedGoalWorkSource(latestMessage);
+  const latestCarrier = toQueuedGoalContextCarrier(latestMessage);
+  if (!latestCarrier) {
+    return { messages: nextMessages, changed };
+  }
+  const latestSource = toQueuedGoalWorkSource(latestCarrier);
   if (!latestSource) {
     return { messages: nextMessages, changed };
   }
@@ -174,7 +185,7 @@ export function dedupeActiveGoalContinuations(
         content: refreshedContent,
         display: false,
       };
-      nextMessages[latestIndex] = refreshed;
+      nextMessages[latestIndex] = mergeProviderContextMessage(latestMessage, refreshed);
       changed = true;
     }
   } else {
@@ -185,7 +196,7 @@ export function dedupeActiveGoalContinuations(
         ...latestSource,
         content: refreshedUserContent,
       };
-      nextMessages[latestIndex] = refreshed;
+      nextMessages[latestIndex] = mergeProviderContextMessage(latestMessage, refreshed);
       changed = true;
     }
   }
@@ -227,16 +238,64 @@ export function rewriteStaleQueuedGoalContextMessage(
   message: QueuedGoalContextCarrier,
   queuedGoalId: string,
   currentGoal: ThreadGoal | null,
-): QueuedGoalContextCarrier | QueuedGoalStaleRewriteResult {
+): QueuedGoalStaleRewriteResult | null {
   const source = toQueuedGoalWorkSource(message);
   if (!source) {
-    return message;
+    return null;
   }
   return staleGoalContinuationContextMessage(source, queuedGoalId, currentGoal);
 }
 
+export function applyQueuedGoalProviderContextRewrites<TMessage extends QueuedGoalContextInput>(
+  messages: readonly TMessage[],
+  options: {
+    goal: ThreadGoal | null;
+    resolveStaleQueuedGoalWorkMessageId: (message: QueuedGoalContextInput) => string | null;
+    resolveActiveContinuationQueuedGoalWorkMessageId: (message: QueuedGoalContextInput) => string | null;
+  },
+): { messages: TMessage[]; changed: boolean } {
+  let changed = false;
+  let nextMessages: TMessage[] = messages.map((message) => {
+    const queuedGoalId = options.resolveStaleQueuedGoalWorkMessageId(message);
+    if (queuedGoalId === null) {
+      return message;
+    }
+
+    if (options.goal?.goalId === queuedGoalId && options.goal.status === "active") {
+      return message;
+    }
+
+    const carrier = toQueuedGoalContextCarrier(message);
+    if (!carrier) {
+      return message;
+    }
+
+    const rewritten = rewriteStaleQueuedGoalContextMessage(carrier, queuedGoalId, options.goal);
+    if (!rewritten) {
+      return message;
+    }
+
+    changed = true;
+    return mergeProviderContextMessage(message, rewritten);
+  });
+
+  if (options.goal?.status === "active") {
+    const deduped = dedupeActiveGoalContinuations(
+      nextMessages,
+      options.goal,
+      options.resolveActiveContinuationQueuedGoalWorkMessageId,
+    );
+    if (deduped.changed) {
+      changed = true;
+      nextMessages = deduped.messages;
+    }
+  }
+
+  return { messages: nextMessages, changed };
+}
+
 export function extensionQueuedGoalWorkMessageIdForRuntime(
-  message: QueuedGoalContextCarrier,
+  message: QueuedGoalContextInput,
   resolveContinuationGoalIdFromPrompt: (prompt: string) => string | null,
 ): string | null {
   if (message.role === "user") {
@@ -248,7 +307,7 @@ export function extensionQueuedGoalWorkMessageIdForRuntime(
 }
 
 export function pendingStaleQueuedGoalWorkIdsFromMessages(
-  messages: readonly QueuedGoalContextCarrier[],
+  messages: readonly QueuedGoalContextInput[],
   staleQueuedGoalWorkAgentEndGoalIds: ReadonlySet<string>,
 ): string[] {
   const goalIds: string[] = [];

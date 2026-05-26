@@ -12,11 +12,10 @@ import {
 import { compactContinuationPrompt, continuationGoalIdFromPrompt } from "./prompts.js";
 import { isCommandResumeQueuedGoalMessage } from "./queued-goal-messages.js";
 import {
-  dedupeActiveGoalContinuations,
+  applyQueuedGoalProviderContextRewrites,
   extensionQueuedGoalWorkMessageId,
   extensionQueuedGoalWorkMessageIdForRuntime,
   pendingStaleQueuedGoalWorkIdsFromMessages,
-  rewriteStaleQueuedGoalContextMessage,
 } from "./queued-goal-work.js";
 import {
   createGoalRecoveryMachine,
@@ -627,28 +626,11 @@ export default function (pi: ExtensionAPI): void {
   });
 
   pi.on("context", async (event, ctx): Promise<{ messages: typeof event.messages } | undefined> => {
-    let changed = false;
-    let messages: typeof event.messages = event.messages.map((message) => {
-      const queuedGoalId = queuedGoalWorkMessageIdForRuntime(message);
-      if (queuedGoalId === null) {
-        return message;
-      }
-
-      if (goal?.goalId === queuedGoalId && goal.status === "active") {
-        return message;
-      }
-
-      changed = true;
-      return rewriteStaleQueuedGoalContextMessage(message, queuedGoalId, goal) as typeof message;
+    const { messages, changed } = applyQueuedGoalProviderContextRewrites(event.messages, {
+      goal,
+      resolveStaleQueuedGoalWorkMessageId: queuedGoalWorkMessageIdForRuntime,
+      resolveActiveContinuationQueuedGoalWorkMessageId: extensionQueuedGoalWorkMessageId,
     });
-
-    if (goal?.status === "active") {
-      const deduped = dedupeActiveGoalContinuations(messages, goal, extensionQueuedGoalWorkMessageId);
-      if (deduped.changed) {
-        changed = true;
-        messages = deduped.messages as typeof messages;
-      }
-    }
 
     if (startedStaleQueuedGoalWorkThisTurn && !startedRunnableWorkThisTurn) {
       if (!staleQueuedGoalWorkTurnActive) {

@@ -6,6 +6,7 @@ import {
   continuationGoalIdFromPrompt,
   continuationPrompt,
 } from "../src/prompts.js";
+import { userContentFromUnknown } from "../src/queued-goal-messages.js";
 import {
   assistantMessage,
   createRuntimeHarness,
@@ -13,6 +14,8 @@ import {
   emitQueuedTurnThroughContext,
   goalCustomContextMessage,
   goalUserContextMessage,
+  providerContextMessageAt,
+  requireProviderContextResult,
 } from "./support/runtime-harness.js";
 
 test("provider context dedupes many active continuations to one refreshed prompt", async () => {
@@ -50,18 +53,17 @@ test("provider context dedupes many active continuations to one refreshed prompt
   ];
 
   const results = await emitProviderContext(harness, messages);
-  const result = results[0] as { messages?: Array<{ content?: unknown; details?: unknown }> } | undefined;
-  assert.ok(result?.messages);
+  const result = requireProviderContextResult(results);
   assert.equal(result.messages.length, 3);
 
-  assert.match(String(result.messages[0]?.content), /Superseded hidden goal continuation bookkeeping/);
-  assert.deepEqual(result.messages[0]?.details, {
+  assert.match(String(providerContextMessageAt(result, 0).content), /Superseded hidden goal continuation bookkeeping/);
+  assert.deepEqual(providerContextMessageAt(result, 0).details, {
     kind: "superseded_continuation",
     goalId: goal.goalId,
   });
-  assert.match(String(result.messages[1]?.content), /Superseded hidden goal continuation bookkeeping/);
+  assert.match(String(providerContextMessageAt(result, 1).content), /Superseded hidden goal continuation bookkeeping/);
 
-  const latestContent = String(result.messages[2]?.content);
+  const latestContent = String(providerContextMessageAt(result, 2).content);
   assert.match(latestContent, /Tokens used: 0/);
   assert.match(latestContent, /Time spent pursuing goal: 0s/);
   assert.equal(continuationGoalIdFromPrompt(latestContent), goal.goalId);
@@ -115,15 +117,14 @@ test("active provider-context dedupe preserves historical user marker mixed with
   ];
 
   const contextResults = await emitProviderContext(harness, messages);
-  const result = contextResults[0] as { messages?: Array<{ role: string; content?: unknown; details?: unknown }> } | undefined;
-  assert.ok(result?.messages);
+  const result = requireProviderContextResult(contextResults);
   assert.equal(result.messages.length, 3);
 
-  assert.match(String(result.messages[0]?.content), /Superseded hidden goal continuation bookkeeping/);
-  assert.deepEqual(result.messages[1]?.content, userMessage.content);
-  assert.match(String((result.messages[1]?.content as Array<{ text?: string }> | undefined)?.[0]?.text), /<untrusted_objective>/);
+  assert.match(String(providerContextMessageAt(result, 0).content), /Superseded hidden goal continuation bookkeeping/);
+  assert.deepEqual(providerContextMessageAt(result, 1).content, userMessage.content);
+  assert.match(String(userContentFromUnknown(providerContextMessageAt(result, 1).content)[0]?.text), /<untrusted_objective>/);
 
-  const latestContent = String(result.messages[2]?.content);
+  const latestContent = String(providerContextMessageAt(result, 2).content);
   assert.match(latestContent, /Tokens used: 0/);
   assert.doesNotMatch(latestContent, /<untrusted_objective>/);
   assert.equal(continuationGoalIdFromPrompt(latestContent), goal.goalId);
@@ -195,15 +196,14 @@ test("active goal provider-context dedupe preserves pasted marker input mixed wi
   ];
 
   const contextResults = await emitQueuedTurnThroughContext(harness, messages, 0);
-  const result = contextResults[0] as { messages?: Array<{ role: string; content?: unknown; details?: unknown }> } | undefined;
-  assert.ok(result?.messages);
+  const result = requireProviderContextResult(contextResults);
   assert.equal(result.messages.length, 3);
 
-  assert.deepEqual(result.messages[1]?.content, userMessage.content);
-  assert.match(String((result.messages[1]?.content as Array<{ text?: string }> | undefined)?.[0]?.text), /<untrusted_objective>/);
-  assert.match(String(result.messages[0]?.content), /Superseded hidden goal continuation bookkeeping/);
+  assert.deepEqual(providerContextMessageAt(result, 1).content, userMessage.content);
+  assert.match(String(userContentFromUnknown(providerContextMessageAt(result, 1).content)[0]?.text), /<untrusted_objective>/);
+  assert.match(String(providerContextMessageAt(result, 0).content), /Superseded hidden goal continuation bookkeeping/);
 
-  const latestContent = String(result.messages[2]?.content);
+  const latestContent = String(providerContextMessageAt(result, 2).content);
   assert.match(latestContent, /Tokens used: 0/);
   assert.doesNotMatch(latestContent, /<untrusted_objective>/);
   assert.equal(continuationGoalIdFromPrompt(latestContent), goal.goalId);
@@ -229,8 +229,8 @@ test("latest active continuation remains runnable after provider-context dedupe"
       timestamp: 2,
     }),
   ]);
-  const contextResult = contextResults[0] as { messages?: Array<{ content?: unknown }> } | undefined;
-  const latestContent = String(contextResult?.messages?.[1]?.content);
+  const contextResult = requireProviderContextResult(contextResults);
+  const latestContent = String(providerContextMessageAt(contextResult, 1).content);
   assert.equal(continuationGoalIdFromPrompt(latestContent), goal.goalId);
 
   harness.sentMessages.length = 0;
@@ -274,8 +274,8 @@ test("completed goals are not treated as active during continuation dedupe", asy
     }),
   ]);
 
-  const result = results[0] as { messages?: Array<{ content?: unknown; details?: unknown }> } | undefined;
-  assert.match(String(result?.messages?.[0]?.content), /queued hidden goal continuation was stale/);
-  assert.match(String(result?.messages?.[1]?.content), /queued hidden goal continuation was stale/);
+  const result = requireProviderContextResult(results);
+  assert.match(String(providerContextMessageAt(result, 0).content), /queued hidden goal continuation was stale/);
+  assert.match(String(providerContextMessageAt(result, 1).content), /queued hidden goal continuation was stale/);
   assert.equal(harness.snapshot().goal?.status, "complete");
 });

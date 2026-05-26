@@ -26,14 +26,24 @@ export interface QueuedGoalTextPart {
 
 export type QueuedGoalUserContent = QueuedGoalTextPart[];
 
-/** Minimal shape shared by provider-context messages this extension may rewrite. */
-export interface QueuedGoalContextCarrier {
+/** External provider-context message shape before normalization. */
+export interface QueuedGoalContextInput {
   role: string;
   customType?: string;
   content?: unknown;
   display?: boolean;
   details?: unknown;
   timestamp?: number;
+}
+
+/** Normalized provider-context carrier with required runtime fields. */
+export interface QueuedGoalContextCarrier {
+  role: string;
+  timestamp: number;
+  customType?: string;
+  content?: unknown;
+  display?: boolean;
+  details?: unknown;
 }
 
 export interface QueuedGoalCustomMessage extends QueuedGoalContextCarrier {
@@ -120,6 +130,51 @@ export function userContentFromUnknown(content: unknown): QueuedGoalUserContent 
   return parts;
 }
 
+export function customContentFromUnknown(content: unknown): string | QueuedGoalUserContent {
+  if (typeof content === "string") {
+    return content;
+  }
+
+  const normalized = userContentFromUnknown(content);
+  return normalized.length > 0 ? normalized : "";
+}
+
+/** Normalizes external provider-context messages once at the package boundary. */
+export function toQueuedGoalContextCarrier(message: QueuedGoalContextInput): QueuedGoalContextCarrier | null {
+  if (typeof message.timestamp !== "number") {
+    return null;
+  }
+
+  const carrier: QueuedGoalContextCarrier = {
+    role: message.role,
+    timestamp: message.timestamp,
+  };
+  if (message.customType !== undefined) {
+    carrier.customType = message.customType;
+  }
+  if (message.content !== undefined) {
+    carrier.content = message.content;
+  }
+  if (message.display !== undefined) {
+    carrier.display = message.display;
+  }
+  if (message.details !== undefined) {
+    carrier.details = message.details;
+  }
+  return carrier;
+}
+
+/** Merges a rewritten queued-goal carrier onto the original provider-context message. */
+export function mergeProviderContextMessage<TMessage extends QueuedGoalContextInput>(
+  original: TMessage,
+  rewritten: QueuedGoalContextCarrier,
+): TMessage {
+  return {
+    ...original,
+    ...rewritten,
+  } as TMessage;
+}
+
 /** Normalizes external provider-context messages once at the package boundary. */
 export function toQueuedGoalWorkSource(
   message: QueuedGoalContextCarrier,
@@ -139,10 +194,7 @@ export function toQueuedGoalWorkSource(
         ...message,
         role: "custom",
         customType: message.customType,
-        content:
-          typeof message.content === "string" || Array.isArray(message.content)
-            ? message.content
-            : "",
+        content: customContentFromUnknown(message.content),
         display: message.display ?? false,
       };
     default:
