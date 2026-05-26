@@ -15,8 +15,12 @@ import {
   applyQueuedGoalProviderContextRewrites,
   extensionQueuedGoalWorkMessageId,
   extensionQueuedGoalWorkMessageIdForRuntime,
-  pendingStaleQueuedGoalWorkIdsFromMessages,
 } from "./queued-goal-work.js";
+import {
+  createStaleQueuedWorkGuard,
+  type StaleQueuedWorkEffect,
+  type StaleQueuedWorkGuard,
+} from "./stale-queued-work-guard.js";
 import {
   createGoalRecoveryMachine,
   resetRecoveryMachine,
@@ -68,14 +72,8 @@ export default function (pi: ExtensionAPI): void {
   let currentTurnIndex: number | null = null;
   // Do not rely on agent_end after ctx.abort(): pi's normal prompt loop ends there,
   // but compaction/shutdown and later queued turns can cross this stale cleanup boundary.
-  let staleQueuedGoalWorkTurnActive = false;
-  let staleQueuedGoalWorkActiveTurnIndex: number | null = null;
-  const staleQueuedGoalWorkTurnEndSkipIndexes = new Set<number>();
-  const staleQueuedGoalWorkAgentEndGoalIds = new Set<string>();
+  const staleQueuedWorkGuard: StaleQueuedWorkGuard = createStaleQueuedWorkGuard();
   let passthroughContinuationInput: { text: string; turnIndex: number | null } | null = null;
-  let startedStaleQueuedGoalWorkThisTurn = false;
-  let startedRunnableWorkThisTurn = false;
-  const startedStaleQueuedGoalWorkGoalIds = new Set<string>();
   const accounting = createAccountingState();
   let recoveryState: GoalRecoveryMachineState = createGoalRecoveryMachine();
   let hostOverflowRecoveryInProgress = false;
@@ -124,59 +122,29 @@ export default function (pi: ExtensionAPI): void {
     return goal?.goalId === goalId && goal.status === "active";
   };
 
-  const clearStartedTurnWork = (): void => {
-    startedStaleQueuedGoalWorkThisTurn = false;
-    startedRunnableWorkThisTurn = false;
-    startedStaleQueuedGoalWorkGoalIds.clear();
-  };
-
   const clearActiveAccounting = (): void => {
     accounting.activeGoalId = null;
     accounting.lastAccountedAt = null;
   };
 
-  const noteStaleQueuedGoalWorkTerminalEvents = (): void => {
-    if (currentTurnIndex !== null) {
-      staleQueuedGoalWorkActiveTurnIndex = currentTurnIndex;
-      staleQueuedGoalWorkTurnEndSkipIndexes.add(currentTurnIndex);
+  const applyStaleQueuedWorkEffects = (effects: readonly StaleQueuedWorkEffect[], ctx: ExtensionContext): void => {
+    for (const effect of effects) {
+      switch (effect.type) {
+        case "clearAccounting":
+          clearActiveAccounting();
+          break;
+        case "refreshUi":
+          refreshUi(ctx);
+          break;
+        case "abort":
+          ctx.abort();
+          break;
+        default: {
+          const _exhaustive: never = effect;
+          throw new Error(`Unhandled stale queued-work effect: ${String(_exhaustive)}`);
+        }
+      }
     }
-    for (const goalId of startedStaleQueuedGoalWorkGoalIds) {
-      staleQueuedGoalWorkAgentEndGoalIds.add(goalId);
-    }
-  };
-
-  const clearStaleQueuedGoalWorkTerminalEvents = (): void => {
-    staleQueuedGoalWorkTurnEndSkipIndexes.clear();
-    staleQueuedGoalWorkAgentEndGoalIds.clear();
-    staleQueuedGoalWorkActiveTurnIndex = null;
-  };
-
-  const clearStaleQueuedGoalWorkTurn = (): boolean => {
-    if (!staleQueuedGoalWorkTurnActive) {
-      return false;
-    }
-    staleQueuedGoalWorkTurnActive = false;
-    staleQueuedGoalWorkActiveTurnIndex = null;
-    clearActiveAccounting();
-    return true;
-  };
-
-  const skipStaleQueuedGoalWorkLifecycle = (ctx: StatusContext): boolean => {
-    if (!staleQueuedGoalWorkTurnActive) {
-      return false;
-    }
-    clearActiveAccounting();
-    refreshUi(ctx);
-    return true;
-  };
-
-  const finishStaleQueuedGoalWorkLifecycle = (ctx: StatusContext): boolean => {
-    if (!clearStaleQueuedGoalWorkTurn()) {
-      return false;
-    }
-    clearStaleQueuedGoalWorkTerminalEvents();
-    refreshUi(ctx);
-    return true;
   };
 
   const clearStoppedRuntimeState = (): void => {
@@ -247,58 +215,6 @@ export default function (pi: ExtensionAPI): void {
     content?: unknown;
   }): string | null =>
     extensionQueuedGoalWorkMessageIdForRuntime(message, continuationGoalIdFromRuntimePrompt);
-
-  const skipStaleQueuedGoalWorkTurnEnd = (
-    turnIndex: number | null,
-    message: { role: string; stopReason?: string },
-    ctx: StatusContext,
-  ): boolean => {
-    const isActiveStaleTurn =
-      staleQueuedGoalWorkTurnActive &&
-      turnIndex !== null &&
-      staleQueuedGoalWorkActiveTurnIndex === turnIndex;
-    const isPendingStaleTurnEnd =
-      turnIndex !== null &&
-      isAbortedAssistantMessage(message) &&
-      staleQueuedGoalWorkTurnEndSkipIndexes.has(turnIndex);
-
-    if (!isActiveStaleTurn && !isPendingStaleTurnEnd) {
-      return false;
-    }
-
-    if (turnIndex !== null) {
-      staleQueuedGoalWorkTurnEndSkipIndexes.delete(turnIndex);
-    }
-    if (isActiveStaleTurn) {
-      clearActiveAccounting();
-    }
-    refreshUi(ctx);
-    return true;
-  };
-
-  const skipStaleQueuedGoalWorkAgentEnd = (
-    messages: Array<{ role: string; customType?: string; details?: unknown; content?: unknown; stopReason?: string }>,
-    ctx: StatusContext,
-  ): boolean => {
-    if (finishStaleQueuedGoalWorkLifecycle(ctx)) {
-      return true;
-    }
-
-    if (!messages.some(isAbortedAssistantMessage)) {
-      return false;
-    }
-
-    const staleGoalIds = pendingStaleQueuedGoalWorkIdsFromMessages(messages, staleQueuedGoalWorkAgentEndGoalIds);
-    if (staleGoalIds.length === 0) {
-      return false;
-    }
-
-    for (const goalId of staleGoalIds) {
-      staleQueuedGoalWorkAgentEndGoalIds.delete(goalId);
-    }
-    refreshUi(ctx);
-    return true;
-  };
 
   const applyGoalSideEffects = (nextGoal: ThreadGoal): void => {
     const previousGoalId = goal?.goalId ?? null;
@@ -468,7 +384,7 @@ export default function (pi: ExtensionAPI): void {
 
   const maybeContinue = (ctx: ExtensionContext): void => {
     if (
-      staleQueuedGoalWorkTurnActive ||
+      staleQueuedWorkGuard.isBlockingContinuation() ||
       !goal ||
       goal.status !== "active" ||
       continuationQueuedFor === goal.goalId ||
@@ -602,8 +518,9 @@ export default function (pi: ExtensionAPI): void {
     if (event.source !== "extension") {
       hostOverflowRecoveryInProgress = false;
       recoveryRuntime.onUserInput();
-      if (clearStaleQueuedGoalWorkTurn()) {
-        refreshUi(ctx);
+      const { cleared, effects } = staleQueuedWorkGuard.clearAbortingTurn();
+      if (cleared) {
+        applyStaleQueuedWorkEffects([...effects, { type: "refreshUi" }], ctx);
       }
       if (continuationGoalId !== null) {
         passthroughContinuationInput = { text: event.text, turnIndex: null };
@@ -615,7 +532,7 @@ export default function (pi: ExtensionAPI): void {
       return undefined;
     }
 
-    clearStaleQueuedGoalWorkTurn();
+    staleQueuedWorkGuard.clearAbortingTurn();
     clearContinuationStateFor(continuationGoalId);
     if (isCurrentActiveGoalId(continuationGoalId)) {
       return { action: "continue" } as const;
@@ -632,14 +549,9 @@ export default function (pi: ExtensionAPI): void {
       resolveActiveContinuationQueuedGoalWorkMessageId: extensionQueuedGoalWorkMessageId,
     });
 
-    if (startedStaleQueuedGoalWorkThisTurn && !startedRunnableWorkThisTurn) {
-      if (!staleQueuedGoalWorkTurnActive) {
-        noteStaleQueuedGoalWorkTerminalEvents();
-      }
-      staleQueuedGoalWorkTurnActive = true;
-      goalAccounting.clearActiveAccounting();
-      ctx.abort();
-      refreshUi(ctx);
+    const contextAbortEffects = staleQueuedWorkGuard.planContextAbort(currentTurnIndex);
+    if (contextAbortEffects !== null) {
+      applyStaleQueuedWorkEffects(contextAbortEffects, ctx);
     }
 
     return changed ? { messages } : undefined;
@@ -676,9 +588,9 @@ export default function (pi: ExtensionAPI): void {
         refreshUi(ctx);
         return undefined;
       }
-      clearStaleQueuedGoalWorkTurn();
+      staleQueuedWorkGuard.clearAbortingTurn();
     } else {
-      clearStaleQueuedGoalWorkTurn();
+      staleQueuedWorkGuard.clearAbortingTurn();
       clearContinuationState();
     }
   });
@@ -691,7 +603,7 @@ export default function (pi: ExtensionAPI): void {
     const queuedGoalId = queuedGoalWorkMessageIdForRuntime(event.message);
     if (queuedGoalId === null) {
       if (event.message.role === "user" || event.message.role === "custom") {
-        startedRunnableWorkThisTurn = true;
+        staleQueuedWorkGuard.noteRunnableWorkStarted();
         clearContinuationState();
       }
       return;
@@ -699,28 +611,27 @@ export default function (pi: ExtensionAPI): void {
 
     clearContinuationStateFor(queuedGoalId);
     if (isCurrentActiveGoalId(queuedGoalId)) {
-      startedRunnableWorkThisTurn = true;
+      staleQueuedWorkGuard.noteRunnableWorkStarted();
       if (isCommandResumeQueuedGoalMessage(event.message)) {
         resetErrorRecovery();
       }
       return;
     }
 
-    startedStaleQueuedGoalWorkThisTurn = true;
-    startedStaleQueuedGoalWorkGoalIds.add(queuedGoalId);
+    staleQueuedWorkGuard.noteStaleWorkStarted(queuedGoalId);
   });
 
   pi.on("turn_start", async (_event, ctx) => {
     currentTurnIndex = _event.turnIndex;
     bindPassthroughContinuationInputToTurn(_event.turnIndex);
-    clearStartedTurnWork();
-    clearStaleQueuedGoalWorkTurn();
+    applyStaleQueuedWorkEffects(staleQueuedWorkGuard.planTurnStart(), ctx);
     goalAccounting.beginAccounting();
-    refreshUi(ctx);
   });
 
   pi.on("tool_execution_end", async (_event, ctx) => {
-    if (skipStaleQueuedGoalWorkLifecycle(ctx)) {
+    const toolEndPlan = staleQueuedWorkGuard.planToolExecutionEnd();
+    applyStaleQueuedWorkEffects(toolEndPlan.effects, ctx);
+    if (toolEndPlan.skip) {
       return;
     }
 
@@ -729,7 +640,9 @@ export default function (pi: ExtensionAPI): void {
   });
 
   pi.on("turn_end", async (_event, ctx) => {
-    if (skipStaleQueuedGoalWorkTurnEnd(_event.turnIndex, _event.message, ctx)) {
+    const turnEndPlan = staleQueuedWorkGuard.planTurnEnd(_event.turnIndex, _event.message);
+    applyStaleQueuedWorkEffects(turnEndPlan.effects, ctx);
+    if (turnEndPlan.skip) {
       return;
     }
 
@@ -754,7 +667,9 @@ export default function (pi: ExtensionAPI): void {
 
   pi.on("agent_end", async (event, ctx) => {
     clearPassthroughContinuationInput();
-    if (skipStaleQueuedGoalWorkAgentEnd(event.messages, ctx)) {
+    const agentEndPlan = staleQueuedWorkGuard.planAgentEnd(event.messages);
+    applyStaleQueuedWorkEffects(agentEndPlan.effects, ctx);
+    if (agentEndPlan.skip) {
       return;
     }
 
@@ -790,7 +705,9 @@ export default function (pi: ExtensionAPI): void {
   });
 
   pi.on("session_before_compact", async (_event, ctx) => {
-    if (skipStaleQueuedGoalWorkLifecycle(ctx)) {
+    const compactPlan = staleQueuedWorkGuard.planSessionBeforeCompact();
+    applyStaleQueuedWorkEffects(compactPlan.effects, ctx);
+    if (compactPlan.skip) {
       return;
     }
 
@@ -799,7 +716,9 @@ export default function (pi: ExtensionAPI): void {
   });
 
   pi.on("session_compact", async (_event, ctx) => {
-    if (skipStaleQueuedGoalWorkLifecycle(ctx)) {
+    const compactPlan = staleQueuedWorkGuard.planSessionCompact();
+    applyStaleQueuedWorkEffects(compactPlan.effects, ctx);
+    if (compactPlan.skip) {
       return;
     }
 
@@ -813,10 +732,7 @@ export default function (pi: ExtensionAPI): void {
 
   pi.on("session_shutdown", async (_event, ctx) => {
     clearPassthroughContinuationInput();
-    if (staleQueuedGoalWorkTurnActive) {
-      clearStaleQueuedGoalWorkTurn();
-    }
-    clearStaleQueuedGoalWorkTerminalEvents();
+    applyStaleQueuedWorkEffects(staleQueuedWorkGuard.planSessionShutdown(), ctx);
 
     goalAccounting.accountProgress(ctx, false, 0, true);
     flushGoalPersistence("runtime");
