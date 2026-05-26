@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { CUSTOM_ENTRY_TYPE } from "../src/types.js";
 import {
   assistantMessage,
   createRuntimeHarness,
@@ -226,11 +225,7 @@ test("stale prompt-based queued work does not pause or charge a replacement goal
   if (typeof oldPrompt !== "string") {
     assert.fail("Expected queued goal message content to be a string.");
   }
-  const oldMessage = {
-    role: "user",
-    content: [{ type: "text", text: oldPrompt }],
-    timestamp: 1,
-  };
+  const oldMessage = goalUserContextMessage(oldPrompt, 1);
 
   await harness.runCommand("new goal");
   const replacement = harness.snapshot().goal;
@@ -268,14 +263,7 @@ test("stale custom queued work aborts without pausing, charging, or requeueing a
     await harness.runCommand("old goal");
     const oldQueued = harness.sentMessages[0];
     assert.ok(oldQueued);
-    const oldMessage = {
-      role: "custom",
-      customType: CUSTOM_ENTRY_TYPE,
-      content: oldQueued.message.content,
-      display: false,
-      details: oldQueued.message.details,
-      timestamp: 1,
-    };
+    const oldMessage = queuedCustomMessage(oldQueued, 1);
 
     await harness.runCommand("new goal");
     const replacement = harness.snapshot().goal;

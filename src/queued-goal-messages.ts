@@ -51,11 +51,6 @@ export interface QueuedGoalCustomMessage extends QueuedGoalContextCarrier {
   customType: string;
   content: string | QueuedGoalUserContent;
   display: boolean;
-  details?:
-    | ActiveGoalQueuedDetails
-    | SupersededContinuationDetails
-    | StaleContinuationDetails
-    | Record<string, unknown>;
 }
 
 export interface QueuedGoalUserMessage extends QueuedGoalContextCarrier {
@@ -189,7 +184,7 @@ export function toQueuedGoalWorkSource(
         display: message.display ?? false,
       };
       if (message.details !== undefined) {
-        normalized.details = message.details as NonNullable<QueuedGoalCustomMessage["details"]>;
+        normalized.details = message.details;
       }
       return normalized;
     }

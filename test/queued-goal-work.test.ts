@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { toQueuedGoalWorkSource } from "../src/queued-goal-messages.js";
+import { toQueuedGoalWorkSource, userContentFromUnknown } from "../src/queued-goal-messages.js";
 import {
   applyQueuedGoalProviderContextRewrites,
   dedupeActiveGoalContinuations,
@@ -133,5 +133,5 @@ test("dedupeActiveGoalContinuations leaves an active user marker verbatim", () =
 
   assert.equal(changed, true);
   assert.deepEqual(messages[1]?.content, userMarker.content);
-  assert.match(String((messages[1]?.content as Array<{ text?: string }> | undefined)?.[0]?.text), /<untrusted_objective>/);
+  assert.match(String(userContentFromUnknown(messages[1]?.content)[0]?.text), /<untrusted_objective>/);
 });
