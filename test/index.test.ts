@@ -16,7 +16,7 @@ import {
   recoveryAttentionMessage,
   recoveryPendingAttentionMessage,
 } from "../src/recovery.js";
-import { isGoalCustomEntry, reconstructGoal } from "../src/state.js";
+import { isGoalCustomEntry, reconstructGoal, createThreadGoal, setEntry } from "../src/state.js";
 import { CUSTOM_ENTRY_TYPE } from "../src/types.js";
 
 type EventHandler = (event: object, ctx: ExtensionContext) => unknown | Promise<unknown>;
@@ -2516,6 +2516,104 @@ test("pending overflow shutdown with stale queued abort pauses before session_tr
 
   assert.equal(harness.snapshot().goal?.status, "paused");
   assert.equal(harness.sentMessages.length, 0);
+});
+
+function replaceHarnessBranchWithGoal(
+  harness: RuntimeHarness,
+  objective: string,
+): ReturnType<typeof createThreadGoal> {
+  const branchGoal = createThreadGoal(objective);
+  harness.entries.length = 0;
+  harness.entries.push({
+    type: "custom",
+    id: `entry-branch-${objective.replace(/\s+/g, "-")}`,
+    parentId: null,
+    timestamp: new Date(0).toISOString(),
+    customType: CUSTOM_ENTRY_TYPE,
+    data: setEntry(branchGoal, "command"),
+  });
+  return branchGoal;
+}
+
+test("session_tree keeps same-goal pending transient recovery suppressed", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("goal A");
+  const goalAId = harness.snapshot().goal?.goalId;
+  assert.ok(goalAId);
+  harness.sentMessages.length = 0;
+
+  await emitPersistentAssistantError(harness, 0, "websocket closed");
+  assert.equal(harness.snapshot().goal?.goalId, goalAId);
+  assert.match(harness.footerStatuses.at(-1) ?? "", /Goal recovery pending/);
+  assert.equal(harness.sentMessages.length, 0);
+
+  await harness.emit("session_tree", { type: "session_tree" });
+
+  assert.equal(harness.snapshot().goal?.goalId, goalAId);
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.match(harness.footerStatuses.at(-1) ?? "", /Goal recovery pending/);
+  assert.equal(harness.sentMessages.length, 0);
+});
+
+test("session_tree to a different active goal clears stale transient recovery and continues", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("goal A");
+  const goalAId = harness.snapshot().goal?.goalId;
+  assert.ok(goalAId);
+  harness.sentMessages.length = 0;
+
+  await emitPersistentAssistantError(harness, 0, "websocket closed");
+  assert.equal(harness.snapshot().goal?.goalId, goalAId);
+  assert.match(harness.footerStatuses.at(-1) ?? "", /Goal recovery pending/);
+  assert.equal(harness.sentMessages.length, 0);
+
+  const goalB = replaceHarnessBranchWithGoal(harness, "goal B");
+  assert.notEqual(goalB.goalId, goalAId);
+
+  harness.footerStatuses.length = 0;
+  harness.sentMessages.length = 0;
+  await harness.emit("session_tree", { type: "session_tree" });
+
+  const goal = harness.snapshot().goal;
+  assert.equal(goal?.goalId, goalB.goalId);
+  assert.equal(goal?.objective, "goal B");
+  assert.equal(goal?.status, "active");
+  assert.doesNotMatch(harness.footerStatuses.at(-1) ?? "", /Goal recovery pending/);
+  assert.equal(harness.sentMessages.length, 1);
+  assert.deepEqual(harness.sentMessages[0]?.message.details, {
+    kind: "continuation",
+    goalId: goalB.goalId,
+  });
+});
+
+test("session_tree to a different active goal clears stale overflow recovery and continues", async () => {
+  const harness = createRuntimeHarness({ compactBehavior: "unavailable" });
+  await harness.runCommand("goal A");
+  const goalAId = harness.snapshot().goal?.goalId;
+  assert.ok(goalAId);
+  harness.sentMessages.length = 0;
+
+  await emitPersistentAssistantError(harness, 0, "context_length_exceeded");
+  assert.equal(harness.snapshot().goal?.goalId, goalAId);
+  assert.match(harness.footerStatuses.at(-1) ?? "", /Goal recovery pending/);
+  assert.equal(harness.sentMessages.length, 0);
+
+  const goalB = replaceHarnessBranchWithGoal(harness, "goal B");
+  assert.notEqual(goalB.goalId, goalAId);
+
+  harness.footerStatuses.length = 0;
+  harness.sentMessages.length = 0;
+  await harness.emit("session_tree", { type: "session_tree" });
+
+  const goal = harness.snapshot().goal;
+  assert.equal(goal?.goalId, goalB.goalId);
+  assert.equal(goal?.status, "active");
+  assert.doesNotMatch(harness.footerStatuses.at(-1) ?? "", /Goal recovery pending/);
+  assert.equal(harness.sentMessages.length, 1);
+  assert.deepEqual(harness.sentMessages[0]?.message.details, {
+    kind: "continuation",
+    goalId: goalB.goalId,
+  });
 });
 
 test("delayed session_compact keeps goal active without premature pause or extension follow-up", async () => {

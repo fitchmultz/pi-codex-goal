@@ -352,10 +352,14 @@ export default function (pi: ExtensionAPI): void {
   };
 
   const reloadFromSession = (ctx: ExtensionContext): void => {
+    const previousGoalId = goal?.goalId ?? null;
     goal = reconstructGoal(ctx.sessionManager.getBranch()).goal;
     clearContinuationState();
     if (goal?.status !== "active") {
       clearActiveAccounting();
+    }
+    if ((goal?.goalId ?? null) !== previousGoalId) {
+      resetErrorRecovery();
     }
     refreshUi(ctx);
   };
