@@ -67,6 +67,7 @@ export default function (pi: ExtensionAPI): void {
   const accounting = createAccountingState();
   let recoveryState: GoalRecoveryMachineState = createGoalRecoveryMachine();
   let hostOverflowRecoveryInProgress = false;
+  let hostOverflowCapNeedsUserReset = false;
 
   const goalForDisplay = (): ThreadGoal | null =>
     goalWithLiveUsage(goal, accounting.activeGoalId, accounting.lastAccountedAt);
@@ -477,6 +478,7 @@ export default function (pi: ExtensionAPI): void {
   };
 
   const beginOverflowRecoveryAttention = (ctx: ExtensionContext): void => {
+    hostOverflowCapNeedsUserReset = true;
     hostOverflowRecoveryInProgress = true;
     recoveryRuntime.beginOverflowRecovery(ctx);
   };
@@ -509,6 +511,7 @@ export default function (pi: ExtensionAPI): void {
 
   registerGoalCommand(pi, {
     getGoal: () => goalForDisplay(),
+    needsHostOverflowCapReset: () => hostOverflowCapNeedsUserReset,
     setGoal(nextGoal, source, ctx) {
       const wasPaused = goal?.status === "paused";
       persistGoal(nextGoal, source);
@@ -636,6 +639,10 @@ export default function (pi: ExtensionAPI): void {
   });
 
   pi.on("message_start", async (event) => {
+    if (event.message.role === "user") {
+      hostOverflowCapNeedsUserReset = false;
+    }
+
     const queuedGoalId = queuedGoalWorkMessageIdForRuntime(event.message);
     if (queuedGoalId === null) {
       if (event.message.role === "user" || event.message.role === "custom") {

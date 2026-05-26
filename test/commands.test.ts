@@ -39,6 +39,7 @@ function createHarness() {
     clearGoal() {
       goal = null;
     },
+    needsHostOverflowCapReset: () => false,
   };
 
   const ctx: GoalCommandContext = {
@@ -115,6 +116,42 @@ test("/goal resume sends a user continuation turn", async () => {
   }
   assert.doesNotMatch(content, /<untrusted_objective>/);
   assert.match(content, /<pi_goal_continuation goal_id="/);
+});
+
+test("/goal objective after overflow recovery sends a user start turn", async () => {
+  const harness = createHarness();
+  let needsHostOverflowCapReset = true;
+  const host: CommandHost = {
+    getGoal: () => harness.goal,
+    setGoal(nextGoal: ThreadGoal) {
+      harness.setGoal(nextGoal);
+    },
+    clearGoal() {
+      harness.setGoal(null);
+    },
+    needsHostOverflowCapReset: () => needsHostOverflowCapReset,
+  };
+
+  await handleGoalCommand(harness.pi, host, "ship the feature", harness.ctx);
+
+  assert.equal(harness.goal?.objective, "ship the feature");
+  assert.equal(harness.sentMessages.length, 0);
+  assert.equal(harness.sentUserMessages.length, 1);
+  const sentUserMessage = harness.sentUserMessages[0];
+  assert.ok(sentUserMessage);
+  assert.deepEqual(sentUserMessage.options, { deliverAs: "followUp" });
+  const content = sentUserMessage.content;
+  if (typeof content !== "string") {
+    assert.fail("Expected queued goal start content to be a string.");
+  }
+  assert.match(content, /<untrusted_objective>\nship the feature\n<\/untrusted_objective>/);
+  assert.match(content, /<pi_goal_continuation goal_id="/);
+
+  needsHostOverflowCapReset = false;
+  harness.sentUserMessages.length = 0;
+  await handleGoalCommand(harness.pi, host, "another objective", harness.ctx);
+  assert.equal(harness.sentMessages.length, 1);
+  assert.equal(harness.sentUserMessages.length, 0);
 });
 
 test("/goal pause rejects completed and paused goals", async () => {

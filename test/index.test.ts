@@ -2866,6 +2866,128 @@ test("custom command_resume turn after host overflow exhaustion does not reset h
   assert.equal(harness.hostOverflowRecoveryAttempted, true);
 });
 
+test("custom command_start turn after host overflow exhaustion does not reset host recovery cap", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  const goal = harness.snapshot().goal;
+  assert.ok(goal);
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await emitPersistentAssistantError(harness, attempt, "context_length_exceeded");
+    await harness.emit("session_compact", {
+      type: "session_compact",
+      summary: "compact summary",
+      tokensBefore: 100,
+    });
+  }
+  assert.equal(harness.snapshot().goal?.status, "paused");
+  assert.equal(harness.hostOverflowRecoveryAttempted, true);
+
+  await harness.emit("message_start", {
+    type: "message_start",
+    message: {
+      role: "custom",
+      customType: CUSTOM_ENTRY_TYPE,
+      content: continuationPrompt(goal),
+      display: false,
+      details: { kind: "command_start", goalId: goal.goalId },
+    },
+  });
+  assert.equal(harness.hostOverflowRecoveryAttempted, true);
+});
+
+test("/goal new objective after overflow pause sends user turn and resets host overflow cap", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  const previousGoal = harness.snapshot().goal;
+  assert.ok(previousGoal);
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await emitPersistentAssistantError(harness, attempt, "context_length_exceeded");
+    await harness.emit("session_compact", {
+      type: "session_compact",
+      summary: "compact summary",
+      tokensBefore: 100,
+    });
+  }
+  assert.equal(harness.snapshot().goal?.status, "paused");
+  assert.equal(harness.hostOverflowRecoveryAttempted, true);
+
+  harness.sentMessages.length = 0;
+  harness.sentUserMessages.length = 0;
+  await harness.runCommand("ship the replacement");
+  const goal = harness.snapshot().goal;
+  assert.ok(goal);
+  assert.equal(goal.status, "active");
+  assert.equal(goal.objective, "ship the replacement");
+  assert.notEqual(goal.goalId, previousGoal.goalId);
+  assert.equal(harness.sentMessages.length, 0);
+  assert.equal(harness.sentUserMessages.length, 1);
+
+  const startMessage = harness.sentUserMessages[0];
+  assert.ok(startMessage);
+  assert.deepEqual(startMessage.options, { deliverAs: "followUp" });
+  const content = startMessage.content;
+  if (typeof content !== "string") {
+    assert.fail("Expected overflow replacement start to send a user continuation prompt.");
+  }
+  assert.match(content, /<untrusted_objective>\nship the replacement\n<\/untrusted_objective>/);
+  assert.equal(continuationGoalIdFromPrompt(content), goal.goalId);
+
+  await harness.emit("message_start", {
+    type: "message_start",
+    message: { role: "user", content },
+  });
+  assert.equal(harness.hostOverflowRecoveryAttempted, false);
+
+  await emitPersistentAssistantError(harness, 2, "context_length_exceeded");
+  assert.equal(harness.snapshot().goal?.status, "active");
+});
+
+test("/goal clear then start after overflow pause sends user turn and resets host overflow cap", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await emitPersistentAssistantError(harness, attempt, "context_length_exceeded");
+    await harness.emit("session_compact", {
+      type: "session_compact",
+      summary: "compact summary",
+      tokensBefore: 100,
+    });
+  }
+  assert.equal(harness.snapshot().goal?.status, "paused");
+  assert.equal(harness.hostOverflowRecoveryAttempted, true);
+
+  await harness.runCommand("clear");
+  assert.equal(harness.snapshot().goal, null);
+
+  harness.sentMessages.length = 0;
+  harness.sentUserMessages.length = 0;
+  await harness.runCommand("ship the replacement");
+  const goal = harness.snapshot().goal;
+  assert.ok(goal);
+  assert.equal(goal.status, "active");
+  assert.equal(harness.sentMessages.length, 0);
+  assert.equal(harness.sentUserMessages.length, 1);
+
+  const startMessage = harness.sentUserMessages[0];
+  assert.ok(startMessage);
+  const content = startMessage.content;
+  if (typeof content !== "string") {
+    assert.fail("Expected overflow clear-and-start to send a user continuation prompt.");
+  }
+
+  await harness.emit("message_start", {
+    type: "message_start",
+    message: { role: "user", content },
+  });
+  assert.equal(harness.hostOverflowRecoveryAttempted, false);
+
+  await emitPersistentAssistantError(harness, 2, "context_length_exceeded");
+  assert.equal(harness.snapshot().goal?.status, "active");
+});
+
 test("non-retryable provider errors pause active goals immediately", async () => {
   const harness = createRuntimeHarness();
   await harness.runCommand("ship it");

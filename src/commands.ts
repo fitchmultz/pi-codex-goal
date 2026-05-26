@@ -9,6 +9,7 @@ export interface CommandHost {
   getGoal(): ThreadGoal | null;
   setGoal(goal: ThreadGoal, source: GoalEntrySource, ctx: GoalCommandContext): void;
   clearGoal(source: GoalEntrySource, ctx: GoalCommandContext): void;
+  needsHostOverflowCapReset(): boolean;
 }
 
 const COMMANDS = ["pause", "resume", "clear"] as const;
@@ -42,6 +43,10 @@ function queueGoalTurn(pi: GoalCommandPi, goal: ThreadGoal, kind: "command_start
 
 function queueGoalUserResumeTurn(pi: GoalCommandPi, goal: ThreadGoal): void {
   pi.sendUserMessage(compactContinuationPrompt(goal), { deliverAs: "followUp" });
+}
+
+function queueGoalUserStartTurn(pi: GoalCommandPi, goal: ThreadGoal): void {
+  pi.sendUserMessage(continuationPrompt(goal), { deliverAs: "followUp" });
 }
 
 export async function handleGoalCommand(
@@ -106,7 +111,11 @@ export async function handleGoalCommand(
   }
   host.setGoal(result.goal, "command", ctx);
   ctx.ui.notify(result.message);
-  queueGoalTurn(pi, result.goal, "command_start");
+  if (host.needsHostOverflowCapReset()) {
+    queueGoalUserStartTurn(pi, result.goal);
+  } else {
+    queueGoalTurn(pi, result.goal, "command_start");
+  }
 }
 
 export function registerGoalCommand(pi: GoalCommandPi, host: CommandHost): void {
