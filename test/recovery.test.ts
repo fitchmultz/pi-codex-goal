@@ -135,7 +135,7 @@ test("changing context overflow messages share one recovery signature and reach 
   assert.equal(state.counters.signature, CONTEXT_OVERFLOW_SIGNATURE);
 });
 
-test("counters reset per-signature transient and compaction fields on signature change", () => {
+test("counters reset transient attempts on signature change but preserve overflow compaction attempts", () => {
   const counters = countersForFailureSignature(
     {
       signature: "HTTP <n>",
@@ -146,7 +146,36 @@ test("counters reset per-signature transient and compaction fields on signature 
   );
   assert.equal(counters.signature, "HTTP <n> service unavailable");
   assert.equal(counters.transientAttempts, 0);
-  assert.equal(counters.compactionAttempts, 0);
+  assert.equal(counters.compactionAttempts, 2);
+});
+
+test("overflow compaction attempts survive intervening transient provider errors", () => {
+  const state = createGoalRecoveryMachine();
+
+  const firstOverflow = planRecoveryForAssistantError(
+    state,
+    { role: "assistant", stopReason: "error", errorMessage: "context_length_exceeded" },
+  );
+  assert.equal(firstOverflow.type, "noop");
+  assert.equal(state.counters.compactionAttempts, 1);
+
+  onRecoverySessionCompact(state);
+  assert.equal(state.counters.compactionAttempts, 1);
+
+  const transient = planRecoveryForAssistantError(
+    state,
+    { role: "assistant", stopReason: "error", errorMessage: "websocket closed" },
+  );
+  assert.equal(transient.type, "pending");
+  assert.equal(state.counters.compactionAttempts, 1);
+  assert.equal(state.counters.signature, "websocket closed");
+
+  const secondOverflow = planRecoveryForAssistantError(
+    state,
+    { role: "assistant", stopReason: "error", errorMessage: "context_length_exceeded" },
+  );
+  assert.equal(secondOverflow.type, "pause");
+  assert.equal(state.counters.compactionAttempts, 2);
 });
 
 test("varied retryable transient errors stay active without tripping signature-scoped cap", () => {

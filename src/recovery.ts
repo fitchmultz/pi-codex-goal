@@ -99,6 +99,7 @@ export function failureSignature(errorMessage: string | undefined): string {
   return normalizeTransientSignature(firstLine);
 }
 
+/** Resets transient retry counters when the failure signature changes; overflow compaction attempts are independent. */
 export function countersForFailureSignature(
   counters: ErrorRecoveryCounters,
   signature: string,
@@ -109,7 +110,7 @@ export function countersForFailureSignature(
   return {
     signature,
     transientAttempts: 0,
-    compactionAttempts: 0,
+    compactionAttempts: counters.compactionAttempts,
   };
 }
 

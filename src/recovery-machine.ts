@@ -61,11 +61,10 @@ export function onRecoverySessionCompact(state: GoalRecoveryMachineState): void 
     state.attention = null;
   }
 
-  if (state.counters.signature === CONTEXT_OVERFLOW_SIGNATURE) {
+  if (state.counters.compactionAttempts > 0) {
     state.counters = {
-      signature: state.counters.signature,
+      ...state.counters,
       transientAttempts: 0,
-      compactionAttempts: state.counters.compactionAttempts,
     };
   }
 }
@@ -87,9 +86,9 @@ export function beginHostOverflowRecovery(state: GoalRecoveryMachineState): stri
 }
 
 function incrementOverflowCompactionAttempts(state: GoalRecoveryMachineState): RecoveryAction {
-  state.counters = countersForFailureSignature(state.counters, CONTEXT_OVERFLOW_SIGNATURE);
   state.counters = {
     ...state.counters,
+    signature: CONTEXT_OVERFLOW_SIGNATURE,
     compactionAttempts: state.counters.compactionAttempts + 1,
   };
   if (state.counters.compactionAttempts > MAX_CONTEXT_COMPACTION_RETRIES) {
@@ -140,8 +139,5 @@ export function planRecoveryForSilentContextOverflow(state: GoalRecoveryMachineS
 
 /** True when another overflow in this recovery cycle would exceed the compaction cap. */
 export function isRepeatOverflowCompactionDue(state: GoalRecoveryMachineState): boolean {
-  return (
-    state.counters.signature === CONTEXT_OVERFLOW_SIGNATURE &&
-    state.counters.compactionAttempts >= MAX_CONTEXT_COMPACTION_RETRIES
-  );
+  return state.counters.compactionAttempts >= MAX_CONTEXT_COMPACTION_RETRIES;
 }

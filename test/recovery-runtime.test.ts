@@ -103,6 +103,35 @@ test("successful toolUse turns reset recovery counters without continuing the go
   assert.equal(harness.recoveryState.counters.signature, null);
 });
 
+test("overflow compaction attempts survive intervening transient errors before pausing", () => {
+  const harness = createRecoveryTestRuntime();
+
+  harness.runtime.handlePersistentAssistantError(
+    { role: "assistant", stopReason: "error", errorMessage: "context_length_exceeded" },
+    harness.ctx,
+  );
+  assert.equal(harness.recoveryState.counters.compactionAttempts, 1);
+
+  harness.runtime.onSessionCompact();
+
+  harness.runtime.handlePersistentAssistantError(
+    { role: "assistant", stopReason: "error", errorMessage: "websocket closed" },
+    harness.ctx,
+  );
+  assert.equal(harness.recoveryState.counters.compactionAttempts, 1);
+  assert.equal(harness.continueCount, 0);
+  assert.match(harness.recoveryState.attention ?? "", /Goal recovery pending/);
+
+  harness.runtime.handlePersistentAssistantError(
+    { role: "assistant", stopReason: "error", errorMessage: "context_length_exceeded" },
+    harness.ctx,
+  );
+
+  assert.equal(harness.continueCount, 0);
+  assert.equal(harness.recoveryState.counters.compactionAttempts, 2);
+  assert.match(harness.recoveryState.attention ?? "", /\/goal resume/);
+});
+
 test("session compact after pending transient error preserves attention without continuing", () => {
   const harness = createRecoveryTestRuntime();
 

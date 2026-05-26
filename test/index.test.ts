@@ -2100,6 +2100,47 @@ test("context overflow recovery preserves compaction attempts across host sessio
   assert.equal(harness.sentMessages.length, 0);
 });
 
+test("overflow after compaction and intervening transient error pauses with recoverable resume", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  const goal = harness.snapshot().goal;
+  assert.ok(goal);
+  harness.sentMessages.length = 0;
+  harness.footerStatuses.length = 0;
+
+  await emitPersistentAssistantError(harness, 0, "context_length_exceeded");
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 0);
+  assert.match(harness.footerStatuses.at(-1) ?? "", /Goal recovery pending/);
+  assert.doesNotMatch(harness.footerStatuses.at(-1) ?? "", /\/goal resume/);
+
+  await harness.emit("session_compact", {
+    type: "session_compact",
+    summary: "compact summary",
+    tokensBefore: 100,
+  });
+  assert.equal(harness.snapshot().goal?.status, "active");
+
+  await emitPersistentAssistantError(harness, 1, "websocket closed");
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 0);
+  assert.match(harness.footerStatuses.at(-1) ?? "", /Goal recovery pending/);
+  assert.doesNotMatch(harness.footerStatuses.at(-1) ?? "", /\/goal resume/);
+
+  await emitPersistentAssistantError(harness, 2, "context_length_exceeded");
+
+  assert.equal(harness.compactCalls.length, 0);
+  assert.equal(harness.snapshot().goal?.status, "paused");
+  assert.equal(harness.sentMessages.length, 0);
+  assert.equal(
+    harness.footerStatuses.at(-1),
+    formatFooterStatus(
+      { ...goal, status: "paused" },
+      recoveryAttentionMessage("context window recovery failed after repeated compaction attempts"),
+    ),
+  );
+});
+
 test("repeated transient errors stay active with pending attention without hidden retries", async () => {
   const harness = createRuntimeHarness();
   await harness.runCommand("ship it");
