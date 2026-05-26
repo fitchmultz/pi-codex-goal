@@ -389,6 +389,39 @@ async function emitPersistentAssistantError(
   }
 }
 
+async function emitHostSessionCompact(harness: RuntimeHarness): Promise<void> {
+  await harness.emit("session_before_compact", {
+    type: "session_before_compact",
+    preparation: {},
+    branchEntries: [],
+    signal: new AbortController().signal,
+  });
+  await harness.emit("session_compact", {
+    type: "session_compact",
+    summary: "compact summary",
+    tokensBefore: 100,
+  });
+}
+
+async function emitSilentContextOverflow(
+  harness: RuntimeHarness,
+  turnIndex: number,
+  message: ReturnType<typeof assistantMessage>,
+): Promise<void> {
+  await harness.emit("turn_start", { type: "turn_start", turnIndex, timestamp: turnIndex + 1 });
+  await harness.emit("turn_end", {
+    type: "turn_end",
+    turnIndex,
+    message,
+    toolResults: [],
+  });
+  await harness.emit("agent_end", {
+    type: "agent_end",
+    messages: [message],
+  });
+  harness.setHostOverflowRecoveryAttempted(true);
+}
+
 test("aborted turns pause goals and do not queue continuation", async () => {
   const harness = createRuntimeHarness();
   await harness.runCommand("ship it");
@@ -2897,4 +2930,87 @@ test("zero-output length overflow suppresses continuation and shows overflow rec
     harness.footerStatuses.at(-1),
     formatFooterStatus(goal, recoveryPendingAttentionMessage(HOST_OVERFLOW_RECOVERY_REASON)),
   );
+});
+
+test("repeated silent stop overflow after host compaction pauses and cancels further compaction", async () => {
+  const harness = createRuntimeHarness({ contextWindow: 128_000 });
+  await harness.runCommand("ship it");
+  harness.sentMessages.length = 0;
+
+  const firstOverflow = assistantMessage("stop", {
+    input: 130_000,
+    output: 0,
+    cacheRead: 0,
+  });
+  await emitSilentContextOverflow(harness, 0, firstOverflow);
+
+  const firstCompaction = await harness.emit("session_before_compact", {
+    type: "session_before_compact",
+    preparation: {},
+    branchEntries: [],
+    signal: new AbortController().signal,
+  });
+  assert.notDeepEqual(firstCompaction[0], { cancel: true });
+  await harness.emit("session_compact", {
+    type: "session_compact",
+    summary: "compact summary",
+    tokensBefore: 100,
+  });
+
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 0);
+
+  const secondOverflow = assistantMessage("stop", {
+    input: 131_000,
+    output: 0,
+    cacheRead: 0,
+  });
+  await emitSilentContextOverflow(harness, 1, secondOverflow);
+
+  assert.equal(harness.snapshot().goal?.status, "paused");
+  assert.equal(harness.sentMessages.length, 0);
+  assert.match(harness.footerStatuses.at(-1) ?? "", /Goal needs attention/);
+
+  const blockedCompaction = await harness.emit("session_before_compact", {
+    type: "session_before_compact",
+    preparation: {},
+    branchEntries: [],
+    signal: new AbortController().signal,
+  });
+  assert.deepEqual(blockedCompaction[0], { cancel: true });
+  assert.equal(harness.sentMessages.length, 0);
+});
+
+test("repeated zero-output length overflow after host compaction pauses and cancels further compaction", async () => {
+  const harness = createRuntimeHarness({ contextWindow: 128_000 });
+  await harness.runCommand("ship it");
+  harness.sentMessages.length = 0;
+
+  const firstOverflow = assistantMessage("length", {
+    input: 127_000,
+    output: 0,
+    cacheRead: 1_000,
+  });
+  await emitSilentContextOverflow(harness, 0, firstOverflow);
+  await emitHostSessionCompact(harness);
+
+  assert.equal(harness.snapshot().goal?.status, "active");
+
+  const secondOverflow = assistantMessage("length", {
+    input: 128_000,
+    output: 0,
+    cacheRead: 1_000,
+  });
+  await emitSilentContextOverflow(harness, 1, secondOverflow);
+
+  assert.equal(harness.snapshot().goal?.status, "paused");
+  assert.equal(harness.sentMessages.length, 0);
+
+  const blockedCompaction = await harness.emit("session_before_compact", {
+    type: "session_before_compact",
+    preparation: {},
+    branchEntries: [],
+    signal: new AbortController().signal,
+  });
+  assert.deepEqual(blockedCompaction[0], { cancel: true });
 });

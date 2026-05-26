@@ -20,6 +20,7 @@ import {
 import {
   beginHostOverflowRecovery,
   createGoalRecoveryMachine,
+  isRepeatOverflowCompactionDue,
   onRecoverySessionCompact,
   planRecoveryForAssistantError,
   planRecoveryForSilentContextOverflow,
@@ -241,6 +242,14 @@ test("silent context overflow increments compaction attempts like error overflow
   assert.equal(action.type, "noop");
   assert.equal(state.counters.compactionAttempts, 1);
   assert.equal(state.counters.signature, CONTEXT_OVERFLOW_SIGNATURE);
+});
+
+test("repeat overflow compaction is due once host recovery cap is reached", () => {
+  const state = createGoalRecoveryMachine();
+  assert.equal(isRepeatOverflowCompactionDue(state), false);
+
+  planRecoveryForSilentContextOverflow(state);
+  assert.equal(isRepeatOverflowCompactionDue(state), true);
 });
 
 test("retryable transient errors surface pending attention instead of pausing", () => {
