@@ -19,20 +19,28 @@ interface RecoveryRuntimeDeps {
   getGoal: () => ThreadGoal | null;
   getRecoveryState: () => GoalRecoveryMachineState;
   clearContinuationState: () => void;
-  pauseGoalForRecovery: (ctx: ExtensionContext, pausedGoal: ThreadGoal) => void;
+  pauseGoalForRecovery: (
+    ctx: ExtensionContext,
+    pausedGoal: ThreadGoal,
+    blockHostOverflowCompaction?: boolean,
+  ) => void;
   refreshUi: (ctx: ExtensionContext) => void;
   maybeContinue: (ctx: ExtensionContext) => void;
 }
 
 export function createGoalRecoveryRuntime(deps: RecoveryRuntimeDeps) {
-  const pauseForRecoveryAttention = (ctx: ExtensionContext, reason: string): void => {
+  const pauseForRecoveryAttention = (
+    ctx: ExtensionContext,
+    reason: string,
+    blockHostOverflowCompaction = false,
+  ): void => {
     const goal = deps.getGoal();
     if (!goal || goal.status !== "active") {
       return;
     }
 
     deps.clearContinuationState();
-    deps.pauseGoalForRecovery(ctx, goal);
+    deps.pauseGoalForRecovery(ctx, goal, blockHostOverflowCompaction);
     setRecoveryPausedAttention(deps.getRecoveryState(), reason);
     deps.refreshUi(ctx);
   };
@@ -52,7 +60,7 @@ export function createGoalRecoveryRuntime(deps: RecoveryRuntimeDeps) {
         return;
       }
       case "pause":
-        pauseForRecoveryAttention(ctx, action.reason);
+        pauseForRecoveryAttention(ctx, action.reason, action.blockHostOverflowCompaction === true);
         return;
     }
   };

@@ -442,23 +442,20 @@ export default function (pi: ExtensionAPI): void {
 
   const getContextWindow = (ctx: ExtensionContext): number => ctx.model?.contextWindow ?? 0;
 
-  const shouldBlockHostOverflowCompaction = (): boolean => {
-    if (hostOverflowRecoveryBlocked) {
-      return true;
-    }
-    return goal?.status === "paused" && recoveryState.attention !== null;
-  };
+  const shouldBlockHostOverflowCompaction = (): boolean => hostOverflowRecoveryBlocked;
 
   const recoveryRuntime = createGoalRecoveryRuntime({
     getGoal: () => goal,
     getRecoveryState: () => recoveryState,
     clearContinuationState,
-    pauseGoalForRecovery(ctx, activeGoal) {
+    pauseGoalForRecovery(ctx, activeGoal, blockHostOverflowCompaction = false) {
       const result = updateGoalStatus(activeGoal, "paused");
       if (!result.ok || !result.goal) {
         return;
       }
-      hostOverflowRecoveryBlocked = true;
+      if (blockHostOverflowCompaction) {
+        hostOverflowRecoveryBlocked = true;
+      }
       persistGoal(result.goal, "runtime");
     },
     refreshUi,

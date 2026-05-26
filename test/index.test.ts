@@ -2847,6 +2847,28 @@ test("non-retryable provider errors pause active goals immediately", async () =>
   );
 });
 
+test("non-retryable provider error pause does not cancel host compaction", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  harness.sentMessages.length = 0;
+
+  await emitPersistentAssistantError(
+    harness,
+    0,
+    "invalid tool call state: malformed function arguments",
+  );
+
+  assert.equal(harness.snapshot().goal?.status, "paused");
+
+  const compaction = await harness.emit("session_before_compact", {
+    type: "session_before_compact",
+    preparation: {},
+    branchEntries: [],
+    signal: new AbortController().signal,
+  });
+  assert.notDeepEqual(compaction[0], { cancel: true });
+});
+
 test("varied retryable transient errors stay active without tripping signature-scoped cap", async () => {
   const harness = createRuntimeHarness();
   await harness.runCommand("ship it");

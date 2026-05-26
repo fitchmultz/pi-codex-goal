@@ -234,6 +234,9 @@ test("recovery plans pause after compaction cap even when compaction attempts ar
     { role: "assistant", stopReason: "error", errorMessage: "context_length_exceeded" },
   );
   assert.equal(action.type, "pause");
+  if (action.type === "pause") {
+    assert.equal(action.blockHostOverflowCompaction, true);
+  }
 });
 
 test("silent context overflow increments compaction attempts like error overflows", () => {
@@ -289,5 +292,6 @@ test("non-retryable provider errors pause immediately", () => {
   assert.equal(action.type, "pause");
   if (action.type === "pause") {
     assert.match(action.reason, /non-retryable provider error/);
+    assert.notEqual(action.blockHostOverflowCompaction, true);
   }
 });

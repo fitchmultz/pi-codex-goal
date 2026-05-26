@@ -17,7 +17,7 @@ import {
 export type RecoveryAction =
   | { type: "noop" }
   | { type: "pending"; reason: string }
-  | { type: "pause"; reason: string };
+  | { type: "pause"; reason: string; blockHostOverflowCompaction?: boolean };
 
 export interface GoalRecoveryMachineState {
   counters: ErrorRecoveryCounters;
@@ -99,6 +99,7 @@ function incrementOverflowCompactionAttempts(state: GoalRecoveryMachineState): R
     return {
       type: "pause",
       reason: "context window recovery failed after repeated compaction attempts",
+      blockHostOverflowCompaction: true,
     };
   }
   return { type: "noop" };
