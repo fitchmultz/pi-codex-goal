@@ -3,8 +3,10 @@ import { test } from "node:test";
 
 import { toQueuedGoalWorkSource } from "../src/queued-goal-messages.js";
 import {
+  applyQueuedGoalProviderContextRewrites,
   dedupeActiveGoalContinuations,
   extensionQueuedGoalWorkMessageId,
+  queuedGoalWorkMessageId,
   staleGoalContinuationContextMessage,
 } from "../src/queued-goal-work.js";
 import { compactContinuationPrompt, continuationPrompt } from "../src/prompts.js";
@@ -82,6 +84,29 @@ test("dedupeActiveGoalContinuations supersedes older custom continuations and re
     goalId: activeGoal.goalId,
   });
   assert.match(String(messages[1]?.content), /Tokens used: 0/);
+});
+
+test("applyQueuedGoalProviderContextRewrites marks stale continuations for completed goals", () => {
+  const staleContinuation = goalCustomContextMessage({
+    content: continuationPrompt(activeGoal),
+    details: { kind: "continuation", goalId: activeGoal.goalId },
+    timestamp: 1,
+  });
+
+  const { messages, changed } = applyQueuedGoalProviderContextRewrites([staleContinuation], {
+    goal: { ...activeGoal, status: "complete" },
+    resolveStaleQueuedGoalWorkMessageId: queuedGoalWorkMessageId,
+    resolveActiveContinuationQueuedGoalWorkMessageId: extensionQueuedGoalWorkMessageId,
+  });
+
+  assert.equal(changed, true);
+  assert.match(String(messages[0]?.content), /queued hidden goal continuation was stale/);
+  assert.deepEqual(messages[0]?.details, {
+    kind: "stale_continuation",
+    goalId: activeGoal.goalId,
+    currentGoalId: activeGoal.goalId,
+    currentStatus: "complete",
+  });
 });
 
 test("dedupeActiveGoalContinuations leaves an active user marker verbatim", () => {

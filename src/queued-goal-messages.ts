@@ -164,17 +164,6 @@ export function toQueuedGoalContextCarrier(message: QueuedGoalContextInput): Que
   return carrier;
 }
 
-/** Merges a rewritten queued-goal carrier onto the original provider-context message. */
-export function mergeProviderContextMessage<TMessage extends QueuedGoalContextInput>(
-  original: TMessage,
-  rewritten: QueuedGoalContextCarrier,
-): TMessage {
-  return {
-    ...original,
-    ...rewritten,
-  } as TMessage;
-}
-
 /** Normalizes external provider-context messages once at the package boundary. */
 export function toQueuedGoalWorkSource(
   message: QueuedGoalContextCarrier,

@@ -6,13 +6,13 @@ import {
 } from "./prompts.js";
 import {
   isActiveGoalQueuedDetails,
-  mergeProviderContextMessage,
   type QueuedGoalContextCarrier,
   type QueuedGoalContextInput,
   type QueuedGoalTextPart,
   type QueuedGoalWorkSourceMessage,
   type RefreshedActiveQueuedGoalCustomMessage,
   type RefreshedActiveQueuedGoalUserMessage,
+  type RewrittenQueuedGoalWorkMessage,
   type StaleQueuedGoalCustomMessage,
   type StaleQueuedGoalUserMessage,
   type SupersededQueuedGoalCustomMessage,
@@ -22,6 +22,17 @@ import {
   userContentFromUnknown,
 } from "./queued-goal-messages.js";
 import { CUSTOM_ENTRY_TYPE, type ThreadGoal } from "./types.js";
+
+/** Single bridge from concrete queued-goal rewrites back onto provider-context messages. */
+function mergeProviderContextMessage<TMessage extends QueuedGoalContextInput>(
+  original: TMessage,
+  rewritten: RewrittenQueuedGoalWorkMessage,
+): TMessage {
+  return {
+    ...original,
+    ...rewritten,
+  } as TMessage;
+}
 
 function isSupersededContinuationDetails(details: unknown): boolean {
   return details !== null && typeof details === "object" && (details as { kind?: unknown }).kind === "superseded_continuation";
