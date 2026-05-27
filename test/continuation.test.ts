@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { mock, test } from "node:test";
 
 import { formatFooterStatus } from "../src/format.js";
-import { isGoalCustomEntry } from "../src/state.js";
+import { isGoalCustomEntry, setEntry } from "../src/state.js";
 import { CUSTOM_ENTRY_TYPE } from "../src/types.js";
 import {
   assistantMessage,
@@ -57,6 +57,36 @@ test("a new user-driven agent start leaves a paused goal paused", async () => {
 
   assert.equal(harness.snapshot().goal?.status, "paused");
   assert.equal(harness.snapshot().goal?.usage.tokensUsed, 10);
+});
+
+test("session resume over-budget paused goal stays budgetLimited without follow-up turn", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runTool("create_goal", { objective: "ship it", token_budget: 10 });
+  await harness.runCommand("pause");
+  const paused = harness.snapshot().goal;
+  assert.ok(paused);
+  assert.equal(paused.status, "paused");
+
+  harness.entries.push({
+    type: "custom",
+    id: "entry-over-budget-paused",
+    parentId: null,
+    timestamp: new Date(0).toISOString(),
+    customType: CUSTOM_ENTRY_TYPE,
+    data: setEntry(
+      {
+        ...paused,
+        usage: { tokensUsed: 10, activeSeconds: paused.usage.activeSeconds },
+      },
+      "runtime",
+    ),
+  });
+  harness.sentUserMessages.length = 0;
+
+  await harness.emit("session_start", { type: "session_start", reason: "resume" });
+
+  assert.equal(harness.snapshot().goal?.status, "budgetLimited");
+  assert.equal(harness.sentUserMessages.length, 0);
 });
 
 test("session resume prompt can reactivate a paused goal", async () => {

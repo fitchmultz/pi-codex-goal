@@ -222,6 +222,29 @@ function requireUnchangedUsage(current: ThreadGoal, nextGoal: ThreadGoal, kind: 
   }
 }
 
+function requireNonRewindingUpdatedAt(current: ThreadGoal, nextGoal: ThreadGoal, kind: string): void {
+  if (nextGoal.updatedAt < current.updatedAt) {
+    throw transitionInvariantError(kind, "updatedAt must not decrease");
+  }
+}
+
+function requireRuntimeAccountingChange(
+  current: ThreadGoal,
+  nextGoal: ThreadGoal,
+  kind: string,
+): void {
+  const usageIncreased =
+    nextGoal.usage.tokensUsed > current.usage.tokensUsed ||
+    nextGoal.usage.activeSeconds > current.usage.activeSeconds;
+  const statusChanged = current.status !== nextGoal.status;
+  if (!usageIncreased && !statusChanged) {
+    throw transitionInvariantError(
+      kind,
+      "runtime accounting must increase usage or change status",
+    );
+  }
+}
+
 function requireStatusHelperImmutableFields(
   current: ThreadGoal,
   nextGoal: ThreadGoal,
@@ -231,6 +254,7 @@ function requireStatusHelperImmutableFields(
   requireUnchangedTokenBudget(current, nextGoal, kind);
   requireUnchangedUsage(current, nextGoal, kind);
   requireUnchangedCreatedAt(current, nextGoal, kind);
+  requireNonRewindingUpdatedAt(current, nextGoal, kind);
 }
 
 function requireNonDecreasingUsage(current: ThreadGoal, nextGoal: ThreadGoal, kind: string): void {
@@ -327,7 +351,9 @@ function validateRuntimeAccounting(current: ThreadGoal | null, nextGoal: ThreadG
   requireUnchangedObjective(current, nextGoal, kind);
   requireUnchangedTokenBudget(current, nextGoal, kind);
   requireUnchangedCreatedAt(current, nextGoal, kind);
+  requireNonRewindingUpdatedAt(current, nextGoal, kind);
   requireNonDecreasingUsage(current, nextGoal, kind);
+  requireRuntimeAccountingChange(current, nextGoal, kind);
   if (nextGoal.status === "budgetLimited") {
     requireBudgetLimitedUsageAtOrOverBudget(nextGoal, kind);
   }
@@ -415,15 +441,6 @@ export function planGoalTransition(
     case "runtime_accounting": {
       const { nextGoal } = request;
       validateRuntimeAccounting(current, nextGoal);
-      if (current && goalsEquivalent(current, nextGoal)) {
-        return {
-          persist: "skip",
-          nextGoal,
-          source: "runtime",
-          beforePersist: [],
-          afterPersist: [],
-        };
-      }
       const beforePersist = memoryEffectsFromGoalChange(current, nextGoal);
       if (crossedBudgetTransition(current, nextGoal)) {
         return {

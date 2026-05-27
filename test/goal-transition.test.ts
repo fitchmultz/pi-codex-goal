@@ -449,17 +449,27 @@ test("planGoalTransition runtime accounting persists immediately when budget is 
   ]);
 });
 
-test("planGoalTransition skip plans have empty beforePersist when unchanged", () => {
+test("planGoalTransition runtime accounting rejects unchanged payload", () => {
   const goal = createThreadGoal("ship it");
-  const plan = planGoalTransition(goal, {
-    kind: "runtime_accounting",
-    nextGoal: goal,
-  });
 
-  assertDisjointPrimitivePlan(plan, "runtime skip");
-  assert.equal(plan.persist, "skip");
-  assert.deepEqual(plan.beforePersist, []);
-  assert.deepEqual(plan.afterPersist, []);
+  assert.throws(
+    () =>
+      planGoalTransition(goal, {
+        kind: "runtime_accounting",
+        nextGoal: goal,
+      }),
+    /Invalid runtime_accounting transition: runtime accounting must increase usage or change status/,
+  );
+});
+
+test("planGoalTransition runtime accounting rejects timestamp-only payload", () => {
+  const goal = createThreadGoal("ship it", 10);
+  const next = { ...cloneGoal(goal), updatedAt: goal.updatedAt + 1 };
+
+  assert.throws(
+    () => planGoalTransition(goal, { kind: "runtime_accounting", nextGoal: next }),
+    /Invalid runtime_accounting transition: runtime accounting must increase usage or change status/,
+  );
 });
 
 const ALL_STATUSES: GoalStatus[] = ["active", "paused", "budgetLimited", "complete"];
@@ -837,3 +847,34 @@ test("planGoalTransition runtime_accounting rejects budgetLimited to active", ()
     /Invalid runtime_accounting transition: budgetLimited goals cannot transition to active/,
   );
 });
+
+const STATUS_SPECIFIC_UPDATED_AT_KINDS = [
+  "abort_pause",
+  "resume_active",
+  "recovery_pause",
+  "recovery_shutdown_pause",
+  "runtime_accounting",
+] as const;
+
+for (const kind of STATUS_SPECIFIC_UPDATED_AT_KINDS) {
+  test(`planGoalTransition ${kind} rejects updatedAt rewind`, () => {
+    const current =
+      kind === "resume_active"
+        ? { ...createThreadGoal("ship it", 10), status: "paused" as const }
+        : kind === "runtime_accounting"
+          ? createThreadGoal("ship it", 10)
+          : createThreadGoal("ship it", 10);
+    const next =
+      kind === "abort_pause" || kind === "recovery_pause" || kind === "recovery_shutdown_pause"
+        ? legalActiveToPausedNext(current)
+        : kind === "resume_active"
+          ? legalPausedToActiveNext(current)
+          : legalRuntimeAccountingNext(current);
+    next.updatedAt = current.updatedAt - 1;
+
+    assert.throws(
+      () => planGoalTransition(current, statusSpecificRequest(kind, next)),
+      /updatedAt must not decrease/,
+    );
+  });
+}

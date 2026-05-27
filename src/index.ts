@@ -331,7 +331,12 @@ export default function (pi: ExtensionAPI): void {
       return;
     }
 
-    applyGoalTransition({ kind: "resume_active", nextGoal: result.goal }, ctx);
+    if (result.goal.status === "active") {
+      applyGoalTransition({ kind: "resume_active", nextGoal: result.goal }, ctx);
+      return;
+    }
+
+    applyGoalTransition({ kind: "set", nextGoal: result.goal, source: "runtime" }, ctx);
   };
 
   const persistHostOverflowUserReset = (needsReset: boolean): void => {
@@ -566,13 +571,15 @@ export default function (pi: ExtensionAPI): void {
   pi.on("session_start", async (event, ctx) => {
     reloadFromSession(ctx);
     goalAccounting.beginAccounting();
-    if (event.reason === "resume" && goal?.status === "paused" && ctx.hasUI) {
-      const shouldResume = await ctx.ui.confirm("Resume paused goal?", `Goal: ${goal.objective}`);
+    const pausedGoal = goal?.status === "paused" ? goal : null;
+    if (event.reason === "resume" && pausedGoal && ctx.hasUI) {
+      const shouldResume = await ctx.ui.confirm("Resume paused goal?", `Goal: ${pausedGoal.objective}`);
       if (shouldResume) {
         resumePausedGoal(ctx);
         goalAccounting.beginAccounting();
-        if (goal) {
-          pi.sendUserMessage(compactContinuationPrompt(goal), { deliverAs: "followUp" });
+        const resumedGoal = goal;
+        if (resumedGoal?.status === "active") {
+          pi.sendUserMessage(compactContinuationPrompt(resumedGoal), { deliverAs: "followUp" });
         }
         return;
       }
