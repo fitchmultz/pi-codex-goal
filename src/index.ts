@@ -12,8 +12,7 @@ import {
 import { compactContinuationPrompt, continuationGoalIdFromPrompt } from "./prompts.js";
 import { isCommandResumeQueuedGoalMessage } from "./queued-goal-messages.js";
 import {
-  applyGoalMemoryEffects,
-  applyGoalTransitionPostPersistEffects,
+  applyGoalTransitionEffects,
   planGoalTransition,
   type GoalTransitionRequest,
 } from "./goal-transition.js";
@@ -218,13 +217,23 @@ export default function (pi: ExtensionAPI): void {
   }): string | null =>
     extensionQueuedGoalWorkMessageIdForRuntime(message, continuationGoalIdFromRuntimePrompt);
 
-  const goalMemoryHandlers = {
+  const transitionEffectHandlers = {
     clearContinuation: clearContinuationState,
     clearActiveAccounting,
     resetRecovery: resetErrorRecovery,
     clearBudgetWarning: () => {
       accounting.budgetWarningSentFor = null;
     },
+    clearHostOverflowRecovery: () => {
+      clearActiveHostOverflowRecovery(recoveryState);
+    },
+    setRecoveryPausedAttention: (reason: string) => {
+      setRecoveryPausedAttention(recoveryState, reason);
+    },
+    markContinuationQueued: (goalId: string) => {
+      continuationQueuedFor = goalId;
+    },
+    stopStatusRefresh,
   };
 
   const applyGoalTransition = (
@@ -233,30 +242,15 @@ export default function (pi: ExtensionAPI): void {
   ): boolean => {
     const plan = planGoalTransition(goal, request);
 
-    if (plan.resetRecoveryBeforePersist) {
-      resetErrorRecovery();
-    }
-    if (plan.clearContinuationBeforePersist) {
-      clearContinuationState();
-    }
-    if (plan.clearActiveAccountingBeforePersist) {
-      clearActiveAccounting();
-    }
-    if (plan.clearHostOverflowRecovery) {
-      clearActiveHostOverflowRecovery(recoveryState);
-    }
-    if (plan.recoveryPausedReason) {
-      setRecoveryPausedAttention(recoveryState, plan.recoveryPausedReason);
-    }
+    applyGoalTransitionEffects(plan.beforePersist, transitionEffectHandlers);
 
     if (plan.persist === "clear") {
       const clearedGoalId = goal?.goalId ?? null;
-      applyGoalMemoryEffects(plan.memory, goalMemoryHandlers);
       goal = null;
       lastPersistedGoal = null;
       lastRuntimePersistAt = null;
-      stopStatusRefresh();
       pi.appendEntry(CUSTOM_ENTRY_TYPE, clearEntry(clearedGoalId, plan.source));
+      applyGoalTransitionEffects(plan.afterPersist, transitionEffectHandlers);
       if (ctx) {
         refreshUi(ctx);
       }
@@ -264,12 +258,7 @@ export default function (pi: ExtensionAPI): void {
     }
 
     if (plan.persist === "skip") {
-      applyGoalTransitionPostPersistEffects(plan, {
-        resetRecoveryAfterPersist: resetErrorRecovery,
-        markContinuationQueued: (goalId) => {
-          continuationQueuedFor = goalId;
-        },
-      });
+      applyGoalTransitionEffects(plan.afterPersist, transitionEffectHandlers);
       if (ctx) {
         refreshUi(ctx);
       }
@@ -277,7 +266,6 @@ export default function (pi: ExtensionAPI): void {
     }
 
     if (plan.persist === "defer") {
-      applyGoalMemoryEffects(plan.memory, goalMemoryHandlers);
       goal = plan.nextGoal;
       if (ctx) {
         refreshUi(ctx);
@@ -285,16 +273,9 @@ export default function (pi: ExtensionAPI): void {
       return false;
     }
 
-    applyGoalMemoryEffects(plan.memory, goalMemoryHandlers);
     goal = plan.nextGoal;
     const persisted = flushGoalPersistence(plan.source);
-
-    applyGoalTransitionPostPersistEffects(plan, {
-      resetRecoveryAfterPersist: resetErrorRecovery,
-      markContinuationQueued: (goalId) => {
-        continuationQueuedFor = goalId;
-      },
-    });
+    applyGoalTransitionEffects(plan.afterPersist, transitionEffectHandlers);
     if (ctx) {
       refreshUi(ctx);
     }
@@ -383,8 +364,8 @@ export default function (pi: ExtensionAPI): void {
   const goalAccounting = createGoalAccounting({
     getGoal: () => goal,
     getAccounting: () => accounting,
-    applyRuntimeAccountingTransition(ctx, nextGoal, crossedBudget) {
-      applyGoalTransition({ kind: "runtime_accounting", nextGoal, crossedBudget }, ctx);
+    applyRuntimeAccountingTransition(ctx, nextGoal) {
+      applyGoalTransition({ kind: "runtime_accounting", nextGoal }, ctx);
     },
     sendMessage: pi.sendMessage.bind(pi),
   });
@@ -533,12 +514,7 @@ export default function (pi: ExtensionAPI): void {
     getGoal: () => goalForDisplay(),
     getGoalStartTurnStrategy: () => goalStartTurnStrategy(recoveryState.phase),
     setGoal(nextGoal, source, ctx) {
-      applyGoalTransition({
-        kind: "set",
-        nextGoal,
-        source,
-        wasPausedBefore: goal?.status === "paused",
-      }, ctx);
+      applyGoalTransition({ kind: "set", nextGoal, source }, ctx);
     },
     clearGoal(source, ctx) {
       applyGoalTransition({ kind: "clear", source }, ctx);
