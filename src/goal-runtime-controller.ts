@@ -4,6 +4,7 @@ import type {
   ContextEvent,
   ExtensionAPI,
   ExtensionContext,
+  ExtensionEvent,
   ExtensionHandler,
   InputEvent,
   InputEventResult,
@@ -15,6 +16,10 @@ import type {
   TurnEndEvent,
   TurnStartEvent,
 } from "@earendil-works/pi-coding-agent";
+
+type ContextEventResult = { messages?: ContextEvent["messages"] };
+type MessageStartEvent = Extract<ExtensionEvent, { type: "message_start" }>;
+type ToolExecutionEndEvent = Extract<ExtensionEvent, { type: "tool_execution_end" }>;
 
 import { registerGoalCommand } from "./commands.js";
 import { createContinuationScheduler } from "./continuation-scheduler.js";
@@ -52,9 +57,9 @@ import {
   type AssistantErrorMessage,
 } from "./recovery.js";
 import type { StaleQueuedWorkEffect } from "./stale-queued-work-guard.js";
-import { goalWithLiveUsage, hostOverflowCapResetEntry, updateGoalStatus } from "./state.js";
+import { goalWithLiveUsage, updateGoalStatus } from "./state.js";
 import { registerGoalTools } from "./tools.js";
-import { CUSTOM_ENTRY_TYPE, type GoalEntrySource, type GoalResult } from "./types.js";
+import type { GoalEntrySource, GoalResult } from "./types.js";
 import { registerGoalRuntimeEvents } from "./goal-runtime-events.js";
 
 export function createGoalRuntimeController(pi: ExtensionAPI) {
@@ -222,7 +227,7 @@ export function createGoalRuntimeController(pi: ExtensionAPI) {
 
   const beginOverflowRecoveryAttention = (ctx: ExtensionContext): void => {
     if (recoveryRuntime.beginOverflowRecovery(ctx)) {
-      pi.appendEntry(CUSTOM_ENTRY_TYPE, hostOverflowCapResetEntry(true));
+      stateController.persistHostOverflowUserReset(true, { recoveryStateAlreadyApplied: true });
     }
   };
 
@@ -311,7 +316,7 @@ export function createGoalRuntimeController(pi: ExtensionAPI) {
       }
 
       return changed ? { messages } : undefined;
-    }) satisfies ExtensionHandler<ContextEvent, { messages?: ContextEvent["messages"] } | undefined>,
+    }) satisfies ExtensionHandler<ContextEvent, ContextEventResult | undefined>,
 
     onSessionStart: (async (event, ctx) => {
       stateController.reloadFromSession(ctx);
@@ -388,7 +393,7 @@ export function createGoalRuntimeController(pi: ExtensionAPI) {
       }
 
       runtimeState.staleQueuedWorkGuard.noteStaleWorkStarted(queuedGoalId);
-    }) satisfies ExtensionHandler<{ type: "message_start"; message: TurnEndEvent["message"] }>,
+    }) satisfies ExtensionHandler<MessageStartEvent>,
 
     onTurnStart: (async (event, ctx) => {
       runtimeState.currentTurnIndex = event.turnIndex;
@@ -410,7 +415,7 @@ export function createGoalRuntimeController(pi: ExtensionAPI) {
 
       goalAccounting.accountProgress(ctx, true, 0, true);
       stateController.maybeFlushRuntimePersistence("runtime");
-    }) satisfies ExtensionHandler<{ type: "tool_execution_end" }>,
+    }) satisfies ExtensionHandler<ToolExecutionEndEvent>,
 
     onTurnEnd: (async (event, ctx) => {
       const turnEndPlan = runtimeState.staleQueuedWorkGuard.planTurnEnd(

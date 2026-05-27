@@ -49,15 +49,20 @@ export function createGoalPersistence(deps: GoalPersistenceDeps) {
     flushGoalPersistence(source);
   };
 
-  const appendClearEntry = (clearedGoalId: string | null, source: GoalEntrySource): void => {
-    deps.pi.appendEntry(CUSTOM_ENTRY_TYPE, clearEntry(clearedGoalId, source));
+  const clearGoalSnapshot = (): void => {
     goal = null;
     lastPersistedGoal = null;
     lastRuntimePersistAt = null;
   };
 
+  const appendClearEntry = (clearedGoalId: string | null, source: GoalEntrySource): void => {
+    clearGoalSnapshot();
+    deps.pi.appendEntry(CUSTOM_ENTRY_TYPE, clearEntry(clearedGoalId, source));
+  };
+
   return {
     appendClearEntry,
+    clearGoalSnapshot,
     flushGoalPersistence,
     getGoal,
     maybeFlushRuntimePersistence,

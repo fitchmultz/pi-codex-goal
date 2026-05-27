@@ -83,9 +83,14 @@ export function createGoalStateController(deps: GoalStateControllerDeps) {
     return persisted;
   };
 
-  const persistHostOverflowUserReset = (needsReset: boolean): void => {
-    if (!applyHostOverflowUserResetPersistence(deps.getRecoveryState(), needsReset)) {
-      return;
+  const persistHostOverflowUserReset = (
+    needsReset: boolean,
+    options?: { recoveryStateAlreadyApplied?: boolean },
+  ): void => {
+    if (!options?.recoveryStateAlreadyApplied) {
+      if (!applyHostOverflowUserResetPersistence(deps.getRecoveryState(), needsReset)) {
+        return;
+      }
     }
     deps.pi.appendEntry(CUSTOM_ENTRY_TYPE, hostOverflowCapResetEntry(needsReset));
   };
