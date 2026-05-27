@@ -8,7 +8,6 @@ import {
   planRecoveryForAssistantError,
   planRecoveryForSilentContextOverflow,
   requireHostOverflowUserReset,
-  setRecoveryPausedAttention,
   setRecoveryPendingAttention,
   type GoalRecoveryMachineState,
   type RecoveryAction,
@@ -20,7 +19,11 @@ interface RecoveryRuntimeDeps {
   getGoal: () => ThreadGoal | null;
   getRecoveryState: () => GoalRecoveryMachineState;
   clearContinuationState: () => void;
-  pauseGoalForRecovery: (ctx: ExtensionContext, pausedGoal: ThreadGoal) => void;
+  pauseGoalForRecovery: (
+    ctx: ExtensionContext,
+    pausedGoal: ThreadGoal,
+    recoveryReason: string,
+  ) => void;
   refreshUi: (ctx: ExtensionContext) => void;
   maybeContinue: (ctx: ExtensionContext) => void;
 }
@@ -32,10 +35,7 @@ export function createGoalRecoveryRuntime(deps: RecoveryRuntimeDeps) {
       return;
     }
 
-    deps.clearContinuationState();
-    deps.pauseGoalForRecovery(ctx, goal);
-    setRecoveryPausedAttention(deps.getRecoveryState(), reason);
-    deps.refreshUi(ctx);
+    deps.pauseGoalForRecovery(ctx, goal, reason);
   };
 
   const applyRecoveryAction = (action: RecoveryAction, ctx: ExtensionContext): void => {

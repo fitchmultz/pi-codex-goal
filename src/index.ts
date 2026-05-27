@@ -245,9 +245,6 @@ export default function (pi: ExtensionAPI): void {
     ctx: StatusContext | null,
   ): boolean => {
     const plan = planGoalTransition(goal, request);
-    if (!plan) {
-      return false;
-    }
 
     if (plan.resetRecoveryBeforePersist) {
       resetErrorRecovery();
@@ -468,12 +465,15 @@ export default function (pi: ExtensionAPI): void {
     getGoal: () => goal,
     getRecoveryState: () => recoveryState,
     clearContinuationState,
-    pauseGoalForRecovery(ctx, activeGoal) {
+    pauseGoalForRecovery(ctx, activeGoal, recoveryReason) {
       const result = updateGoalStatus(activeGoal, "paused");
       if (!result.ok || !result.goal) {
         return;
       }
-      applyGoalTransition({ kind: "recovery_pause", nextGoal: result.goal }, ctx);
+      applyGoalTransition(
+        { kind: "recovery_pause", nextGoal: result.goal, recoveryReason },
+        ctx,
+      );
     },
     refreshUi,
     maybeContinue,

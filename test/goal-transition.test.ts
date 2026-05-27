@@ -38,8 +38,8 @@ test("planGoalTransition command set marks continuation and defers recovery rese
     wasPausedBefore: true,
   });
 
-  assert.ok(plan);
   assert.equal(plan.persist, "skip");
+  assert.equal("memory" in plan, false);
   assert.equal(plan.markContinuationQueued, true);
   assert.equal(plan.resetRecoveryAfterPersist, true);
   assert.equal(plan.resetRecoveryBeforePersist, false);
@@ -50,19 +50,47 @@ test("planGoalTransition abort pause resets stopped runtime before paused memory
   const paused = { ...cloneGoal(goal), status: "paused" as const };
 
   const plan = planGoalTransition(goal, { kind: "abort_pause", nextGoal: paused });
-  assert.ok(plan);
-  assert.equal(plan.memory.resetStoppedRuntime, true);
   assert.equal(plan.persist, "set");
+  assert.equal(plan.memory.resetStoppedRuntime, true);
 });
 
 test("planGoalTransition clear stops status refresh and persists clear", () => {
   const goal = createThreadGoal("ship it");
   const plan = planGoalTransition(goal, { kind: "clear", source: "command" });
 
-  assert.ok(plan);
   assert.equal(plan.persist, "clear");
   assert.equal(plan.stopStatusRefresh, true);
   assert.equal(plan.nextGoal, null);
+});
+
+test("planGoalTransition recovery pause owns continuation clear, reason, and refresh", () => {
+  const goal = createThreadGoal("ship it");
+  const paused = { ...cloneGoal(goal), status: "paused" as const };
+  const plan = planGoalTransition(goal, {
+    kind: "recovery_pause",
+    nextGoal: paused,
+    recoveryReason: "context_length_exceeded",
+  });
+
+  assert.equal(plan.persist, "set");
+  assert.equal(plan.clearContinuationBeforePersist, true);
+  assert.equal(plan.recoveryPausedReason, "context_length_exceeded");
+  assert.equal(plan.refreshUi, true);
+  assert.equal(plan.memory.clearContinuation, true);
+});
+
+test("planGoalTransition recovery shutdown pause clears host overflow recovery", () => {
+  const goal = createThreadGoal("ship it");
+  const paused = { ...cloneGoal(goal), status: "paused" as const };
+  const plan = planGoalTransition(goal, {
+    kind: "recovery_shutdown_pause",
+    nextGoal: paused,
+    recoveryReason: "shutdown",
+  });
+
+  assert.equal(plan.persist, "set");
+  assert.equal(plan.clearHostOverflowRecovery, true);
+  assert.equal(plan.recoveryPausedReason, "shutdown");
 });
 
 test("applyGoalMemoryEffects invokes every handler when all flags are true", () => {
@@ -111,8 +139,8 @@ test("applyGoalTransitionPostPersistEffects applies skip-plan command side effec
     source: "command",
     wasPausedBefore: true,
   });
-  assert.ok(plan);
   assert.equal(plan.persist, "skip");
+  assert.equal("memory" in plan, false);
 
   const calls: string[] = [];
   applyGoalTransitionPostPersistEffects(plan, {
@@ -135,7 +163,7 @@ test("planGoalTransition abort pause clears stopped runtime before persist when 
   const paused = { ...cloneGoal(goal), status: "paused" as const };
   const plan = planGoalTransition(paused, { kind: "abort_pause", nextGoal: paused });
 
-  assert.ok(plan);
   assert.equal(plan.persist, "skip");
+  assert.equal("memory" in plan, false);
   assert.equal(plan.resetStoppedRuntimeBeforePersist, true);
 });

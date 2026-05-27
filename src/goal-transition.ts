@@ -12,7 +12,11 @@ export type GoalTransitionRequest =
   | { kind: "clear"; source: GoalEntrySource }
   | { kind: "abort_pause"; nextGoal: ThreadGoal }
   | { kind: "resume_active"; nextGoal: ThreadGoal }
-  | { kind: "recovery_pause"; nextGoal: ThreadGoal }
+  | {
+      kind: "recovery_pause";
+      nextGoal: ThreadGoal;
+      recoveryReason: string;
+    }
   | {
       kind: "recovery_shutdown_pause";
       nextGoal: ThreadGoal;
@@ -27,10 +31,7 @@ export interface GoalMemoryEffectPlan {
   clearBudgetWarning: boolean;
 }
 
-export interface GoalTransitionEffectPlan {
-  memory: GoalMemoryEffectPlan;
-  persist: "set" | "clear" | "skip";
-  nextGoal: ThreadGoal | null;
+interface GoalTransitionEffectPlanShared {
   source: GoalEntrySource;
   markContinuationQueued: boolean;
   resetRecoveryBeforePersist: boolean;
@@ -42,6 +43,22 @@ export interface GoalTransitionEffectPlan {
   stopStatusRefresh: boolean;
   refreshUi: boolean;
 }
+
+export type GoalTransitionEffectPlan =
+  | (GoalTransitionEffectPlanShared & {
+      persist: "skip";
+      nextGoal: ThreadGoal | null;
+    })
+  | (GoalTransitionEffectPlanShared & {
+      persist: "set";
+      nextGoal: ThreadGoal;
+      memory: GoalMemoryEffectPlan;
+    })
+  | (GoalTransitionEffectPlanShared & {
+      persist: "clear";
+      nextGoal: null;
+      memory: GoalMemoryEffectPlan;
+    });
 
 export function planMemoryEffectsOnGoalChange(
   previous: ThreadGoal | null,
@@ -92,10 +109,28 @@ function mergeMemoryPlans(...plans: readonly GoalMemoryEffectPlan[]): GoalMemory
   };
 }
 
+function recoveryPauseShared(
+  recoveryReason: string,
+  clearHostOverflowRecovery: boolean,
+): GoalTransitionEffectPlanShared {
+  return {
+    source: "runtime",
+    markContinuationQueued: false,
+    resetRecoveryBeforePersist: false,
+    resetRecoveryAfterPersist: false,
+    resetStoppedRuntimeBeforePersist: false,
+    clearContinuationBeforePersist: true,
+    clearHostOverflowRecovery,
+    recoveryPausedReason: recoveryReason,
+    stopStatusRefresh: false,
+    refreshUi: true,
+  };
+}
+
 export function planGoalTransition(
   current: ThreadGoal | null,
   request: GoalTransitionRequest,
-): GoalTransitionEffectPlan | null {
+): GoalTransitionEffectPlan {
   switch (request.kind) {
     case "clear": {
       return {
@@ -122,19 +157,7 @@ export function planGoalTransition(
     }
     case "abort_pause": {
       const { nextGoal } = request;
-      return {
-        memory: mergeMemoryPlans(
-          {
-            resetStoppedRuntime: true,
-            clearContinuation: true,
-            clearActiveAccounting: true,
-            resetRecovery: true,
-            clearBudgetWarning: true,
-          },
-          planMemoryEffectsOnGoalChange(current, nextGoal),
-        ),
-        persist: current && goalsEquivalent(current, nextGoal) ? "skip" : "set",
-        nextGoal,
+      const shared: GoalTransitionEffectPlanShared = {
         source: "runtime",
         markContinuationQueued: false,
         resetRecoveryBeforePersist: false,
@@ -146,13 +169,28 @@ export function planGoalTransition(
         stopStatusRefresh: false,
         refreshUi: true,
       };
+      if (current && goalsEquivalent(current, nextGoal)) {
+        return { ...shared, persist: "skip", nextGoal };
+      }
+      return {
+        ...shared,
+        persist: "set",
+        nextGoal,
+        memory: mergeMemoryPlans(
+          {
+            resetStoppedRuntime: true,
+            clearContinuation: true,
+            clearActiveAccounting: true,
+            resetRecovery: true,
+            clearBudgetWarning: true,
+          },
+          planMemoryEffectsOnGoalChange(current, nextGoal),
+        ),
+      };
     }
     case "resume_active": {
       const { nextGoal } = request;
-      return {
-        memory: planMemoryEffectsOnGoalChange(current, nextGoal),
-        persist: current && goalsEquivalent(current, nextGoal) ? "skip" : "set",
-        nextGoal,
+      const shared: GoalTransitionEffectPlanShared = {
         source: "runtime",
         markContinuationQueued: false,
         resetRecoveryBeforePersist: true,
@@ -164,45 +202,44 @@ export function planGoalTransition(
         stopStatusRefresh: false,
         refreshUi: true,
       };
+      if (current && goalsEquivalent(current, nextGoal)) {
+        return { ...shared, persist: "skip", nextGoal };
+      }
+      return {
+        ...shared,
+        persist: "set",
+        nextGoal,
+        memory: planMemoryEffectsOnGoalChange(current, nextGoal),
+      };
     }
     case "recovery_pause": {
+      const { nextGoal, recoveryReason } = request;
+      const shared = recoveryPauseShared(recoveryReason, false);
+      if (current && goalsEquivalent(current, nextGoal)) {
+        return { ...shared, persist: "skip", nextGoal };
+      }
       return {
-        memory: planMemoryEffectsOnGoalChange(current, request.nextGoal),
-        persist: current && goalsEquivalent(current, request.nextGoal) ? "skip" : "set",
-        nextGoal: request.nextGoal,
-        source: "runtime",
-        markContinuationQueued: false,
-        resetRecoveryBeforePersist: false,
-        resetRecoveryAfterPersist: false,
-        resetStoppedRuntimeBeforePersist: false,
-        clearContinuationBeforePersist: false,
-        clearHostOverflowRecovery: false,
-        recoveryPausedReason: null,
-        stopStatusRefresh: false,
-        refreshUi: false,
+        ...shared,
+        persist: "set",
+        nextGoal,
+        memory: planMemoryEffectsOnGoalChange(current, nextGoal),
       };
     }
     case "recovery_shutdown_pause": {
+      const { nextGoal, recoveryReason } = request;
+      const shared = recoveryPauseShared(recoveryReason, true);
+      if (current && goalsEquivalent(current, nextGoal)) {
+        return { ...shared, persist: "skip", nextGoal };
+      }
       return {
-        memory: planMemoryEffectsOnGoalChange(current, request.nextGoal),
-        persist: current && goalsEquivalent(current, request.nextGoal) ? "skip" : "set",
-        nextGoal: request.nextGoal,
-        source: "runtime",
-        markContinuationQueued: false,
-        resetRecoveryBeforePersist: false,
-        resetRecoveryAfterPersist: false,
-        resetStoppedRuntimeBeforePersist: false,
-        clearContinuationBeforePersist: true,
-        clearHostOverflowRecovery: true,
-        recoveryPausedReason: request.recoveryReason,
-        stopStatusRefresh: false,
-        refreshUi: true,
+        ...shared,
+        persist: "set",
+        nextGoal,
+        memory: planMemoryEffectsOnGoalChange(current, nextGoal),
       };
     }
     case "set": {
       const { nextGoal, source, wasPausedBefore = false } = request;
-      const persist =
-        current && goalsEquivalent(current, nextGoal) ? ("skip" as const) : ("set" as const);
       const commandEffects =
         source === "command"
           ? {
@@ -220,11 +257,7 @@ export function planGoalTransition(
               resetStoppedRuntimeBeforePersist: false,
               clearContinuationBeforePersist: false,
             };
-
-      return {
-        memory: planMemoryEffectsOnGoalChange(current, nextGoal),
-        persist,
-        nextGoal,
+      const shared: GoalTransitionEffectPlanShared = {
         source,
         markContinuationQueued: commandEffects.markContinuationQueued,
         resetRecoveryBeforePersist: commandEffects.resetRecoveryBeforePersist,
@@ -235,6 +268,15 @@ export function planGoalTransition(
         recoveryPausedReason: null,
         stopStatusRefresh: false,
         refreshUi: true,
+      };
+      if (current && goalsEquivalent(current, nextGoal)) {
+        return { ...shared, persist: "skip", nextGoal };
+      }
+      return {
+        ...shared,
+        persist: "set",
+        nextGoal,
+        memory: planMemoryEffectsOnGoalChange(current, nextGoal),
       };
     }
     default: {
@@ -281,7 +323,7 @@ export interface GoalTransitionPostPersistHandlers {
 export function applyGoalTransitionPostPersistEffects(
   plan: Pick<
     GoalTransitionEffectPlan,
-    "resetRecoveryAfterPersist" | "markContinuationQueued" | "nextGoal"
+    "resetRecoveryAfterPersist" | "markContinuationQueued" | "nextGoal" | "persist"
   >,
   handlers: GoalTransitionPostPersistHandlers,
 ): void {

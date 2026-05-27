@@ -3,7 +3,10 @@ import test from "node:test";
 
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-import { createGoalRecoveryMachine } from "../src/recovery-machine.js";
+import {
+  createGoalRecoveryMachine,
+  setRecoveryPausedAttention,
+} from "../src/recovery-machine.js";
 import { createGoalRecoveryRuntime } from "../src/recovery-runtime.js";
 import { recoveryPhaseNeedsUserStartTurn } from "../src/recovery-phase.js";
 import { CONTEXT_OVERFLOW_SIGNATURE } from "../src/recovery.js";
@@ -32,7 +35,9 @@ function createRecoveryTestRuntime(goal: ThreadGoal | null = activeGoal) {
     getGoal: () => goal,
     getRecoveryState: () => recoveryState,
     clearContinuationState: () => {},
-    pauseGoalForRecovery: () => {},
+    pauseGoalForRecovery: (_ctx, _goal, reason) => {
+      setRecoveryPausedAttention(recoveryState, reason);
+    },
     refreshUi: () => {
       refreshCount += 1;
     },
@@ -158,6 +163,45 @@ test("overflow compaction attempts survive intervening transient errors before p
   assert.equal(harness.continueCount, 0);
   assert.equal(harness.recoveryState.counters.compactionAttempts, 2);
   assert.match(harness.recoveryState.attention ?? "", /\/goal resume/);
+});
+
+test("recovery pause delegates reason without clearing continuation in recovery runtime", () => {
+  let continuationCleared = false;
+  let pauseReason: string | null = null;
+  let refreshCount = 0;
+  const recoveryState = createGoalRecoveryMachine();
+
+  const runtime = createGoalRecoveryRuntime({
+    getGoal: () => activeGoal,
+    getRecoveryState: () => recoveryState,
+    clearContinuationState: () => {
+      continuationCleared = true;
+    },
+    pauseGoalForRecovery: (_ctx, _goal, reason) => {
+      pauseReason = reason;
+    },
+    refreshUi: () => {
+      refreshCount += 1;
+    },
+    maybeContinue: () => {},
+  });
+
+  const ctx = { ui: { setStatus() {} } } as unknown as ExtensionContext;
+
+  runtime.handlePersistentAssistantError(
+    { role: "assistant", stopReason: "error", errorMessage: "context_length_exceeded" },
+    ctx,
+  );
+  runtime.onSessionCompact();
+  continuationCleared = false;
+  runtime.handlePersistentAssistantError(
+    { role: "assistant", stopReason: "error", errorMessage: "context_length_exceeded" },
+    ctx,
+  );
+
+  assert.equal(continuationCleared, false);
+  assert.match(pauseReason ?? "", /context window recovery failed/);
+  assert.equal(refreshCount, 0);
 });
 
 test("session compact after pending transient error preserves attention without continuing", () => {
