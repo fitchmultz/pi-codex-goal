@@ -216,6 +216,44 @@ test("planTurnStart clears aborting turn without refreshUi", () => {
   assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
 });
 
+test("awaitingTerminalCleanup: late id-less agent_end with aborted after abort release is skipped", () => {
+  const guard = createStaleQueuedWorkGuard();
+  guard.noteStaleWorkStarted("goal-1");
+  guard.planContextAbort(0);
+  guard.planTurnStart();
+  assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
+
+  const agentEndPlan = guard.planAgentEnd([abortedAssistant]);
+  assert.equal(agentEndPlan.skip, true);
+  assert.deepEqual(effectTypes(agentEndPlan), ["refreshUi"]);
+  assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
+});
+
+test("awaitingTerminalCleanup: late id-less agent_end with stop after abort release is skipped", () => {
+  const guard = createStaleQueuedWorkGuard();
+  guard.noteStaleWorkStarted("goal-1");
+  guard.planContextAbort(0);
+  guard.planTurnStart();
+  assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
+
+  const agentEndPlan = guard.planAgentEnd([stoppedAssistant]);
+  assert.equal(agentEndPlan.skip, true);
+  assert.deepEqual(effectTypes(agentEndPlan), ["refreshUi"]);
+  assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
+});
+
+test("awaitingTerminalCleanup: current id-less agent_end is not swallowed without pending anonymous obligation", () => {
+  const guard = createStaleQueuedWorkGuard();
+  guard.noteStaleWorkStarted("goal-1");
+  guard.planContextAbort(0);
+  guard.planUserInputClearAbort();
+  guard.planAgentEnd([abortedAssistant]);
+
+  const plan = guard.planAgentEnd([stoppedAssistant]);
+  assert.deepEqual(plan, { skip: false, effects: [] });
+  assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
+});
+
 test("planTurnStart is a no-op when idle", () => {
   const guard = createStaleQueuedWorkGuard();
   const plan = guard.planTurnStart();
@@ -347,6 +385,54 @@ test("observingTurn with pending cleanup: late stale agent_end with stop is skip
   ]);
   assert.equal(agentEndPlan.skip, true);
   assert.deepEqual(effectTypes(agentEndPlan), ["refreshUi"]);
+  assert.equal(guard.lifecycleKind(), "observingTurn");
+});
+
+test("observingTurn with pending cleanup: late id-less agent_end with aborted after abort release is skipped", () => {
+  const guard = createStaleQueuedWorkGuard();
+  guard.noteStaleWorkStarted("goal-1");
+  guard.planContextAbort(0);
+  guard.planTurnStart();
+  guard.noteRunnableWorkStarted();
+  assert.equal(guard.lifecycleKind(), "observingTurn");
+
+  const agentEndPlan = guard.planAgentEnd([abortedAssistant]);
+  assert.equal(agentEndPlan.skip, true);
+  assert.deepEqual(effectTypes(agentEndPlan), ["refreshUi"]);
+  assert.equal(guard.lifecycleKind(), "observingTurn");
+});
+
+test("observingTurn with pending cleanup: late id-less agent_end with stop after abort release is skipped", () => {
+  const guard = createStaleQueuedWorkGuard();
+  guard.noteStaleWorkStarted("goal-1");
+  guard.planContextAbort(0);
+  guard.planTurnStart();
+  guard.noteRunnableWorkStarted();
+  assert.equal(guard.lifecycleKind(), "observingTurn");
+
+  const agentEndPlan = guard.planAgentEnd([stoppedAssistant]);
+  assert.equal(agentEndPlan.skip, true);
+  assert.deepEqual(effectTypes(agentEndPlan), ["refreshUi"]);
+  assert.equal(guard.lifecycleKind(), "observingTurn");
+});
+
+test("observingTurn with pending cleanup: current agent_end with continuation is not swallowed", () => {
+  const guard = createStaleQueuedWorkGuard();
+  guard.noteStaleWorkStarted("goal-1");
+  guard.planContextAbort(0);
+  guard.planTurnStart();
+  guard.noteRunnableWorkStarted();
+  guard.planAgentEnd([abortedAssistant]);
+
+  const plan = guard.planAgentEnd([
+    {
+      role: "custom",
+      customType: CUSTOM_ENTRY_TYPE,
+      details: { kind: "continuation", goalId: "goal-2" },
+    },
+    stoppedAssistant,
+  ]);
+  assert.deepEqual(plan, { skip: false, effects: [] });
   assert.equal(guard.lifecycleKind(), "observingTurn");
 });
 

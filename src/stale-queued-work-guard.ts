@@ -1,5 +1,8 @@
 import type { AssistantTurnMessage } from "./goal-accounting.js";
-import { pendingStaleQueuedGoalWorkIdsFromMessages } from "./queued-goal-work.js";
+import {
+  agentEndMessagesIncludeQueuedGoalWork,
+  pendingStaleQueuedGoalWorkIdsFromMessages,
+} from "./queued-goal-work.js";
 
 export type StaleQueuedWorkEffect =
   | { type: "clearAccounting" }
@@ -20,6 +23,7 @@ export type StaleQueuedWorkLifecycleKind =
 type TerminalCleanup = {
   pendingTurnEndIndexes: Set<number>;
   pendingAgentEndGoalIds: Set<string>;
+  pendingAnonymousAgentEnd: boolean;
 };
 
 type ObservingTurnState = {
@@ -44,6 +48,7 @@ type StaleQueuedWorkLifecycleState =
       kind: "awaitingTerminalCleanup";
       pendingTurnEndIndexes: Set<number>;
       pendingAgentEndGoalIds: Set<string>;
+      pendingAnonymousAgentEnd: boolean;
     };
 
 export interface StaleQueuedWorkGuard {
@@ -71,6 +76,24 @@ export interface StaleQueuedWorkGuard {
 
 function lifecycleKindFromState(state: StaleQueuedWorkLifecycleState): StaleQueuedWorkLifecycleKind {
   return state.kind;
+}
+
+function terminalCleanupHasPending(cleanup: TerminalCleanup): boolean {
+  return (
+    cleanup.pendingTurnEndIndexes.size > 0 ||
+    cleanup.pendingAgentEndGoalIds.size > 0 ||
+    cleanup.pendingAnonymousAgentEnd
+  );
+}
+
+function isStaleTerminalAssistantMessage(message: {
+  role: string;
+  stopReason?: string;
+}): boolean {
+  return (
+    message.role === "assistant" &&
+    (message.stopReason === "aborted" || message.stopReason === "stop")
+  );
 }
 
 function noteTerminalEvents(
@@ -115,6 +138,7 @@ function beginObservingTurn(
         terminalCleanup: {
           pendingTurnEndIndexes: lifecycle.pendingTurnEndIndexes,
           pendingAgentEndGoalIds: lifecycle.pendingAgentEndGoalIds,
+          pendingAnonymousAgentEnd: lifecycle.pendingAnonymousAgentEnd,
         },
       };
     default: {
@@ -126,14 +150,12 @@ function beginObservingTurn(
 
 function finishObservingTurn(observing: ObservingTurnState): StaleQueuedWorkLifecycleState {
   const cleanup = observing.terminalCleanup;
-  if (
-    cleanup !== undefined &&
-    (cleanup.pendingTurnEndIndexes.size > 0 || cleanup.pendingAgentEndGoalIds.size > 0)
-  ) {
+  if (cleanup !== undefined && terminalCleanupHasPending(cleanup)) {
     return {
       kind: "awaitingTerminalCleanup",
       pendingTurnEndIndexes: cleanup.pendingTurnEndIndexes,
       pendingAgentEndGoalIds: cleanup.pendingAgentEndGoalIds,
+      pendingAnonymousAgentEnd: cleanup.pendingAnonymousAgentEnd,
     };
   }
   return { kind: "idle" };
@@ -148,6 +170,7 @@ function terminalCleanupFromLifecycle(
         cleanup: {
           pendingTurnEndIndexes: lifecycle.pendingTurnEndIndexes,
           pendingAgentEndGoalIds: lifecycle.pendingAgentEndGoalIds,
+          pendingAnonymousAgentEnd: lifecycle.pendingAnonymousAgentEnd,
         },
         observing: null,
       };
@@ -165,8 +188,7 @@ function resolveLifecycleAfterTerminalCleanup(
   cleanup: TerminalCleanup,
   observing: ObservingTurnState | null,
 ): StaleQueuedWorkLifecycleState {
-  const hasPending =
-    cleanup.pendingTurnEndIndexes.size > 0 || cleanup.pendingAgentEndGoalIds.size > 0;
+  const hasPending = terminalCleanupHasPending(cleanup);
 
   if (observing) {
     if (hasPending) {
@@ -181,6 +203,7 @@ function resolveLifecycleAfterTerminalCleanup(
       kind: "awaitingTerminalCleanup",
       pendingTurnEndIndexes: cleanup.pendingTurnEndIndexes,
       pendingAgentEndGoalIds: cleanup.pendingAgentEndGoalIds,
+      pendingAnonymousAgentEnd: cleanup.pendingAnonymousAgentEnd,
     };
   }
   return { kind: "idle" };
@@ -205,21 +228,38 @@ function consumePendingStaleAgentEnd(
   return pendingStaleQueuedGoalWorkIdsFromMessages(messages, cleanup.pendingAgentEndGoalIds);
 }
 
+function consumePendingAnonymousStaleAgentEnd(
+  cleanup: TerminalCleanup,
+  messages: Array<{ role: string; customType?: string; details?: unknown; content?: unknown; stopReason?: string }>,
+): boolean {
+  if (!cleanup.pendingAnonymousAgentEnd) {
+    return false;
+  }
+  if (agentEndMessagesIncludeQueuedGoalWork(messages)) {
+    return false;
+  }
+  if (!messages.some(isStaleTerminalAssistantMessage)) {
+    return false;
+  }
+  cleanup.pendingAnonymousAgentEnd = false;
+  return true;
+}
+
 export function createStaleQueuedWorkGuard(): StaleQueuedWorkGuard {
   let lifecycle: StaleQueuedWorkLifecycleState = { kind: "idle" };
 
   const transitionToAwaitingTerminalCleanup = (
-    pendingTurnEndIndexes: Set<number>,
-    pendingAgentEndGoalIds: Set<string>,
+    terminalCleanup: TerminalCleanup,
   ): StaleQueuedWorkEffect[] => {
-    if (pendingTurnEndIndexes.size === 0 && pendingAgentEndGoalIds.size === 0) {
+    if (!terminalCleanupHasPending(terminalCleanup)) {
       lifecycle = { kind: "idle" };
       return [];
     }
     lifecycle = {
       kind: "awaitingTerminalCleanup",
-      pendingTurnEndIndexes,
-      pendingAgentEndGoalIds,
+      pendingTurnEndIndexes: terminalCleanup.pendingTurnEndIndexes,
+      pendingAgentEndGoalIds: terminalCleanup.pendingAgentEndGoalIds,
+      pendingAnonymousAgentEnd: terminalCleanup.pendingAnonymousAgentEnd,
     };
     return [{ type: "clearAccounting" }];
   };
@@ -228,11 +268,15 @@ export function createStaleQueuedWorkGuard(): StaleQueuedWorkGuard {
     if (lifecycle.kind !== "abortingTurn") {
       return emptyPlan();
     }
-    const { terminalCleanup } = lifecycle;
-    const effects = transitionToAwaitingTerminalCleanup(
-      terminalCleanup.pendingTurnEndIndexes,
-      terminalCleanup.pendingAgentEndGoalIds,
-    );
+    const aborting = lifecycle;
+    const terminalCleanup: TerminalCleanup = {
+      pendingTurnEndIndexes: aborting.terminalCleanup.pendingTurnEndIndexes,
+      pendingAgentEndGoalIds: aborting.terminalCleanup.pendingAgentEndGoalIds,
+      pendingAnonymousAgentEnd:
+        aborting.activeStaleGoalIds.size > 0 ||
+        aborting.terminalCleanup.pendingAnonymousAgentEnd,
+    };
+    const effects = transitionToAwaitingTerminalCleanup(terminalCleanup);
     return { skip: false, effects };
   };
 
@@ -243,14 +287,13 @@ export function createStaleQueuedWorkGuard(): StaleQueuedWorkGuard {
     for (const goalId of aborting.activeStaleGoalIds) {
       terminalCleanup.pendingAgentEndGoalIds.delete(goalId);
     }
-    const hasPending =
-      terminalCleanup.pendingTurnEndIndexes.size > 0 ||
-      terminalCleanup.pendingAgentEndGoalIds.size > 0;
-    if (hasPending) {
+    terminalCleanup.pendingAnonymousAgentEnd = false;
+    if (terminalCleanupHasPending(terminalCleanup)) {
       lifecycle = {
         kind: "awaitingTerminalCleanup",
         pendingTurnEndIndexes: terminalCleanup.pendingTurnEndIndexes,
         pendingAgentEndGoalIds: terminalCleanup.pendingAgentEndGoalIds,
+        pendingAnonymousAgentEnd: terminalCleanup.pendingAnonymousAgentEnd,
       };
     } else {
       lifecycle = { kind: "idle" };
@@ -323,6 +366,7 @@ export function createStaleQueuedWorkGuard(): StaleQueuedWorkGuard {
             kind: "awaitingTerminalCleanup",
             pendingTurnEndIndexes: observing.terminalCleanup.pendingTurnEndIndexes,
             pendingAgentEndGoalIds: observing.terminalCleanup.pendingAgentEndGoalIds,
+            pendingAnonymousAgentEnd: observing.terminalCleanup.pendingAnonymousAgentEnd,
           };
         }
         return null;
@@ -330,6 +374,7 @@ export function createStaleQueuedWorkGuard(): StaleQueuedWorkGuard {
 
       const pendingTurnEndIndexes = new Set(observing.terminalCleanup?.pendingTurnEndIndexes ?? []);
       const pendingAgentEndGoalIds = new Set(observing.terminalCleanup?.pendingAgentEndGoalIds ?? []);
+      const pendingAnonymousAgentEnd = observing.terminalCleanup?.pendingAnonymousAgentEnd ?? false;
       noteTerminalEvents(
         pendingTurnEndIndexes,
         pendingAgentEndGoalIds,
@@ -344,6 +389,7 @@ export function createStaleQueuedWorkGuard(): StaleQueuedWorkGuard {
         terminalCleanup: {
           pendingTurnEndIndexes,
           pendingAgentEndGoalIds,
+          pendingAnonymousAgentEnd,
         },
       };
       return {
@@ -450,13 +496,18 @@ export function createStaleQueuedWorkGuard(): StaleQueuedWorkGuard {
       }
 
       const staleGoalIds = consumePendingStaleAgentEnd(pending.cleanup, messages);
-      if (staleGoalIds.length === 0) {
+      if (staleGoalIds.length > 0) {
+        for (const goalId of staleGoalIds) {
+          pending.cleanup.pendingAgentEndGoalIds.delete(goalId);
+        }
+        lifecycle = resolveLifecycleAfterTerminalCleanup(pending.cleanup, pending.observing);
+        return skipPlan({ type: "refreshUi" });
+      }
+
+      if (!consumePendingAnonymousStaleAgentEnd(pending.cleanup, messages)) {
         return emptyPlan();
       }
 
-      for (const goalId of staleGoalIds) {
-        pending.cleanup.pendingAgentEndGoalIds.delete(goalId);
-      }
       lifecycle = resolveLifecycleAfterTerminalCleanup(pending.cleanup, pending.observing);
       return skipPlan({ type: "refreshUi" });
     },

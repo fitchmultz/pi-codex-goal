@@ -359,6 +359,12 @@ export function extensionQueuedGoalWorkMessageIdForRuntime(
   return queuedGoalWorkMessageId(message);
 }
 
+export function agentEndMessagesIncludeQueuedGoalWork(
+  messages: readonly QueuedGoalContextInput[],
+): boolean {
+  return messages.some((message) => queuedGoalWorkMessageId(message) !== null);
+}
+
 export function pendingStaleQueuedGoalWorkIdsFromMessages(
   messages: readonly QueuedGoalContextInput[],
   staleQueuedGoalWorkAgentEndGoalIds: ReadonlySet<string>,
