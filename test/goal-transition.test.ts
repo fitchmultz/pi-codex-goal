@@ -7,7 +7,7 @@ import {
   type GoalTransitionEffect,
   type GoalTransitionPlan,
 } from "../src/goal-transition.js";
-import type { ThreadGoal } from "../src/types.js";
+import type { GoalStatus, ThreadGoal } from "../src/types.js";
 import { cloneGoal, createThreadGoal } from "../src/state.js";
 
 function effectTypes(effects: readonly GoalTransitionEffect[]): string[] {
@@ -397,19 +397,14 @@ test("planGoalTransition command skip applies post-persist effects only", () => 
   assert.deepEqual(effectTypes(plan.afterPersist), ["resetRecovery"]);
 });
 
-test("planGoalTransition abort pause clears primitives before persist when persistence skips", () => {
+test("planGoalTransition abort pause rejects invalid paused-to-paused shape", () => {
   const goal = createThreadGoal("ship it");
   const paused = { ...cloneGoal(goal), status: "paused" as const };
-  const plan = planGoalTransition(paused, { kind: "abort_pause", nextGoal: paused });
 
-  assertDisjointPrimitivePlan(plan, "abort pause skip");
-  assert.equal(plan.persist, "skip");
-  assert.deepEqual(effectTypes(plan.beforePersist), [
-    "clearContinuation",
-    "clearActiveAccounting",
-    "resetRecovery",
-  ]);
-  assert.deepEqual(plan.afterPersist, []);
+  assert.throws(
+    () => planGoalTransition(paused, { kind: "abort_pause", nextGoal: paused }),
+    /Invalid abort_pause transition: current status must be active/,
+  );
 });
 
 test("planGoalTransition runtime accounting defers persistence for active usage updates", () => {
@@ -465,4 +460,161 @@ test("planGoalTransition skip plans have empty beforePersist when unchanged", ()
   assert.equal(plan.persist, "skip");
   assert.deepEqual(plan.beforePersist, []);
   assert.deepEqual(plan.afterPersist, []);
+});
+
+const ALL_STATUSES: GoalStatus[] = ["active", "paused", "budgetLimited", "complete"];
+
+function goalAtStatus(base: ThreadGoal, status: GoalStatus): ThreadGoal {
+  return { ...cloneGoal(base), status };
+}
+
+function statusSpecificRequest(
+  kind:
+    | "abort_pause"
+    | "resume_active"
+    | "recovery_pause"
+    | "recovery_shutdown_pause"
+    | "runtime_accounting",
+  nextGoal: ThreadGoal,
+):
+  | { kind: "abort_pause"; nextGoal: ThreadGoal }
+  | { kind: "resume_active"; nextGoal: ThreadGoal }
+  | { kind: "recovery_pause"; nextGoal: ThreadGoal; recoveryReason: string }
+  | { kind: "recovery_shutdown_pause"; nextGoal: ThreadGoal; recoveryReason: string }
+  | { kind: "runtime_accounting"; nextGoal: ThreadGoal } {
+  switch (kind) {
+    case "abort_pause":
+      return { kind, nextGoal };
+    case "resume_active":
+      return { kind, nextGoal };
+    case "recovery_pause":
+      return { kind, nextGoal, recoveryReason: "context_length_exceeded" };
+    case "recovery_shutdown_pause":
+      return { kind, nextGoal, recoveryReason: "shutdown" };
+    case "runtime_accounting":
+      return { kind, nextGoal };
+    default: {
+      const _exhaustive: never = kind;
+      throw new Error(`Unhandled status-specific kind: ${String(_exhaustive)}`);
+    }
+  }
+}
+
+function isValidStatusSpecificTransition(
+  kind:
+    | "abort_pause"
+    | "resume_active"
+    | "recovery_pause"
+    | "recovery_shutdown_pause"
+    | "runtime_accounting",
+  currentStatus: GoalStatus | null,
+  nextStatus: GoalStatus,
+  sameGoalId: boolean,
+): boolean {
+  if (currentStatus === null || !sameGoalId) {
+    return false;
+  }
+  switch (kind) {
+    case "abort_pause":
+    case "recovery_pause":
+    case "recovery_shutdown_pause":
+      return currentStatus === "active" && nextStatus === "paused";
+    case "resume_active":
+      return currentStatus === "paused" && nextStatus === "active";
+    case "runtime_accounting":
+      return (
+        (currentStatus === "active" || currentStatus === "budgetLimited") &&
+        (nextStatus === "active" || nextStatus === "budgetLimited")
+      );
+    default: {
+      const _exhaustive: never = kind;
+      throw new Error(`Unhandled status-specific kind: ${String(_exhaustive)}`);
+    }
+  }
+}
+
+const STATUS_SPECIFIC_VARIANTS = [
+  "abort_pause",
+  "resume_active",
+  "recovery_pause",
+  "recovery_shutdown_pause",
+  "runtime_accounting",
+] as const;
+
+for (const kind of STATUS_SPECIFIC_VARIANTS) {
+  for (const currentStatus of ALL_STATUSES) {
+    for (const nextStatus of ALL_STATUSES) {
+      const valid = isValidStatusSpecificTransition(kind, currentStatus, nextStatus, true);
+      test(
+        `planGoalTransition ${kind} status matrix ${currentStatus}->${nextStatus} ${
+          valid ? "plans" : "rejects"
+        }`,
+        () => {
+          const base = createThreadGoal("ship it", kind === "runtime_accounting" ? 10 : undefined);
+          const current = goalAtStatus(base, currentStatus);
+          const next = goalAtStatus(base, nextStatus);
+          const request = statusSpecificRequest(kind, next);
+
+          if (!valid) {
+            assert.throws(() => planGoalTransition(current, request), new RegExp(`Invalid ${kind} transition:`));
+            return;
+          }
+
+          const plan = planGoalTransition(current, request);
+          assertDisjointPrimitivePlan(plan, `${kind} ${currentStatus}->${nextStatus}`);
+        },
+      );
+    }
+  }
+
+  test(`planGoalTransition ${kind} rejects null current`, () => {
+    const next = createThreadGoal("ship it");
+    const request = statusSpecificRequest(kind, next);
+    assert.throws(
+      () => planGoalTransition(null, request),
+      new RegExp(`Invalid ${kind} transition: current goal is required`),
+    );
+  });
+
+  test(`planGoalTransition ${kind} rejects different goal id`, () => {
+    const currentBase = createThreadGoal("current objective");
+    const nextBase = createThreadGoal("next objective");
+    const shape =
+      kind === "resume_active"
+        ? { current: "paused" as const, next: "active" as const }
+        : kind === "runtime_accounting"
+          ? { current: "active" as const, next: "active" as const }
+          : { current: "active" as const, next: "paused" as const };
+    const current = goalAtStatus(currentBase, shape.current);
+    const next = goalAtStatus(nextBase, shape.next);
+
+    assert.throws(
+      () => planGoalTransition(current, statusSpecificRequest(kind, next)),
+      new RegExp(`Invalid ${kind} transition: goalId mismatch`),
+    );
+  });
+}
+
+test("planGoalTransition runtime accounting rejects complete next goal", () => {
+  const goal = createThreadGoal("ship it");
+  const complete = { ...cloneGoal(goal), status: "complete" as const };
+
+  assert.throws(
+    () =>
+      planGoalTransition(goal, {
+        kind: "runtime_accounting",
+        nextGoal: complete,
+      }),
+    /Invalid runtime_accounting transition: next status must be active or budgetLimited/,
+  );
+});
+
+test("planGoalTransition resume_active rejects unchanged paused shape", () => {
+  const goal = createThreadGoal("ship it");
+  const paused = { ...cloneGoal(goal), status: "paused" as const };
+
+  assert.throws(
+    () => planGoalTransition(paused, { kind: "resume_active", nextGoal: paused }),
+    /Invalid resume_active transition: next status must be active/,
+  );
 });

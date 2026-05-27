@@ -1,5 +1,5 @@
 import { goalsEquivalent } from "./state.js";
-import type { GoalEntrySource, ThreadGoal } from "./types.js";
+import type { GoalEntrySource, GoalStatus, ThreadGoal } from "./types.js";
 
 export type GoalTransitionRequest =
   | {
@@ -177,6 +177,85 @@ const CLEAR_BEFORE_PERSIST: GoalTransitionEffect[] = [
   { type: "clearBudgetWarning" },
 ];
 
+const RUNTIME_ACCOUNTING_STATUSES = new Set<GoalStatus>(["active", "budgetLimited"]);
+
+function transitionInvariantError(kind: string, detail: string): Error {
+  return new Error(`Invalid ${kind} transition: ${detail}`);
+}
+
+function requireCurrentGoal(
+  current: ThreadGoal | null,
+  kind: string,
+): asserts current is ThreadGoal {
+  if (!current) {
+    throw transitionInvariantError(kind, "current goal is required");
+  }
+}
+
+function requireSameGoalId(current: ThreadGoal, nextGoal: ThreadGoal, kind: string): void {
+  if (current.goalId !== nextGoal.goalId) {
+    throw transitionInvariantError(
+      kind,
+      `goalId mismatch (current=${current.goalId}, next=${nextGoal.goalId})`,
+    );
+  }
+}
+
+function validateActiveToPausedTransition(
+  kind: "abort_pause" | "recovery_pause" | "recovery_shutdown_pause",
+  current: ThreadGoal | null,
+  nextGoal: ThreadGoal,
+): void {
+  requireCurrentGoal(current, kind);
+  requireSameGoalId(current, nextGoal, kind);
+  if (current.status !== "active") {
+    throw transitionInvariantError(
+      kind,
+      `current status must be active (got ${current.status})`,
+    );
+  }
+  if (nextGoal.status !== "paused") {
+    throw transitionInvariantError(kind, `next status must be paused (got ${nextGoal.status})`);
+  }
+}
+
+function validateAbortPause(current: ThreadGoal | null, nextGoal: ThreadGoal): void {
+  validateActiveToPausedTransition("abort_pause", current, nextGoal);
+}
+
+function validateResumeActive(current: ThreadGoal | null, nextGoal: ThreadGoal): void {
+  const kind = "resume_active";
+  requireCurrentGoal(current, kind);
+  requireSameGoalId(current, nextGoal, kind);
+  if (current.status !== "paused") {
+    throw transitionInvariantError(
+      kind,
+      `current status must be paused (got ${current.status})`,
+    );
+  }
+  if (nextGoal.status !== "active") {
+    throw transitionInvariantError(kind, `next status must be active (got ${nextGoal.status})`);
+  }
+}
+
+function validateRuntimeAccounting(current: ThreadGoal | null, nextGoal: ThreadGoal): void {
+  const kind = "runtime_accounting";
+  requireCurrentGoal(current, kind);
+  requireSameGoalId(current, nextGoal, kind);
+  if (!RUNTIME_ACCOUNTING_STATUSES.has(current.status)) {
+    throw transitionInvariantError(
+      kind,
+      `current status must be active or budgetLimited (got ${current.status})`,
+    );
+  }
+  if (!RUNTIME_ACCOUNTING_STATUSES.has(nextGoal.status)) {
+    throw transitionInvariantError(
+      kind,
+      `next status must be active or budgetLimited (got ${nextGoal.status})`,
+    );
+  }
+}
+
 export function planGoalTransition(
   current: ThreadGoal | null,
   request: GoalTransitionRequest,
@@ -193,6 +272,7 @@ export function planGoalTransition(
     }
     case "abort_pause": {
       const { nextGoal } = request;
+      validateAbortPause(current, nextGoal);
       if (current && goalsEquivalent(current, nextGoal)) {
         return {
           persist: "skip",
@@ -215,6 +295,7 @@ export function planGoalTransition(
     }
     case "resume_active": {
       const { nextGoal } = request;
+      validateResumeActive(current, nextGoal);
       if (current && goalsEquivalent(current, nextGoal)) {
         return {
           persist: "skip",
@@ -237,6 +318,7 @@ export function planGoalTransition(
     }
     case "recovery_pause": {
       const { nextGoal, recoveryReason } = request;
+      validateActiveToPausedTransition("recovery_pause", current, nextGoal);
       const recoveryEffects: GoalTransitionEffect[] = [
         { type: "clearContinuation" },
         { type: "setRecoveryPausedAttention", reason: recoveryReason },
@@ -263,6 +345,7 @@ export function planGoalTransition(
     }
     case "recovery_shutdown_pause": {
       const { nextGoal, recoveryReason } = request;
+      validateActiveToPausedTransition("recovery_shutdown_pause", current, nextGoal);
       const recoveryEffects: GoalTransitionEffect[] = [
         { type: "clearContinuation" },
         { type: "clearHostOverflowRecovery" },
@@ -290,6 +373,7 @@ export function planGoalTransition(
     }
     case "runtime_accounting": {
       const { nextGoal } = request;
+      validateRuntimeAccounting(current, nextGoal);
       if (current && goalsEquivalent(current, nextGoal)) {
         return {
           persist: "skip",
