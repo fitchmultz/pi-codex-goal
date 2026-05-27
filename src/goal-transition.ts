@@ -195,6 +195,68 @@ function requireSameGoalId(current: ThreadGoal, nextGoal: ThreadGoal, kind: stri
   }
 }
 
+function requireUnchangedObjective(current: ThreadGoal, nextGoal: ThreadGoal, kind: string): void {
+  if (current.objective !== nextGoal.objective) {
+    throw transitionInvariantError(kind, "objective must be unchanged");
+  }
+}
+
+function requireUnchangedTokenBudget(current: ThreadGoal, nextGoal: ThreadGoal, kind: string): void {
+  if (current.tokenBudget !== nextGoal.tokenBudget) {
+    throw transitionInvariantError(kind, "tokenBudget must be unchanged");
+  }
+}
+
+function requireUnchangedCreatedAt(current: ThreadGoal, nextGoal: ThreadGoal, kind: string): void {
+  if (current.createdAt !== nextGoal.createdAt) {
+    throw transitionInvariantError(kind, "createdAt must be unchanged");
+  }
+}
+
+function requireUnchangedUsage(current: ThreadGoal, nextGoal: ThreadGoal, kind: string): void {
+  if (current.usage.tokensUsed !== nextGoal.usage.tokensUsed) {
+    throw transitionInvariantError(kind, "usage.tokensUsed must be unchanged");
+  }
+  if (current.usage.activeSeconds !== nextGoal.usage.activeSeconds) {
+    throw transitionInvariantError(kind, "usage.activeSeconds must be unchanged");
+  }
+}
+
+function requireStatusHelperImmutableFields(
+  current: ThreadGoal,
+  nextGoal: ThreadGoal,
+  kind: string,
+): void {
+  requireUnchangedObjective(current, nextGoal, kind);
+  requireUnchangedTokenBudget(current, nextGoal, kind);
+  requireUnchangedUsage(current, nextGoal, kind);
+  requireUnchangedCreatedAt(current, nextGoal, kind);
+}
+
+function requireNonDecreasingUsage(current: ThreadGoal, nextGoal: ThreadGoal, kind: string): void {
+  if (nextGoal.usage.tokensUsed < current.usage.tokensUsed) {
+    throw transitionInvariantError(kind, "usage.tokensUsed must not decrease");
+  }
+  if (nextGoal.usage.activeSeconds < current.usage.activeSeconds) {
+    throw transitionInvariantError(kind, "usage.activeSeconds must not decrease");
+  }
+}
+
+function requireBudgetLimitedUsageAtOrOverBudget(nextGoal: ThreadGoal, kind: string): void {
+  if (nextGoal.tokenBudget === null) {
+    throw transitionInvariantError(
+      kind,
+      "tokenBudget must be set when next status is budgetLimited",
+    );
+  }
+  if (nextGoal.usage.tokensUsed < nextGoal.tokenBudget) {
+    throw transitionInvariantError(
+      kind,
+      "usage.tokensUsed must be at or above tokenBudget when next status is budgetLimited",
+    );
+  }
+}
+
 function validateActiveToPausedTransition(
   kind: "abort_pause" | "recovery_pause" | "recovery_shutdown_pause",
   current: ThreadGoal | null,
@@ -211,6 +273,7 @@ function validateActiveToPausedTransition(
   if (nextGoal.status !== "paused") {
     throw transitionInvariantError(kind, `next status must be paused (got ${nextGoal.status})`);
   }
+  requireStatusHelperImmutableFields(current, nextGoal, kind);
 }
 
 function validateAbortPause(current: ThreadGoal | null, nextGoal: ThreadGoal): void {
@@ -230,6 +293,7 @@ function validateResumeActive(current: ThreadGoal | null, nextGoal: ThreadGoal):
   if (nextGoal.status !== "active") {
     throw transitionInvariantError(kind, `next status must be active (got ${nextGoal.status})`);
   }
+  requireStatusHelperImmutableFields(current, nextGoal, kind);
 }
 
 function validateRuntimeAccounting(current: ThreadGoal | null, nextGoal: ThreadGoal): void {
@@ -242,11 +306,30 @@ function validateRuntimeAccounting(current: ThreadGoal | null, nextGoal: ThreadG
       `current status must be active or budgetLimited (got ${current.status})`,
     );
   }
+  if (nextGoal.status === "paused" || nextGoal.status === "complete") {
+    throw transitionInvariantError(
+      kind,
+      `next status must be active or budgetLimited (got ${nextGoal.status})`,
+    );
+  }
   if (!RUNTIME_ACCOUNTING_STATUSES.has(nextGoal.status)) {
     throw transitionInvariantError(
       kind,
       `next status must be active or budgetLimited (got ${nextGoal.status})`,
     );
+  }
+  if (current.status === "budgetLimited" && nextGoal.status === "active") {
+    throw transitionInvariantError(
+      kind,
+      "budgetLimited goals cannot transition to active via runtime accounting",
+    );
+  }
+  requireUnchangedObjective(current, nextGoal, kind);
+  requireUnchangedTokenBudget(current, nextGoal, kind);
+  requireUnchangedCreatedAt(current, nextGoal, kind);
+  requireNonDecreasingUsage(current, nextGoal, kind);
+  if (nextGoal.status === "budgetLimited") {
+    requireBudgetLimitedUsageAtOrOverBudget(nextGoal, kind);
   }
 }
 

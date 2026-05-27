@@ -468,6 +468,45 @@ function goalAtStatus(base: ThreadGoal, status: GoalStatus): ThreadGoal {
   return { ...cloneGoal(base), status };
 }
 
+function runtimeAccountingMatrixNext(current: ThreadGoal, nextStatus: GoalStatus): ThreadGoal {
+  if (nextStatus === "active") {
+    const next = cloneGoal(current);
+    next.status = "active";
+    next.updatedAt = current.updatedAt + 1;
+    if (next.usage.tokensUsed <= current.usage.tokensUsed) {
+      next.usage = {
+        tokensUsed: current.usage.tokensUsed + 1,
+        activeSeconds: current.usage.activeSeconds,
+      };
+    }
+    return next;
+  }
+
+  const budget = current.tokenBudget ?? 10;
+  return {
+    ...cloneGoal(current),
+    status: "budgetLimited",
+    usage: {
+      tokensUsed: Math.max(current.usage.tokensUsed + 1, budget),
+      activeSeconds: current.usage.activeSeconds,
+    },
+    updatedAt: current.updatedAt + 1,
+  };
+}
+
+function statusSpecificMatrixNext(
+  base: ThreadGoal,
+  kind: (typeof STATUS_SPECIFIC_VARIANTS)[number],
+  currentStatus: GoalStatus,
+  nextStatus: GoalStatus,
+): ThreadGoal {
+  const current = goalAtStatus(base, currentStatus);
+  if (kind === "runtime_accounting") {
+    return runtimeAccountingMatrixNext(current, nextStatus);
+  }
+  return goalAtStatus(base, nextStatus);
+}
+
 function statusSpecificRequest(
   kind:
     | "abort_pause"
@@ -522,6 +561,15 @@ function isValidStatusSpecificTransition(
     case "resume_active":
       return currentStatus === "paused" && nextStatus === "active";
     case "runtime_accounting":
+      if (currentStatus === "paused" || currentStatus === "complete") {
+        return false;
+      }
+      if (nextStatus === "paused" || nextStatus === "complete") {
+        return false;
+      }
+      if (currentStatus === "budgetLimited" && nextStatus === "active") {
+        return false;
+      }
       return (
         (currentStatus === "active" || currentStatus === "budgetLimited") &&
         (nextStatus === "active" || nextStatus === "budgetLimited")
@@ -552,7 +600,10 @@ for (const kind of STATUS_SPECIFIC_VARIANTS) {
         () => {
           const base = createThreadGoal("ship it", kind === "runtime_accounting" ? 10 : undefined);
           const current = goalAtStatus(base, currentStatus);
-          const next = goalAtStatus(base, nextStatus);
+          const next =
+            valid && kind === "runtime_accounting"
+              ? statusSpecificMatrixNext(base, kind, currentStatus, nextStatus)
+              : goalAtStatus(base, nextStatus);
           const request = statusSpecificRequest(kind, next);
 
           if (!valid) {
@@ -616,5 +667,173 @@ test("planGoalTransition resume_active rejects unchanged paused shape", () => {
   assert.throws(
     () => planGoalTransition(paused, { kind: "resume_active", nextGoal: paused }),
     /Invalid resume_active transition: next status must be active/,
+  );
+});
+
+const STATUS_HELPER_PAUSE_KINDS = [
+  "abort_pause",
+  "recovery_pause",
+  "recovery_shutdown_pause",
+] as const;
+
+function legalActiveToPausedNext(current: ThreadGoal): ThreadGoal {
+  return { ...cloneGoal(current), status: "paused", updatedAt: current.updatedAt + 1 };
+}
+
+function legalPausedToActiveNext(current: ThreadGoal): ThreadGoal {
+  return { ...cloneGoal(current), status: "active", updatedAt: current.updatedAt + 1 };
+}
+
+function legalRuntimeAccountingNext(current: ThreadGoal): ThreadGoal {
+  return {
+    ...cloneGoal(current),
+    usage: {
+      tokensUsed: current.usage.tokensUsed + 1,
+      activeSeconds: current.usage.activeSeconds,
+    },
+    updatedAt: current.updatedAt + 1,
+  };
+}
+
+for (const kind of STATUS_HELPER_PAUSE_KINDS) {
+  for (const field of ["objective", "tokenBudget", "usage", "createdAt"] as const) {
+    test(`planGoalTransition ${kind} rejects malformed same-id ${field} mutation`, () => {
+      const current = createThreadGoal("ship it", 10);
+      const next = legalActiveToPausedNext(current);
+      switch (field) {
+        case "objective":
+          next.objective = "mutated objective";
+          break;
+        case "tokenBudget":
+          next.tokenBudget = 99;
+          break;
+        case "usage":
+          next.usage = { tokensUsed: 99, activeSeconds: 99 };
+          break;
+        case "createdAt":
+          next.createdAt = current.createdAt + 1;
+          break;
+        default: {
+          const _exhaustive: never = field;
+          throw new Error(`Unhandled field: ${String(_exhaustive)}`);
+        }
+      }
+
+      assert.throws(
+        () => planGoalTransition(current, statusSpecificRequest(kind, next)),
+        new RegExp(`Invalid ${kind} transition:`),
+      );
+    });
+  }
+}
+
+for (const field of ["objective", "tokenBudget", "usage", "createdAt"] as const) {
+  test(`planGoalTransition resume_active rejects malformed same-id ${field} mutation`, () => {
+    const current = { ...createThreadGoal("ship it", 10), status: "paused" as const };
+    const next = legalPausedToActiveNext(current);
+    switch (field) {
+      case "objective":
+        next.objective = "mutated objective";
+        break;
+      case "tokenBudget":
+        next.tokenBudget = 99;
+        break;
+      case "usage":
+        next.usage = { tokensUsed: 99, activeSeconds: 99 };
+        break;
+      case "createdAt":
+        next.createdAt = current.createdAt + 1;
+        break;
+      default: {
+        const _exhaustive: never = field;
+        throw new Error(`Unhandled field: ${String(_exhaustive)}`);
+      }
+    }
+
+    assert.throws(
+      () => planGoalTransition(current, { kind: "resume_active", nextGoal: next }),
+      /Invalid resume_active transition:/,
+    );
+  });
+}
+
+for (const field of ["objective", "tokenBudget", "createdAt"] as const) {
+  test(`planGoalTransition runtime_accounting rejects malformed same-id ${field} mutation`, () => {
+    const current = createThreadGoal("ship it", 10);
+    const next = legalRuntimeAccountingNext(current);
+    switch (field) {
+      case "objective":
+        next.objective = "mutated objective";
+        break;
+      case "tokenBudget":
+        next.tokenBudget = 99;
+        break;
+      case "createdAt":
+        next.createdAt = current.createdAt + 1;
+        break;
+      default: {
+        const _exhaustive: never = field;
+        throw new Error(`Unhandled field: ${String(_exhaustive)}`);
+      }
+    }
+
+    assert.throws(
+      () =>
+        planGoalTransition(current, {
+          kind: "runtime_accounting",
+          nextGoal: next,
+        }),
+      /Invalid runtime_accounting transition:/,
+    );
+  });
+}
+
+test("planGoalTransition runtime_accounting rejects usage decrease", () => {
+  const current = {
+    ...createThreadGoal("ship it", 10),
+    usage: { tokensUsed: 5, activeSeconds: 2 },
+  };
+  const next = {
+    ...cloneGoal(current),
+    usage: { tokensUsed: 4, activeSeconds: 2 },
+    updatedAt: current.updatedAt + 1,
+  };
+
+  assert.throws(
+    () => planGoalTransition(current, { kind: "runtime_accounting", nextGoal: next }),
+    /Invalid runtime_accounting transition: usage\.tokensUsed must not decrease/,
+  );
+});
+
+test("planGoalTransition runtime_accounting rejects under-budget budgetLimited next", () => {
+  const current = createThreadGoal("ship it", 10);
+  const next = {
+    ...cloneGoal(current),
+    status: "budgetLimited" as const,
+    usage: { tokensUsed: 5, activeSeconds: 0 },
+    updatedAt: current.updatedAt + 1,
+  };
+
+  assert.throws(
+    () => planGoalTransition(current, { kind: "runtime_accounting", nextGoal: next }),
+    /Invalid runtime_accounting transition: usage\.tokensUsed must be at or above tokenBudget/,
+  );
+});
+
+test("planGoalTransition runtime_accounting rejects budgetLimited to active", () => {
+  const current = {
+    ...createThreadGoal("ship it", 10),
+    status: "budgetLimited" as const,
+    usage: { tokensUsed: 10, activeSeconds: 0 },
+  };
+  const next = {
+    ...cloneGoal(current),
+    status: "active" as const,
+    updatedAt: current.updatedAt + 1,
+  };
+
+  assert.throws(
+    () => planGoalTransition(current, { kind: "runtime_accounting", nextGoal: next }),
+    /Invalid runtime_accounting transition: budgetLimited goals cannot transition to active/,
   );
 });
