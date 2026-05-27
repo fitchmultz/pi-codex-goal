@@ -12,6 +12,12 @@ import {
 import { compactContinuationPrompt, continuationGoalIdFromPrompt } from "./prompts.js";
 import { isCommandResumeQueuedGoalMessage } from "./queued-goal-messages.js";
 import {
+  applyGoalMemoryEffects,
+  planGoalTransition,
+  planMemoryEffectsOnGoalChange,
+  type GoalTransitionRequest,
+} from "./goal-transition.js";
+import {
   applyQueuedGoalProviderContextRewrites,
   extensionQueuedGoalWorkMessageId,
   extensionQueuedGoalWorkMessageIdForRuntime,
@@ -218,30 +224,78 @@ export default function (pi: ExtensionAPI): void {
   }): string | null =>
     extensionQueuedGoalWorkMessageIdForRuntime(message, continuationGoalIdFromRuntimePrompt);
 
-  const applyGoalSideEffects = (nextGoal: ThreadGoal): void => {
-    const previousGoalId = goal?.goalId ?? null;
-    if (previousGoalId !== nextGoal.goalId) {
+  const goalMemoryHandlers = {
+    resetStoppedRuntime: clearStoppedRuntimeState,
+    clearContinuation: clearContinuationState,
+    clearActiveAccounting,
+    resetRecovery: resetErrorRecovery,
+    clearBudgetWarning: () => {
       accounting.budgetWarningSentFor = null;
-      clearStoppedRuntimeState();
-    }
-    if (nextGoal.status === "complete") {
-      clearStoppedRuntimeState();
-    } else if (nextGoal.status === "paused") {
-      clearContinuationState();
-      clearActiveAccounting();
-    } else if (nextGoal.status === "budgetLimited") {
-      clearContinuationState();
-      clearActiveAccounting();
-      resetErrorRecovery();
-    }
-    if (nextGoal.status !== "budgetLimited") {
-      accounting.budgetWarningSentFor = null;
-    }
+    },
   };
 
   const setGoalInMemory = (nextGoal: ThreadGoal): void => {
-    applyGoalSideEffects(nextGoal);
+    applyGoalMemoryEffects(planMemoryEffectsOnGoalChange(goal, nextGoal), goalMemoryHandlers);
     goal = nextGoal;
+  };
+
+  const applyGoalTransition = (
+    request: GoalTransitionRequest,
+    ctx: StatusContext | null,
+  ): boolean => {
+    const plan = planGoalTransition(goal, request);
+    if (!plan) {
+      return false;
+    }
+
+    if (plan.resetRecoveryBeforePersist) {
+      resetErrorRecovery();
+    }
+    if (plan.clearContinuationBeforePersist) {
+      clearContinuationState();
+    }
+    if (plan.clearHostOverflowRecovery) {
+      clearActiveHostOverflowRecovery(recoveryState);
+    }
+    if (plan.recoveryPausedReason) {
+      setRecoveryPausedAttention(recoveryState, plan.recoveryPausedReason);
+    }
+
+    if (plan.persist === "clear") {
+      const clearedGoalId = goal?.goalId ?? null;
+      applyGoalMemoryEffects(plan.memory, goalMemoryHandlers);
+      goal = null;
+      lastPersistedGoal = null;
+      lastRuntimePersistAt = null;
+      if (plan.stopStatusRefresh) {
+        stopStatusRefresh();
+      }
+      pi.appendEntry(CUSTOM_ENTRY_TYPE, clearEntry(clearedGoalId, plan.source));
+      if (plan.refreshUi && ctx) {
+        refreshUi(ctx);
+      }
+      return true;
+    }
+
+    if (plan.persist === "skip") {
+      return false;
+    }
+
+    applyGoalMemoryEffects(plan.memory, goalMemoryHandlers);
+    goal = plan.nextGoal;
+    const persisted = flushGoalPersistence(plan.source);
+
+    if (plan.resetRecoveryAfterPersist) {
+      resetErrorRecovery();
+    }
+    if (plan.markContinuationQueued && plan.nextGoal) {
+      continuationQueuedFor = plan.nextGoal.goalId;
+    }
+    if (plan.refreshUi && ctx) {
+      refreshUi(ctx);
+    }
+
+    return persisted;
   };
 
   const flushGoalPersistence = (source: GoalEntrySource): boolean => {
@@ -269,25 +323,6 @@ export default function (pi: ExtensionAPI): void {
     flushGoalPersistence(source);
   };
 
-  const persistGoal = (nextGoal: ThreadGoal, source: GoalEntrySource): boolean => {
-    if (goal && goalsEquivalent(goal, nextGoal)) {
-      return false;
-    }
-
-    setGoalInMemory(nextGoal);
-    return flushGoalPersistence(source);
-  };
-
-  const persistClear = (source: GoalEntrySource): void => {
-    const clearedGoalId = goal?.goalId ?? null;
-    goal = null;
-    lastPersistedGoal = null;
-    lastRuntimePersistAt = null;
-    clearStoppedRuntimeState();
-    stopStatusRefresh();
-    pi.appendEntry(CUSTOM_ENTRY_TYPE, clearEntry(clearedGoalId, source));
-  };
-
   const pauseForAbort = (ctx: ExtensionContext): void => {
     if (!goal || goal.status !== "active") {
       return;
@@ -298,9 +333,7 @@ export default function (pi: ExtensionAPI): void {
       return;
     }
 
-    clearStoppedRuntimeState();
-    persistGoal(result.goal, "runtime");
-    refreshUi(ctx);
+    applyGoalTransition({ kind: "abort_pause", nextGoal: result.goal }, ctx);
   };
 
   const resumePausedGoal = (ctx: ExtensionContext): void => {
@@ -313,10 +346,7 @@ export default function (pi: ExtensionAPI): void {
       return;
     }
 
-    resetErrorRecovery();
-    clearContinuationState();
-    persistGoal(result.goal, "runtime");
-    refreshUi(ctx);
+    applyGoalTransition({ kind: "resume_active", nextGoal: result.goal }, ctx);
   };
 
   const persistHostOverflowUserReset = (needsReset: boolean): void => {
@@ -364,8 +394,7 @@ export default function (pi: ExtensionAPI): void {
     if (goal && goalsEquivalent(goal, result.goal)) {
       return result;
     }
-    persistGoal(result.goal, source);
-    refreshUi(ctx);
+    applyGoalTransition({ kind: "set", nextGoal: result.goal, source }, ctx);
     return result;
   };
 
@@ -431,7 +460,7 @@ export default function (pi: ExtensionAPI): void {
       if (!result.ok || !result.goal) {
         return;
       }
-      persistGoal(result.goal, "runtime");
+      applyGoalTransition({ kind: "recovery_pause", nextGoal: result.goal }, ctx);
     },
     refreshUi,
     maybeContinue,
@@ -452,11 +481,14 @@ export default function (pi: ExtensionAPI): void {
       return;
     }
 
-    clearContinuationState();
-    clearActiveHostOverflowRecovery(recoveryState);
-    setRecoveryPausedAttention(recoveryState, reason);
-    persistGoal(result.goal, "runtime");
-    refreshUi(ctx);
+    applyGoalTransition(
+      {
+        kind: "recovery_shutdown_pause",
+        nextGoal: result.goal,
+        recoveryReason: reason,
+      },
+      ctx,
+    );
   };
 
   const beginOverflowRecoveryAttention = (ctx: ExtensionContext): void => {
@@ -485,8 +517,7 @@ export default function (pi: ExtensionAPI): void {
   registerGoalTools(pi, {
     getGoal: () => goalForDisplay(),
     setGoal(nextGoal, source, ctx) {
-      persistGoal(nextGoal, source);
-      refreshUi(ctx);
+      applyGoalTransition({ kind: "set", nextGoal, source }, ctx);
     },
     completeGoal,
   });
@@ -495,23 +526,15 @@ export default function (pi: ExtensionAPI): void {
     getGoal: () => goalForDisplay(),
     getGoalStartTurnStrategy: () => goalStartTurnStrategy(recoveryState.phase),
     setGoal(nextGoal, source, ctx) {
-      const wasPaused = goal?.status === "paused";
-      persistGoal(nextGoal, source);
-      if (source === "command") {
-        if (nextGoal.status === "active") {
-          if (wasPaused) {
-            resetErrorRecovery();
-          }
-          continuationQueuedFor = nextGoal.goalId;
-        } else if (nextGoal.status === "paused") {
-          resetErrorRecovery();
-        }
-      }
-      refreshUi(ctx);
+      applyGoalTransition({
+        kind: "set",
+        nextGoal,
+        source,
+        wasPausedBefore: goal?.status === "paused",
+      }, ctx);
     },
     clearGoal(source, ctx) {
-      persistClear(source);
-      refreshUi(ctx);
+      applyGoalTransition({ kind: "clear", source }, ctx);
     },
   });
 
