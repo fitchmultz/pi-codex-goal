@@ -62,7 +62,6 @@ export function createGoalPersistence(deps: GoalPersistenceDeps) {
 
   return {
     appendClearEntry,
-    clearGoalSnapshot,
     flushGoalPersistence,
     getGoal,
     maybeFlushRuntimePersistence,

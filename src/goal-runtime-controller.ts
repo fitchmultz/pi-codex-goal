@@ -59,10 +59,32 @@ import {
 import type { StaleQueuedWorkEffect } from "./stale-queued-work-guard.js";
 import { goalWithLiveUsage, updateGoalStatus } from "./state.js";
 import { registerGoalTools } from "./tools.js";
-import type { GoalEntrySource, GoalResult } from "./types.js";
+import type { GoalEntrySource, GoalResult, ThreadGoal } from "./types.js";
+import type { GoalStartTurnStrategy } from "./recovery-machine.js";
 import { registerGoalRuntimeEvents } from "./goal-runtime-events.js";
 
-export function createGoalRuntimeController(pi: ExtensionAPI) {
+export interface GoalRuntimeController {
+  getGoalForDisplay(): ThreadGoal | null;
+  getGoalStartTurnStrategy(): GoalStartTurnStrategy;
+  setGoal(goal: ThreadGoal, source: GoalEntrySource, ctx: ExtensionContext): void;
+  clearGoal(source: GoalEntrySource, ctx: ExtensionContext): void;
+  completeGoal(source: GoalEntrySource, ctx: ExtensionContext): GoalResult;
+  onInput: ExtensionHandler<InputEvent, InputEventResult>;
+  onContext: ExtensionHandler<ContextEvent, ContextEventResult | undefined>;
+  onSessionStart: ExtensionHandler<SessionStartEvent>;
+  onSessionTree: ExtensionHandler<SessionTreeEvent>;
+  onBeforeAgentStart: ExtensionHandler<BeforeAgentStartEvent, undefined>;
+  onMessageStart: ExtensionHandler<MessageStartEvent>;
+  onTurnStart: ExtensionHandler<TurnStartEvent>;
+  onToolExecutionEnd: ExtensionHandler<ToolExecutionEndEvent>;
+  onTurnEnd: ExtensionHandler<TurnEndEvent>;
+  onAgentEnd: ExtensionHandler<AgentEndEvent>;
+  onSessionBeforeCompact: ExtensionHandler<SessionBeforeCompactEvent>;
+  onSessionCompact: ExtensionHandler<SessionCompactEvent>;
+  onSessionShutdown: ExtensionHandler<SessionShutdownEvent>;
+}
+
+export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeController {
   const runtimeState = createGoalRuntimeState();
   const persistence = createGoalPersistence({ pi });
 
@@ -225,12 +247,6 @@ export function createGoalRuntimeController(pi: ExtensionAPI) {
     );
   };
 
-  const beginOverflowRecoveryAttention = (ctx: ExtensionContext): void => {
-    if (recoveryRuntime.beginOverflowRecovery(ctx)) {
-      stateController.persistHostOverflowUserReset(true, { recoveryStateAlreadyApplied: true });
-    }
-  };
-
   const recordAssistantContextOverflow = (
     message: AssistantErrorMessage,
     ctx: ExtensionContext,
@@ -239,7 +255,7 @@ export function createGoalRuntimeController(pi: ExtensionAPI) {
       return false;
     }
 
-    beginOverflowRecoveryAttention(ctx);
+    stateController.beginOverflowRecovery(ctx);
     if (isErrorAssistantMessage(message)) {
       recoveryRuntime.handlePersistentAssistantError(message, ctx);
     } else {
@@ -248,16 +264,8 @@ export function createGoalRuntimeController(pi: ExtensionAPI) {
     return true;
   };
 
-  registerGoalTools(pi, {
-    getGoal: () => goalForDisplay(),
-    setGoal(nextGoal, source, ctx) {
-      stateController.applyGoalTransition({ kind: "set", nextGoal, source }, ctx);
-    },
-    completeGoal,
-  });
-
-  registerGoalCommand(pi, {
-    getGoal: () => goalForDisplay(),
+  return {
+    getGoalForDisplay: goalForDisplay,
     getGoalStartTurnStrategy: () => goalStartTurnStrategy(runtimeState.recoveryState.phase),
     setGoal(nextGoal, source, ctx) {
       stateController.applyGoalTransition({ kind: "set", nextGoal, source }, ctx);
@@ -265,9 +273,7 @@ export function createGoalRuntimeController(pi: ExtensionAPI) {
     clearGoal(source, ctx) {
       stateController.applyGoalTransition({ kind: "clear", source }, ctx);
     },
-  });
-
-  return {
+    completeGoal,
     onInput: (async (event, ctx) => {
       continuation.clearPassthroughContinuationInput();
       const continuationGoalId = continuationGoalIdFromPrompt(event.text);
@@ -369,7 +375,7 @@ export function createGoalRuntimeController(pi: ExtensionAPI) {
       return undefined;
     }) satisfies ExtensionHandler<BeforeAgentStartEvent, undefined>,
 
-    onMessageStart: (async (event) => {
+    onMessageStart: (async (event, _ctx) => {
       if (event.message.role === "user") {
         stateController.persistHostOverflowUserReset(false);
       }
@@ -438,7 +444,7 @@ export function createGoalRuntimeController(pi: ExtensionAPI) {
         return;
       }
       if (isAssistantContextOverflow(event.message, getContextWindow(ctx))) {
-        beginOverflowRecoveryAttention(ctx);
+        stateController.beginOverflowRecovery(ctx);
         return;
       }
       recoveryRuntime.finishSuccessfulAssistantTurn(event.message, ctx, {
@@ -532,9 +538,18 @@ export function createGoalRuntimeController(pi: ExtensionAPI) {
   };
 }
 
-export type GoalRuntimeController = ReturnType<typeof createGoalRuntimeController>;
-
 export function registerGoalRuntimeController(pi: ExtensionAPI): void {
   const controller = createGoalRuntimeController(pi);
+  registerGoalTools(pi, {
+    getGoal: () => controller.getGoalForDisplay(),
+    setGoal: controller.setGoal.bind(controller),
+    completeGoal: controller.completeGoal.bind(controller),
+  });
+  registerGoalCommand(pi, {
+    getGoal: () => controller.getGoalForDisplay(),
+    getGoalStartTurnStrategy: controller.getGoalStartTurnStrategy.bind(controller),
+    setGoal: controller.setGoal.bind(controller),
+    clearGoal: controller.clearGoal.bind(controller),
+  });
   registerGoalRuntimeEvents(pi, controller);
 }

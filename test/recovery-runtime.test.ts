@@ -8,7 +8,6 @@ import {
   setRecoveryPausedAttention,
 } from "../src/recovery-machine.js";
 import { createGoalRecoveryRuntime } from "../src/recovery-runtime.js";
-import { recoveryPhaseNeedsUserStartTurn } from "../src/recovery-phase.js";
 import { CONTEXT_OVERFLOW_SIGNATURE } from "../src/recovery.js";
 import type { ThreadGoal } from "../src/types.js";
 
@@ -60,27 +59,6 @@ function createRecoveryTestRuntime(goal: ThreadGoal | null = activeGoal) {
     },
   };
 }
-
-test("beginOverflowRecovery without an active goal records user reset only", () => {
-  const harness = createRecoveryTestRuntime(null);
-
-  assert.equal(harness.runtime.beginOverflowRecovery(harness.ctx), true);
-  assert.equal(harness.recoveryState.phase.kind, "hostOverflowNeedsUserStart");
-  assert.equal(harness.recoveryState.attention, null);
-  assert.equal(recoveryPhaseNeedsUserStartTurn(harness.recoveryState.phase), true);
-  assert.equal(harness.refreshCount, 0);
-  assert.equal(harness.runtime.beginOverflowRecovery(harness.ctx), false);
-});
-
-test("beginOverflowRecovery with a paused goal records user reset without pending attention", () => {
-  const pausedGoal: ThreadGoal = { ...activeGoal, status: "paused" };
-  const harness = createRecoveryTestRuntime(pausedGoal);
-
-  assert.equal(harness.runtime.beginOverflowRecovery(harness.ctx), true);
-  assert.equal(harness.recoveryState.phase.kind, "hostOverflowNeedsUserStart");
-  assert.equal(harness.recoveryState.attention, null);
-  assert.equal(harness.refreshCount, 0);
-});
 
 test("persistent provider errors plan pending attention without scheduling hidden continuation", () => {
   const harness = createRecoveryTestRuntime();

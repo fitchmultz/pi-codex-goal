@@ -1,13 +1,11 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import {
-  beginHostOverflowRecovery,
   onRecoverySessionCompact,
   onRecoverySuccessfulTurn,
   onRecoveryUserInput,
   planRecoveryForAssistantError,
   planRecoveryForSilentContextOverflow,
-  requireHostOverflowUserReset,
   setRecoveryPendingAttention,
   type GoalRecoveryMachineState,
   type RecoveryAction,
@@ -76,20 +74,6 @@ export function createGoalRecoveryRuntime(deps: RecoveryRuntimeDeps) {
     applyRecoveryAction(planRecoveryForSilentContextOverflow(deps.getRecoveryState()), ctx);
   };
 
-  const beginOverflowRecovery = (ctx: ExtensionContext): boolean => {
-    const goal = deps.getGoal();
-    const hasActiveGoal = Boolean(goal && goal.status === "active");
-
-    if (hasActiveGoal) {
-      deps.clearContinuationState();
-      const { persistHostOverflowCapReset } = beginHostOverflowRecovery(deps.getRecoveryState());
-      deps.refreshUi(ctx);
-      return persistHostOverflowCapReset;
-    }
-
-    return requireHostOverflowUserReset(deps.getRecoveryState());
-  };
-
   const finishSuccessfulAssistantTurn = (
     message: AssistantErrorMessage,
     ctx: ExtensionContext,
@@ -110,7 +94,6 @@ export function createGoalRecoveryRuntime(deps: RecoveryRuntimeDeps) {
     onSessionCompact: () => {
       onRecoverySessionCompact(deps.getRecoveryState());
     },
-    beginOverflowRecovery,
     handlePersistentAssistantError,
     handleSilentContextOverflow,
     finishSuccessfulAssistantTurn,
