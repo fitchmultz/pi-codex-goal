@@ -20,9 +20,9 @@ export type StaleQueuedWorkLifecycleKind =
   | "abortingTurn"
   | "awaitingTerminalCleanup";
 
-/** One stale abort's pending agent_end: match by goalId, or id-less terminal when goalId is absent. */
+/** One stale abort's pending agent_end: match any goalId in the set, or an id-less stale terminal. */
 type AgentEndObligation = {
-  goalId?: string;
+  goalIds: Set<string>;
 };
 
 type TerminalCleanup = {
@@ -104,21 +104,17 @@ function isStaleTerminalAssistantMessage(message: {
 }
 
 function obligationsForStaleAbort(staleGoalIds: ReadonlySet<string>): AgentEndObligation[] {
-  const obligations: AgentEndObligation[] = [];
-  for (const goalId of staleGoalIds) {
-    obligations.push({ goalId });
+  if (staleGoalIds.size === 0) {
+    return [];
   }
-  if (staleGoalIds.size > 0) {
-    obligations.push({});
-  }
-  return obligations;
+  return [{ goalIds: new Set(staleGoalIds) }];
 }
 
 function pendingGoalIdsFromObligations(obligations: readonly AgentEndObligation[]): Set<string> {
   const goalIds = new Set<string>();
   for (const obligation of obligations) {
-    if (obligation.goalId !== undefined) {
-      goalIds.add(obligation.goalId);
+    for (const goalId of obligation.goalIds) {
+      goalIds.add(goalId);
     }
   }
   return goalIds;
@@ -131,11 +127,57 @@ function allPendingGoalIds(cleanup: TerminalCleanup): Set<string> {
   ]);
 }
 
-function removeFirstGoalObligation(
+function obligationMatchesAnyGoal(
+  obligation: AgentEndObligation,
+  matchedGoalIds: ReadonlySet<string>,
+): boolean {
+  for (const goalId of obligation.goalIds) {
+    if (matchedGoalIds.has(goalId)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function consumeObligationsForMatchedGoals(
+  obligations: AgentEndObligation[],
+  matchedGoalIds: readonly string[],
+): boolean {
+  if (matchedGoalIds.length === 0) {
+    return false;
+  }
+  const remaining = new Set(matchedGoalIds);
+  let consumed = false;
+
+  for (let index = 0; index < obligations.length && remaining.size > 0; ) {
+    const obligation = obligations[index]!;
+    if (!obligationMatchesAnyGoal(obligation, remaining)) {
+      index += 1;
+      continue;
+    }
+    for (const goalId of obligation.goalIds) {
+      remaining.delete(goalId);
+    }
+    obligations.splice(index, 1);
+    consumed = true;
+  }
+
+  return consumed;
+}
+
+function removeFirstObligation(obligations: AgentEndObligation[]): boolean {
+  if (obligations.length === 0) {
+    return false;
+  }
+  obligations.shift();
+  return true;
+}
+
+function removeFirstObligationContainingGoal(
   obligations: AgentEndObligation[],
   goalId: string,
 ): boolean {
-  const index = obligations.findIndex((obligation) => obligation.goalId === goalId);
+  const index = obligations.findIndex((obligation) => obligation.goalIds.has(goalId));
   if (index === -1) {
     return false;
   }
@@ -143,13 +185,25 @@ function removeFirstGoalObligation(
   return true;
 }
 
-function removeFirstAnonymousObligation(obligations: AgentEndObligation[]): boolean {
-  const index = obligations.findIndex((obligation) => obligation.goalId === undefined);
-  if (index === -1) {
-    return false;
+function consumeAbortingTurnObligationsForMatchedGoals(
+  older: AgentEndObligation[],
+  active: AgentEndObligation[],
+  matchedGoalIds: readonly string[],
+): { consumedOlder: boolean; consumedActiveGoalMatch: boolean } {
+  let consumedOlder = false;
+  let consumedActiveGoalMatch = false;
+
+  for (const goalId of matchedGoalIds) {
+    if (removeFirstObligationContainingGoal(older, goalId)) {
+      consumedOlder = true;
+      continue;
+    }
+    if (removeFirstObligationContainingGoal(active, goalId)) {
+      consumedActiveGoalMatch = true;
+    }
   }
-  obligations.splice(index, 1);
-  return true;
+
+  return { consumedOlder, consumedActiveGoalMatch };
 }
 
 function matchesAnonymousStaleAgentEnd(
@@ -298,14 +352,11 @@ function consumePendingStaleAgentEnd(
 ): boolean {
   const pendingGoalIds = pendingGoalIdsFromObligations(cleanup.olderAgentEndObligations);
   const matchedGoalIds = pendingStaleQueuedGoalWorkIdsFromMessages(messages, pendingGoalIds);
-  if (matchedGoalIds.length > 0) {
-    for (const goalId of matchedGoalIds) {
-      removeFirstGoalObligation(cleanup.olderAgentEndObligations, goalId);
-    }
+  if (consumeObligationsForMatchedGoals(cleanup.olderAgentEndObligations, matchedGoalIds)) {
     return true;
   }
   return matchesAnonymousStaleAgentEnd(messages)
-    ? removeFirstAnonymousObligation(cleanup.olderAgentEndObligations)
+    ? removeFirstObligation(cleanup.olderAgentEndObligations)
     : false;
 }
 
@@ -362,24 +413,17 @@ export function createStaleQueuedWorkGuard(): StaleQueuedWorkGuard {
       allPendingGoalIds(terminalCleanup),
     );
 
-    let consumedOlder = false;
-    let consumedActiveGoalMatch = false;
-
-    for (const goalId of matchedGoalIds) {
-      if (removeFirstGoalObligation(older, goalId)) {
-        consumedOlder = true;
-        continue;
-      }
-      if (removeFirstGoalObligation(active, goalId)) {
-        consumedActiveGoalMatch = true;
-      }
-    }
+    let { consumedOlder, consumedActiveGoalMatch } = consumeAbortingTurnObligationsForMatchedGoals(
+      older,
+      active,
+      matchedGoalIds,
+    );
 
     let finishActive = consumedActiveGoalMatch;
     if (matchesAnonymousStaleAgentEnd(messages)) {
-      if (removeFirstAnonymousObligation(older)) {
+      if (removeFirstObligation(older)) {
         consumedOlder = true;
-      } else if (removeFirstAnonymousObligation(active)) {
+      } else if (removeFirstObligation(active)) {
         finishActive = true;
       }
     }

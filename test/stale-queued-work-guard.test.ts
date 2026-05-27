@@ -260,16 +260,40 @@ test("awaitingTerminalCleanup: late id-less agent_end with error after abort rel
   assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
 });
 
-test("awaitingTerminalCleanup: current id-less agent_end is not swallowed without pending anonymous obligation", () => {
+test("awaitingTerminalCleanup: goal-bearing agent_end clears obligation without leaving anonymous slot", () => {
   const guard = createStaleQueuedWorkGuard();
   guard.noteStaleWorkStarted("goal-1");
   guard.planContextAbort(0);
   guard.planUserInputClearAbort();
+
+  const staleGoalEnd = guard.planAgentEnd([
+    {
+      role: "custom",
+      customType: CUSTOM_ENTRY_TYPE,
+      details: { kind: "continuation", goalId: "goal-1" },
+    },
+    abortedAssistant,
+  ]);
+  assert.equal(staleGoalEnd.skip, true);
+  assert.deepEqual(effectTypes(staleGoalEnd), ["refreshUi"]);
+  assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
+
+  const currentIdLess = guard.planAgentEnd([stoppedAssistant]);
+  assert.deepEqual(currentIdLess, { skip: false, effects: [] });
+  assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
+});
+
+test("awaitingTerminalCleanup: current id-less agent_end is not swallowed without pending agent_end obligation", () => {
+  const guard = createStaleQueuedWorkGuard();
+  guard.noteStaleWorkStarted("goal-1");
+  guard.planContextAbort(0);
+  guard.planUserInputClearAbort();
+  guard.planTurnEnd(0, abortedAssistant);
   guard.planAgentEnd([abortedAssistant]);
 
   const plan = guard.planAgentEnd([stoppedAssistant]);
   assert.deepEqual(plan, { skip: false, effects: [] });
-  assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
+  assert.equal(guard.lifecycleKind(), "idle");
 });
 
 test("planTurnStart is a no-op when idle", () => {
@@ -646,6 +670,28 @@ test("abortingTurn: duplicate same-goal stale aborts consume older agent_end fir
   assert.deepEqual(effectTypes(activePlan), ["clearAccounting", "refreshUi"]);
   assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
   assert.equal(guard.isBlockingContinuation(), false);
+});
+
+test("abortingTurn: goal-bearing agent_end clears active obligation without anonymous remainder", () => {
+  const guard = createStaleQueuedWorkGuard();
+  guard.noteStaleWorkStarted("goal-1");
+  guard.planContextAbort(1);
+
+  const staleGoalEnd = guard.planAgentEnd([
+    {
+      role: "custom",
+      customType: CUSTOM_ENTRY_TYPE,
+      details: { kind: "continuation", goalId: "goal-1" },
+    },
+    abortedAssistant,
+  ]);
+  assert.equal(staleGoalEnd.skip, true);
+  assert.deepEqual(effectTypes(staleGoalEnd), ["clearAccounting", "refreshUi"]);
+  assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
+
+  const currentIdLess = guard.planAgentEnd([errorAssistant]);
+  assert.deepEqual(currentIdLess, { skip: false, effects: [] });
+  assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
 });
 
 test("abortingTurn: active turn 1 agent_end preserves awaiting cleanup for turn 0", () => {
