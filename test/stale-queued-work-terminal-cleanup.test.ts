@@ -268,7 +268,7 @@ test("late stale agent_end with stop before next current context event is ignore
   }
 });
 
-for (const stopReason of ["aborted", "stop"] as const) {
+for (const stopReason of ["aborted", "stop", "error"] as const) {
   test(`late id-less stale agent_end with ${stopReason} after abort release is ignored`, async () => {
     const originalNow = Date.now;
     let now = 1_000;

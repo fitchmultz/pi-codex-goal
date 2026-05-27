@@ -92,7 +92,9 @@ function isStaleTerminalAssistantMessage(message: {
 }): boolean {
   return (
     message.role === "assistant" &&
-    (message.stopReason === "aborted" || message.stopReason === "stop")
+    (message.stopReason === "aborted" ||
+      message.stopReason === "stop" ||
+      message.stopReason === "error")
   );
 }
 

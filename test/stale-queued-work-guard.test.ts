@@ -7,6 +7,11 @@ import { CUSTOM_ENTRY_TYPE } from "../src/types.js";
 
 const abortedAssistant = { role: "assistant" as const, stopReason: "aborted" as const };
 const stoppedAssistant = { role: "assistant" as const, stopReason: "stop" as const };
+const errorAssistant = {
+  role: "assistant" as const,
+  stopReason: "error" as const,
+  errorMessage: "provider error",
+};
 
 function effectTypes(plan: { effects: Array<{ type: string }> }): string[] {
   return plan.effects.map((effect) => effect.type);
@@ -242,6 +247,19 @@ test("awaitingTerminalCleanup: late id-less agent_end with stop after abort rele
   assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
 });
 
+test("awaitingTerminalCleanup: late id-less agent_end with error after abort release is skipped", () => {
+  const guard = createStaleQueuedWorkGuard();
+  guard.noteStaleWorkStarted("goal-1");
+  guard.planContextAbort(0);
+  guard.planTurnStart();
+  assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
+
+  const agentEndPlan = guard.planAgentEnd([errorAssistant]);
+  assert.equal(agentEndPlan.skip, true);
+  assert.deepEqual(effectTypes(agentEndPlan), ["refreshUi"]);
+  assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
+});
+
 test("awaitingTerminalCleanup: current id-less agent_end is not swallowed without pending anonymous obligation", () => {
   const guard = createStaleQueuedWorkGuard();
   guard.noteStaleWorkStarted("goal-1");
@@ -411,6 +429,20 @@ test("observingTurn with pending cleanup: late id-less agent_end with stop after
   assert.equal(guard.lifecycleKind(), "observingTurn");
 
   const agentEndPlan = guard.planAgentEnd([stoppedAssistant]);
+  assert.equal(agentEndPlan.skip, true);
+  assert.deepEqual(effectTypes(agentEndPlan), ["refreshUi"]);
+  assert.equal(guard.lifecycleKind(), "observingTurn");
+});
+
+test("observingTurn with pending cleanup: late id-less agent_end with error after abort release is skipped", () => {
+  const guard = createStaleQueuedWorkGuard();
+  guard.noteStaleWorkStarted("goal-1");
+  guard.planContextAbort(0);
+  guard.planTurnStart();
+  guard.noteRunnableWorkStarted();
+  assert.equal(guard.lifecycleKind(), "observingTurn");
+
+  const agentEndPlan = guard.planAgentEnd([errorAssistant]);
   assert.equal(agentEndPlan.skip, true);
   assert.deepEqual(effectTypes(agentEndPlan), ["refreshUi"]);
   assert.equal(guard.lifecycleKind(), "observingTurn");
