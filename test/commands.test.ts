@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { handleGoalCommand, type CommandHost, type GoalCommandContext, type GoalCommandPi } from "../src/commands.js";
+import {
+  handleGoalCommand,
+  type CommandHost,
+  type GoalCommandContext,
+  type GoalCommandPi,
+} from "../src/commands.js";
+import type { GoalStartTurnStrategy } from "../src/recovery-machine.js";
 import { applyUsage, updateGoalStatus } from "../src/state.js";
 import { CUSTOM_ENTRY_TYPE, type GoalEntrySource, type ThreadGoal } from "../src/types.js";
 
@@ -39,7 +45,7 @@ function createHarness() {
     clearGoal() {
       goal = null;
     },
-    needsHostOverflowCapReset: () => false,
+    getGoalStartTurnStrategy: () => "hiddenFollowUp",
   };
 
   const ctx: GoalCommandContext = {
@@ -120,7 +126,7 @@ test("/goal resume sends a user continuation turn", async () => {
 
 test("/goal objective after overflow recovery sends a user start turn", async () => {
   const harness = createHarness();
-  let needsHostOverflowCapReset = true;
+  let startTurnStrategy: GoalStartTurnStrategy = "userFollowUp";
   const host: CommandHost = {
     getGoal: () => harness.goal,
     setGoal(nextGoal: ThreadGoal) {
@@ -129,7 +135,7 @@ test("/goal objective after overflow recovery sends a user start turn", async ()
     clearGoal() {
       harness.setGoal(null);
     },
-    needsHostOverflowCapReset: () => needsHostOverflowCapReset,
+    getGoalStartTurnStrategy: () => startTurnStrategy,
   };
 
   await handleGoalCommand(harness.pi, host, "ship the feature", harness.ctx);
@@ -147,7 +153,7 @@ test("/goal objective after overflow recovery sends a user start turn", async ()
   assert.match(content, /<pi_goal_continuation goal_id="/);
   assert.doesNotMatch(content, /<untrusted_objective>/);
 
-  needsHostOverflowCapReset = false;
+  startTurnStrategy = "hiddenFollowUp";
   harness.sentUserMessages.length = 0;
   await handleGoalCommand(harness.pi, host, "another objective", harness.ctx);
   assert.equal(harness.sentMessages.length, 1);

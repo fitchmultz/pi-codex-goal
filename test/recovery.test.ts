@@ -20,13 +20,17 @@ import {
 import {
   beginHostOverflowRecovery,
   createGoalRecoveryMachine,
+  goalStartTurnStrategy,
   isRepeatOverflowCompactionDue,
   onRecoverySessionCompact,
   planRecoveryForAssistantError,
   planRecoveryForSilentContextOverflow,
-  setRecoveryPausedAttention,
+  recoveryPhaseBlocksContinuation,
+  recoveryPhaseNeedsUserStartTurn,
+  resetRecoveryMachine,
   setRecoveryPendingAttention,
 } from "../src/recovery-machine.js";
+import { clearHostOverflowUserReset } from "../src/recovery-phase.js";
 
 test("detects context overflow error messages with host overflow classifier", () => {
   assert.equal(isContextOverflowError("context_length_exceeded: prompt too large"), true);
@@ -233,6 +237,40 @@ test("beginHostOverflowRecovery surfaces pending attention without pausing", () 
     recoveryPendingAttentionMessage(HOST_OVERFLOW_RECOVERY_REASON),
   );
   assert.doesNotMatch(state.attention ?? "", /\/goal resume/);
+  assert.equal(state.phase.kind, "pendingHostOverflow");
+  if (state.phase.kind === "pendingHostOverflow") {
+    assert.equal(state.phase.hostRecoveryActive, true);
+    assert.equal(state.phase.needsUserReset, true);
+  }
+  assert.equal(recoveryPhaseBlocksContinuation(state.phase), true);
+  assert.equal(recoveryPhaseNeedsUserStartTurn(state.phase), true);
+  assert.equal(goalStartTurnStrategy(state.phase), "userFollowUp");
+});
+
+test("resetRecoveryMachine clears active host overflow recovery but preserves user reset", () => {
+  const state = createGoalRecoveryMachine();
+  beginHostOverflowRecovery(state);
+  resetRecoveryMachine(state);
+  assert.equal(state.phase.kind, "pendingHostOverflow");
+  if (state.phase.kind === "pendingHostOverflow") {
+    assert.equal(state.phase.hostRecoveryActive, false);
+    assert.equal(state.phase.needsUserReset, true);
+  }
+  assert.equal(recoveryPhaseNeedsUserStartTurn(state.phase), true);
+  assert.equal(recoveryPhaseBlocksContinuation(state.phase), false);
+});
+
+test("clearHostOverflowUserReset keeps active host overflow recovery without user reset", () => {
+  const state = createGoalRecoveryMachine();
+  beginHostOverflowRecovery(state);
+  state.phase = clearHostOverflowUserReset(state.phase);
+  if (state.phase.kind === "pendingHostOverflow") {
+    assert.equal(state.phase.hostRecoveryActive, true);
+    assert.equal(state.phase.needsUserReset, false);
+  } else {
+    assert.fail("Expected pending host overflow phase after clearing user reset.");
+  }
+  assert.equal(goalStartTurnStrategy(state.phase), "hiddenFollowUp");
 });
 
 test("recovery session compact preserves overflow attempt counts after host compaction", () => {

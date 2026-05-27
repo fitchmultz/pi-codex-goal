@@ -1,4 +1,10 @@
 import {
+  clearHostOverflowRecoveryActive,
+  enterHostOverflowRecoveryPhase,
+  idleRecoveryPhase,
+  type RecoveryPhase,
+} from "./recovery-phase.js";
+import {
   CONTEXT_OVERFLOW_SIGNATURE,
   countersForFailureSignature,
   createErrorRecoveryCounters,
@@ -14,6 +20,16 @@ import {
   type ErrorRecoveryCounters,
 } from "./recovery.js";
 
+export type { GoalStartTurnStrategy, RecoveryPhase } from "./recovery-phase.js";
+export {
+  applyPersistedHostOverflowUserReset,
+  clearHostOverflowRecoveryActive,
+  clearHostOverflowUserReset,
+  goalStartTurnStrategy,
+  recoveryPhaseBlocksContinuation,
+  recoveryPhaseNeedsUserStartTurn,
+} from "./recovery-phase.js";
+
 export type RecoveryAction =
   | { type: "noop" }
   | { type: "pending"; reason: string }
@@ -22,18 +38,21 @@ export type RecoveryAction =
 export interface GoalRecoveryMachineState {
   counters: ErrorRecoveryCounters;
   attention: string | null;
+  phase: RecoveryPhase;
 }
 
 export function createGoalRecoveryMachine(): GoalRecoveryMachineState {
   return {
     counters: createErrorRecoveryCounters(),
     attention: null,
+    phase: idleRecoveryPhase,
   };
 }
 
 export function resetRecoveryMachine(state: GoalRecoveryMachineState): void {
   state.counters = createErrorRecoveryCounters();
   state.attention = null;
+  state.phase = clearHostOverflowRecoveryActive(state.phase);
 }
 
 export function resetRecoveryCounters(state: GoalRecoveryMachineState): void {
@@ -82,6 +101,7 @@ export function setRecoveryPausedAttention(state: GoalRecoveryMachineState, reas
 }
 
 export function beginHostOverflowRecovery(state: GoalRecoveryMachineState): string {
+  state.phase = enterHostOverflowRecoveryPhase();
   return setRecoveryPendingAttention(state, HOST_OVERFLOW_RECOVERY_REASON);
 }
 

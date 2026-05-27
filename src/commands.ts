@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
 import { formatGoalSummary } from "./format.js";
+import type { GoalStartTurnStrategy } from "./recovery-machine.js";
 import { compactContinuationPrompt, continuationPrompt } from "./prompts.js";
 import { replaceGoal, updateGoalStatus } from "./state.js";
 import { CUSTOM_ENTRY_TYPE, type GoalEntrySource, type ThreadGoal } from "./types.js";
@@ -9,7 +10,7 @@ export interface CommandHost {
   getGoal(): ThreadGoal | null;
   setGoal(goal: ThreadGoal, source: GoalEntrySource, ctx: GoalCommandContext): void;
   clearGoal(source: GoalEntrySource, ctx: GoalCommandContext): void;
-  needsHostOverflowCapReset(): boolean;
+  getGoalStartTurnStrategy(): GoalStartTurnStrategy;
 }
 
 const COMMANDS = ["pause", "resume", "clear"] as const;
@@ -111,7 +112,7 @@ export async function handleGoalCommand(
   }
   host.setGoal(result.goal, "command", ctx);
   ctx.ui.notify(result.message);
-  if (host.needsHostOverflowCapReset()) {
+  if (host.getGoalStartTurnStrategy() === "userFollowUp") {
     queueGoalUserStartTurn(pi, result.goal);
   } else {
     queueGoalTurn(pi, result.goal, "command_start");
