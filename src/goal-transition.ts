@@ -152,12 +152,6 @@ function commandAfterPersistEffects(
   return effects;
 }
 
-const ABORT_PAUSE_BEFORE_PERSIST: GoalTransitionEffect[] = [
-  { type: "clearContinuation" },
-  { type: "clearActiveAccounting" },
-  { type: "resetRecovery" },
-];
-
 const ABORT_PAUSE_SET_BEFORE_PERSIST: GoalTransitionEffect[] = [
   { type: "clearContinuation" },
   { type: "clearActiveAccounting" },
@@ -273,15 +267,6 @@ export function planGoalTransition(
     case "abort_pause": {
       const { nextGoal } = request;
       validateAbortPause(current, nextGoal);
-      if (current && goalsEquivalent(current, nextGoal)) {
-        return {
-          persist: "skip",
-          nextGoal,
-          source: "runtime",
-          beforePersist: ABORT_PAUSE_BEFORE_PERSIST,
-          afterPersist: [],
-        };
-      }
       return {
         persist: "set",
         nextGoal,
@@ -296,15 +281,6 @@ export function planGoalTransition(
     case "resume_active": {
       const { nextGoal } = request;
       validateResumeActive(current, nextGoal);
-      if (current && goalsEquivalent(current, nextGoal)) {
-        return {
-          persist: "skip",
-          nextGoal,
-          source: "runtime",
-          beforePersist: RESUME_ACTIVE_BEFORE_PERSIST,
-          afterPersist: [],
-        };
-      }
       return {
         persist: "set",
         nextGoal,
@@ -323,15 +299,6 @@ export function planGoalTransition(
         { type: "clearContinuation" },
         { type: "setRecoveryPausedAttention", reason: recoveryReason },
       ];
-      if (current && goalsEquivalent(current, nextGoal)) {
-        return {
-          persist: "skip",
-          nextGoal,
-          source: "runtime",
-          beforePersist: recoveryEffects,
-          afterPersist: [],
-        };
-      }
       return {
         persist: "set",
         nextGoal,
@@ -351,15 +318,6 @@ export function planGoalTransition(
         { type: "clearHostOverflowRecovery" },
         { type: "setRecoveryPausedAttention", reason: recoveryReason },
       ];
-      if (current && goalsEquivalent(current, nextGoal)) {
-        return {
-          persist: "skip",
-          nextGoal,
-          source: "runtime",
-          beforePersist: recoveryEffects,
-          afterPersist: [],
-        };
-      }
       return {
         persist: "set",
         nextGoal,
