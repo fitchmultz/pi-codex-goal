@@ -57,6 +57,48 @@ test("planMemoryEffectsOnGoalChange pauses clear continuation and accounting wit
   assert.equal(plan.resetRecovery, false);
 });
 
+test("planGoalTransition command set replacing paused goal resets recovery only before persist", () => {
+  const paused = createThreadGoal("old objective");
+  const pausedCurrent = { ...cloneGoal(paused), status: "paused" as const };
+  const nextActive = createThreadGoal("new objective");
+
+  const plan = planGoalTransition(pausedCurrent, {
+    kind: "set",
+    nextGoal: nextActive,
+    source: "command",
+  });
+
+  assertDisjointPrimitivePlan(plan, "command paused replacement");
+  assert.equal(plan.persist, "set");
+  assert.deepEqual(effectTypes(plan.beforePersist), [
+    "clearContinuation",
+    "clearActiveAccounting",
+    "resetRecovery",
+    "clearBudgetWarning",
+  ]);
+  assert.deepEqual(effectTypes(plan.afterPersist), ["markContinuationQueued"]);
+});
+
+test("planGoalTransition command pause schedules reset recovery after persist", () => {
+  const goal = createThreadGoal("ship it");
+  const paused = { ...cloneGoal(goal), status: "paused" as const };
+
+  const plan = planGoalTransition(goal, {
+    kind: "set",
+    nextGoal: paused,
+    source: "command",
+  });
+
+  assertDisjointPrimitivePlan(plan, "command pause");
+  assert.equal(plan.persist, "set");
+  assert.deepEqual(effectTypes(plan.beforePersist), [
+    "clearContinuation",
+    "clearActiveAccounting",
+    "clearBudgetWarning",
+  ]);
+  assert.deepEqual(effectTypes(plan.afterPersist), ["resetRecovery"]);
+});
+
 test("planGoalTransition command resume schedules reset and continuation after persist", () => {
   const goal = createThreadGoal("ship it");
   const paused = { ...cloneGoal(goal), status: "paused" as const };

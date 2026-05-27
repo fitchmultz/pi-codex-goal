@@ -135,14 +135,18 @@ function crossedBudgetTransition(current: ThreadGoal | null, nextGoal: ThreadGoa
 }
 
 function commandAfterPersistEffects(
+  current: ThreadGoal | null,
   nextGoal: ThreadGoal,
   wasPausedBefore: boolean,
 ): GoalTransitionEffect[] {
+  const goalIdChanged = (current?.goalId ?? null) !== nextGoal.goalId;
   const effects: GoalTransitionEffect[] = [];
   if (nextGoal.status === "active") {
     effects.push({ type: "markContinuationQueued", goalId: nextGoal.goalId });
   }
-  if ((nextGoal.status === "active" && wasPausedBefore) || nextGoal.status === "paused") {
+  if (nextGoal.status === "paused") {
+    effects.push({ type: "resetRecovery" });
+  } else if (nextGoal.status === "active" && wasPausedBefore && !goalIdChanged) {
     effects.push({ type: "resetRecovery" });
   }
   return effects;
@@ -317,7 +321,9 @@ export function planGoalTransition(
       const { nextGoal, source } = request;
       const wasPausedBefore = current?.status === "paused";
       const afterPersist =
-        source === "command" ? commandAfterPersistEffects(nextGoal, wasPausedBefore) : [];
+        source === "command"
+          ? commandAfterPersistEffects(current, nextGoal, wasPausedBefore)
+          : [];
       if (current && goalsEquivalent(current, nextGoal)) {
         return {
           persist: "skip",
