@@ -1,17 +1,17 @@
 export type RecoveryPhase =
   | { kind: "idle" }
-  | { kind: "pendingHostOverflow"; hostRecoveryActive: boolean; needsUserReset: boolean };
+  | { kind: "hostOverflowRecoveringNeedsUserStart" }
+  | { kind: "hostOverflowRecovering" }
+  | { kind: "hostOverflowNeedsUserStart" };
 
 export type GoalStartTurnStrategy = "hiddenFollowUp" | "userFollowUp";
 
 export const idleRecoveryPhase: RecoveryPhase = { kind: "idle" };
 
-export function resetRecoveryPhase(): RecoveryPhase {
-  return idleRecoveryPhase;
-}
-
 export function recoveryPhaseNeedsUserStartTurn(phase: RecoveryPhase): boolean {
-  return phase.kind === "pendingHostOverflow" && phase.needsUserReset;
+  return (
+    phase.kind === "hostOverflowRecoveringNeedsUserStart" || phase.kind === "hostOverflowNeedsUserStart"
+  );
 }
 
 export function goalStartTurnStrategy(phase: RecoveryPhase): GoalStartTurnStrategy {
@@ -19,33 +19,33 @@ export function goalStartTurnStrategy(phase: RecoveryPhase): GoalStartTurnStrate
 }
 
 export function recoveryPhaseBlocksContinuation(phase: RecoveryPhase): boolean {
-  return phase.kind === "pendingHostOverflow" && phase.hostRecoveryActive;
+  return phase.kind === "hostOverflowRecoveringNeedsUserStart" || phase.kind === "hostOverflowRecovering";
 }
 
-export function enterHostOverflowRecoveryPhase(): RecoveryPhase {
-  return {
-    kind: "pendingHostOverflow",
-    hostRecoveryActive: true,
-    needsUserReset: true,
-  };
+export function hostOverflowRecoveringNeedsUserStartPhase(): RecoveryPhase {
+  return { kind: "hostOverflowRecoveringNeedsUserStart" };
 }
 
 export function clearHostOverflowRecoveryActive(phase: RecoveryPhase): RecoveryPhase {
-  if (phase.kind !== "pendingHostOverflow" || !phase.hostRecoveryActive) {
-    return phase;
+  switch (phase.kind) {
+    case "hostOverflowRecoveringNeedsUserStart":
+      return { kind: "hostOverflowNeedsUserStart" };
+    case "hostOverflowRecovering":
+      return idleRecoveryPhase;
+    default:
+      return phase;
   }
-  return { ...phase, hostRecoveryActive: false };
 }
 
 export function clearHostOverflowUserReset(phase: RecoveryPhase): RecoveryPhase {
-  if (phase.kind !== "pendingHostOverflow" || !phase.needsUserReset) {
-    return phase;
+  switch (phase.kind) {
+    case "hostOverflowRecoveringNeedsUserStart":
+      return { kind: "hostOverflowRecovering" };
+    case "hostOverflowNeedsUserStart":
+      return idleRecoveryPhase;
+    default:
+      return phase;
   }
-  const next: RecoveryPhase = { ...phase, needsUserReset: false };
-  if (!next.hostRecoveryActive) {
-    return idleRecoveryPhase;
-  }
-  return next;
 }
 
 export function applyPersistedHostOverflowUserReset(
@@ -55,12 +55,13 @@ export function applyPersistedHostOverflowUserReset(
   if (!needsUserReset) {
     return clearHostOverflowUserReset(phase);
   }
-  if (phase.kind === "pendingHostOverflow") {
-    return { ...phase, needsUserReset: true };
+  switch (phase.kind) {
+    case "hostOverflowRecovering":
+      return { kind: "hostOverflowRecoveringNeedsUserStart" };
+    case "hostOverflowRecoveringNeedsUserStart":
+    case "hostOverflowNeedsUserStart":
+      return phase;
+    default:
+      return { kind: "hostOverflowNeedsUserStart" };
   }
-  return {
-    kind: "pendingHostOverflow",
-    hostRecoveryActive: false,
-    needsUserReset: true,
-  };
 }

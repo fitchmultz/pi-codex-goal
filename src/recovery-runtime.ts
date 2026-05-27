@@ -75,15 +75,16 @@ export function createGoalRecoveryRuntime(deps: RecoveryRuntimeDeps) {
     applyRecoveryAction(planRecoveryForSilentContextOverflow(deps.getRecoveryState()), ctx);
   };
 
-  const beginOverflowRecovery = (ctx: ExtensionContext): void => {
+  const beginOverflowRecovery = (ctx: ExtensionContext): boolean => {
     const goal = deps.getGoal();
     if (!goal || goal.status !== "active") {
-      return;
+      return false;
     }
 
     deps.clearContinuationState();
-    beginHostOverflowRecovery(deps.getRecoveryState());
+    const { persistHostOverflowCapReset } = beginHostOverflowRecovery(deps.getRecoveryState());
     deps.refreshUi(ctx);
+    return persistHostOverflowCapReset;
   };
 
   const finishSuccessfulAssistantTurn = (

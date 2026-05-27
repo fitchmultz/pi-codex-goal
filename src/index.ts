@@ -22,14 +22,14 @@ import {
   type StaleQueuedWorkGuard,
 } from "./stale-queued-work-guard.js";
 import {
-  applyPersistedHostOverflowUserReset,
-  clearHostOverflowRecoveryActive,
+  applyHostOverflowUserResetPersistence,
+  clearActiveHostOverflowRecovery,
   createGoalRecoveryMachine,
   goalStartTurnStrategy,
   recoveryPhaseBlocksContinuation,
-  recoveryPhaseNeedsUserStartTurn,
   resetRecoveryMachine,
   setRecoveryPausedAttention,
+  syncHostOverflowUserResetFromSession,
   type GoalRecoveryMachineState,
 } from "./recovery-machine.js";
 import { createGoalRecoveryRuntime } from "./recovery-runtime.js";
@@ -320,10 +320,9 @@ export default function (pi: ExtensionAPI): void {
   };
 
   const persistHostOverflowUserReset = (needsReset: boolean): void => {
-    if (recoveryPhaseNeedsUserStartTurn(recoveryState.phase) === needsReset) {
+    if (!applyHostOverflowUserResetPersistence(recoveryState, needsReset)) {
       return;
     }
-    recoveryState.phase = applyPersistedHostOverflowUserReset(recoveryState.phase, needsReset);
     pi.appendEntry(CUSTOM_ENTRY_TYPE, hostOverflowCapResetEntry(needsReset));
   };
 
@@ -333,8 +332,8 @@ export default function (pi: ExtensionAPI): void {
     goal = reconstructGoal(branch).goal;
     lastPersistedGoal = goal ? cloneGoal(goal) : null;
     lastRuntimePersistAt = null;
-    recoveryState.phase = applyPersistedHostOverflowUserReset(
-      recoveryState.phase,
+    syncHostOverflowUserResetFromSession(
+      recoveryState,
       reconstructHostOverflowCapNeedsUserReset(branch),
     );
     clearContinuationState();
@@ -454,15 +453,16 @@ export default function (pi: ExtensionAPI): void {
     }
 
     clearContinuationState();
-    recoveryState.phase = clearHostOverflowRecoveryActive(recoveryState.phase);
+    clearActiveHostOverflowRecovery(recoveryState);
     setRecoveryPausedAttention(recoveryState, reason);
     persistGoal(result.goal, "runtime");
     refreshUi(ctx);
   };
 
   const beginOverflowRecoveryAttention = (ctx: ExtensionContext): void => {
-    persistHostOverflowUserReset(true);
-    recoveryRuntime.beginOverflowRecovery(ctx);
+    if (recoveryRuntime.beginOverflowRecovery(ctx)) {
+      pi.appendEntry(CUSTOM_ENTRY_TYPE, hostOverflowCapResetEntry(true));
+    }
   };
 
   const recordAssistantContextOverflow = (
@@ -520,7 +520,7 @@ export default function (pi: ExtensionAPI): void {
     const continuationGoalId = continuationGoalIdFromPrompt(event.text);
 
     if (event.source !== "extension") {
-      recoveryState.phase = clearHostOverflowRecoveryActive(recoveryState.phase);
+      clearActiveHostOverflowRecovery(recoveryState);
       recoveryRuntime.onUserInput();
       applyStaleQueuedWorkEffects(staleQueuedWorkGuard.planUserInputClearAbort().effects, ctx);
       if (continuationGoalId !== null) {

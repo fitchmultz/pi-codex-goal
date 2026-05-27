@@ -1,7 +1,10 @@
 import {
+  applyPersistedHostOverflowUserReset,
   clearHostOverflowRecoveryActive,
-  enterHostOverflowRecoveryPhase,
+  clearHostOverflowUserReset,
+  hostOverflowRecoveringNeedsUserStartPhase,
   idleRecoveryPhase,
+  recoveryPhaseNeedsUserStartTurn,
   type RecoveryPhase,
 } from "./recovery-phase.js";
 import {
@@ -22,9 +25,6 @@ import {
 
 export type { GoalStartTurnStrategy, RecoveryPhase } from "./recovery-phase.js";
 export {
-  applyPersistedHostOverflowUserReset,
-  clearHostOverflowRecoveryActive,
-  clearHostOverflowUserReset,
   goalStartTurnStrategy,
   recoveryPhaseBlocksContinuation,
   recoveryPhaseNeedsUserStartTurn,
@@ -52,7 +52,7 @@ export function createGoalRecoveryMachine(): GoalRecoveryMachineState {
 export function resetRecoveryMachine(state: GoalRecoveryMachineState): void {
   state.counters = createErrorRecoveryCounters();
   state.attention = null;
-  state.phase = clearHostOverflowRecoveryActive(state.phase);
+  clearActiveHostOverflowRecovery(state);
 }
 
 export function resetRecoveryCounters(state: GoalRecoveryMachineState): void {
@@ -100,9 +100,40 @@ export function setRecoveryPausedAttention(state: GoalRecoveryMachineState, reas
   return message;
 }
 
-export function beginHostOverflowRecovery(state: GoalRecoveryMachineState): string {
-  state.phase = enterHostOverflowRecoveryPhase();
-  return setRecoveryPendingAttention(state, HOST_OVERFLOW_RECOVERY_REASON);
+export function clearActiveHostOverflowRecovery(state: GoalRecoveryMachineState): void {
+  state.phase = clearHostOverflowRecoveryActive(state.phase);
+}
+
+export function acknowledgeHostOverflowUserResetCleared(state: GoalRecoveryMachineState): void {
+  state.phase = clearHostOverflowUserReset(state.phase);
+}
+
+export function applyHostOverflowUserResetPersistence(
+  state: GoalRecoveryMachineState,
+  needsUserReset: boolean,
+): boolean {
+  if (recoveryPhaseNeedsUserStartTurn(state.phase) === needsUserReset) {
+    return false;
+  }
+  state.phase = applyPersistedHostOverflowUserReset(state.phase, needsUserReset);
+  return true;
+}
+
+export function syncHostOverflowUserResetFromSession(
+  state: GoalRecoveryMachineState,
+  needsUserReset: boolean,
+): void {
+  state.phase = applyPersistedHostOverflowUserReset(state.phase, needsUserReset);
+}
+
+export function beginHostOverflowRecovery(state: GoalRecoveryMachineState): {
+  attention: string;
+  persistHostOverflowCapReset: boolean;
+} {
+  const persistHostOverflowCapReset = !recoveryPhaseNeedsUserStartTurn(state.phase);
+  state.phase = hostOverflowRecoveringNeedsUserStartPhase();
+  const attention = setRecoveryPendingAttention(state, HOST_OVERFLOW_RECOVERY_REASON);
+  return { attention, persistHostOverflowCapReset };
 }
 
 function incrementOverflowCompactionAttempts(state: GoalRecoveryMachineState): RecoveryAction {
