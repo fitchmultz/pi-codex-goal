@@ -484,7 +484,15 @@ export function createStaleQueuedWorkGuard(): StaleQueuedWorkGuard {
 
     let finishActive = consumedActiveGoalMatch;
     if (matchesAnonymousStaleAgentEnd(messages)) {
-      if (removeFirstAnonymousEligibleObligation(older)) {
+      const preferActiveAnonymous =
+        activeTurnEndConsumed(aborting, terminalCleanup) &&
+        active.some((obligation) => obligation.acceptsAnonymous);
+
+      if (preferActiveAnonymous) {
+        if (removeFirstAnonymousEligibleObligation(active)) {
+          finishActive = true;
+        }
+      } else if (removeFirstAnonymousEligibleObligation(older)) {
         consumedOlder = true;
       } else if (removeFirstObligation(active)) {
         finishActive = true;

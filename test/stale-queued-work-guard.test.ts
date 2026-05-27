@@ -653,6 +653,37 @@ test("abortingTurn: combined older and active agent_end with stop finishes activ
   assert.equal(guard.isBlockingContinuation(), false);
 });
 
+test("abortingTurn: active id-less agent_end after active turn_end finishes active when older obligation pending", () => {
+  for (const terminal of [errorAssistant, stoppedAssistant, abortedAssistant] as const) {
+    const guard = createStaleQueuedWorkGuard();
+    guard.noteStaleWorkStarted("goal-0");
+    guard.planContextAbort(0);
+    guard.planTurnStart();
+
+    guard.noteStaleWorkStarted("goal-1");
+    guard.planContextAbort(1);
+    assert.equal(guard.lifecycleKind(), "abortingTurn");
+
+    const activeTurnEndPlan = guard.planTurnEnd(1, abortedAssistant);
+    assert.equal(activeTurnEndPlan.skip, true);
+    assert.deepEqual(effectTypes(activeTurnEndPlan), ["clearAccounting", "refreshUi"]);
+    assert.equal(guard.lifecycleKind(), "abortingTurn");
+    assert.equal(guard.isBlockingContinuation(), true);
+
+    const activeAnonymousPlan = guard.planAgentEnd([terminal]);
+    assert.equal(activeAnonymousPlan.skip, true);
+    assert.deepEqual(effectTypes(activeAnonymousPlan), ["clearAccounting", "refreshUi"]);
+    assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
+    assert.equal(guard.isBlockingContinuation(), false);
+
+    const lateOlderPlan = guard.planAgentEnd([terminal]);
+    assert.equal(lateOlderPlan.skip, true);
+    assert.deepEqual(effectTypes(lateOlderPlan), ["refreshUi"]);
+    assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
+    assert.equal(guard.isBlockingContinuation(), false);
+  }
+});
+
 test("abortingTurn: older id-less agent_end error during newer active abort stays aborting until active terminal", () => {
   const guard = createStaleQueuedWorkGuard();
   guard.noteStaleWorkStarted("goal-0");
