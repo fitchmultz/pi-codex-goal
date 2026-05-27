@@ -20,9 +20,10 @@ export type StaleQueuedWorkLifecycleKind =
   | "abortingTurn"
   | "awaitingTerminalCleanup";
 
-/** One stale abort's pending agent_end: match any goalId in the set, or an id-less stale terminal. */
+/** One stale abort's pending agent_end: match goalIds, or id-less when acceptsAnonymous. */
 type AgentEndObligation = {
   goalIds: Set<string>;
+  acceptsAnonymous: boolean;
 };
 
 type TerminalCleanup = {
@@ -103,11 +104,27 @@ function isStaleTerminalAssistantMessage(message: {
   );
 }
 
+function obligationForStaleAbort(staleGoalIds: ReadonlySet<string>): AgentEndObligation {
+  return { goalIds: new Set(staleGoalIds), acceptsAnonymous: true };
+}
+
 function obligationsForStaleAbort(staleGoalIds: ReadonlySet<string>): AgentEndObligation[] {
   if (staleGoalIds.size === 0) {
     return [];
   }
-  return [{ goalIds: new Set(staleGoalIds) }];
+  return [obligationForStaleAbort(staleGoalIds)];
+}
+
+function closeAnonymousMatchingOnObligations(obligations: AgentEndObligation[]): void {
+  for (const obligation of obligations) {
+    obligation.acceptsAnonymous = false;
+  }
+}
+
+function openAnonymousMatchingOnObligations(obligations: AgentEndObligation[]): void {
+  for (const obligation of obligations) {
+    obligation.acceptsAnonymous = true;
+  }
 }
 
 function pendingGoalIdsFromObligations(obligations: readonly AgentEndObligation[]): Set<string> {
@@ -170,6 +187,15 @@ function removeFirstObligation(obligations: AgentEndObligation[]): boolean {
     return false;
   }
   obligations.shift();
+  return true;
+}
+
+function removeFirstAnonymousEligibleObligation(obligations: AgentEndObligation[]): boolean {
+  const index = obligations.findIndex((obligation) => obligation.acceptsAnonymous);
+  if (index === -1) {
+    return false;
+  }
+  obligations.splice(index, 1);
   return true;
 }
 
@@ -356,7 +382,7 @@ function consumePendingStaleAgentEnd(
     return true;
   }
   return matchesAnonymousStaleAgentEnd(messages)
-    ? removeFirstObligation(cleanup.olderAgentEndObligations)
+    ? removeFirstAnonymousEligibleObligation(cleanup.olderAgentEndObligations)
     : false;
 }
 
@@ -421,7 +447,7 @@ export function createStaleQueuedWorkGuard(): StaleQueuedWorkGuard {
 
     let finishActive = consumedActiveGoalMatch;
     if (matchesAnonymousStaleAgentEnd(messages)) {
-      if (removeFirstObligation(older)) {
+      if (removeFirstAnonymousEligibleObligation(older)) {
         consumedOlder = true;
       } else if (removeFirstObligation(active)) {
         finishActive = true;
@@ -501,6 +527,7 @@ export function createStaleQueuedWorkGuard(): StaleQueuedWorkGuard {
       const observing = lifecycle;
       if (observing.staleGoalIds.size === 0 || observing.hasRunnableWork) {
         if (observing.terminalCleanup !== undefined) {
+          closeAnonymousMatchingOnObligations(observing.terminalCleanup.olderAgentEndObligations);
           lifecycle = {
             kind: "awaitingTerminalCleanup",
             pendingTurnEndIndexes: observing.terminalCleanup.pendingTurnEndIndexes,
@@ -515,6 +542,7 @@ export function createStaleQueuedWorkGuard(): StaleQueuedWorkGuard {
         ...(observing.terminalCleanup?.olderAgentEndObligations ?? []),
         ...(observing.terminalCleanup?.activeAgentEndObligations ?? []),
       ];
+      openAnonymousMatchingOnObligations(olderAgentEndObligations);
       noteTerminalEvents(pendingTurnEndIndexes, currentTurnIndex);
 
       lifecycle = {

@@ -492,6 +492,54 @@ test("observingTurn with pending cleanup: current agent_end with continuation is
   assert.equal(guard.lifecycleKind(), "observingTurn");
 });
 
+test("observingTurn with pending cleanup: after current context accepted, id-less error agent_end is not swallowed", () => {
+  const guard = createStaleQueuedWorkGuard();
+  guard.noteStaleWorkStarted("goal-1");
+  guard.planContextAbort(0);
+  guard.planUserInputClearAbort();
+  guard.noteRunnableWorkStarted();
+  assert.equal(guard.planContextAbort(1), null);
+  assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
+
+  const plan = guard.planAgentEnd([errorAssistant]);
+  assert.deepEqual(plan, { skip: false, effects: [] });
+  assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
+});
+
+test("observingTurn with pending cleanup: after current context accepted, goal-bearing stale agent_end is still skipped", () => {
+  const guard = createStaleQueuedWorkGuard();
+  guard.noteStaleWorkStarted("goal-1");
+  guard.planContextAbort(0);
+  guard.planUserInputClearAbort();
+  guard.noteRunnableWorkStarted();
+  assert.equal(guard.planContextAbort(1), null);
+
+  const plan = guard.planAgentEnd([
+    {
+      role: "custom",
+      customType: CUSTOM_ENTRY_TYPE,
+      details: { kind: "continuation", goalId: "goal-1" },
+    },
+    errorAssistant,
+  ]);
+  assert.equal(plan.skip, true);
+  assert.deepEqual(effectTypes(plan), ["refreshUi"]);
+  assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
+});
+
+test("awaitingTerminalCleanup: late id-less stale agent_end before current context is still consumed", () => {
+  const guard = createStaleQueuedWorkGuard();
+  guard.noteStaleWorkStarted("goal-1");
+  guard.planContextAbort(0);
+  guard.planTurnStart();
+  assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
+
+  const plan = guard.planAgentEnd([errorAssistant]);
+  assert.equal(plan.skip, true);
+  assert.deepEqual(effectTypes(plan), ["refreshUi"]);
+  assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
+});
+
 test("observingTurn with pending cleanup: turn_end without pending index is not consumed", () => {
   const guard = createStaleQueuedWorkGuard();
   guard.noteStaleWorkStarted("goal-1");

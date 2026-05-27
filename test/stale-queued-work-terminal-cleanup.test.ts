@@ -676,6 +676,62 @@ for (const stopReason of ["aborted", "stop"] as const) {
   });
 }
 
+test("current id-less agent_end error after stale abort release and current context is not swallowed", async () => {
+  const originalNow = Date.now;
+  let now = 1_000;
+  Date.now = () => now;
+  try {
+    const harness = createRuntimeHarness();
+    await harness.runCommand("old goal");
+    const oldQueued = harness.sentMessages[0];
+    assert.ok(oldQueued);
+    const oldMessage = queuedCustomMessage(oldQueued, 1);
+
+    await harness.runCommand("new goal");
+    const currentQueued = harness.sentMessages.at(-1);
+    assert.ok(currentQueued);
+    const currentMessage = queuedCustomMessage(currentQueued, 2);
+    const replacement = harness.snapshot().goal;
+    assert.equal(replacement?.objective, "new goal");
+    harness.sentMessages.length = 0;
+    harness.footerStatuses.length = 0;
+
+    await emitQueuedTurnThroughContext(harness, [oldMessage], 0);
+    assert.equal(harness.abortCount, 1);
+
+    now = 3_000;
+    await emitQueuedTurnThroughContext(harness, [currentMessage], 1);
+
+    now = 5_000;
+    const errorMessage = assistantMessage("error", { input: 30, output: 12 }, "websocket closed");
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 1, timestamp: 5 });
+    await harness.emit("turn_end", {
+      type: "turn_end",
+      turnIndex: 1,
+      message: errorMessage,
+      toolResults: [],
+    });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [errorMessage],
+    });
+
+    assert.equal(harness.snapshot().goal?.goalId, replacement?.goalId);
+    assert.equal(harness.snapshot().goal?.status, "active");
+    assert.equal(harness.sentMessages.length, 0);
+
+    now = 6_000;
+    await harness.emit("session_shutdown", { type: "session_shutdown" });
+
+    const goal = harness.snapshot().goal;
+    assert.equal(goal?.goalId, replacement?.goalId);
+    assert.equal(goal?.status, "paused");
+    assert.match(harness.footerStatuses.at(-1) ?? "", /websocket closed/);
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
 test("current follow-up abort is not swallowed by a pending late stale turn_end", async () => {
   const originalNow = Date.now;
   let now = 1_000;
