@@ -43,14 +43,14 @@ export type GoalTransitionPlan = {
   afterPersist: GoalTransitionEffect[];
 };
 
-export interface GoalMemoryEffectPlan {
+interface GoalMemoryEffectPlan {
   clearContinuation: boolean;
   clearActiveAccounting: boolean;
   resetRecovery: boolean;
   clearBudgetWarning: boolean;
 }
 
-export function planMemoryEffectsOnGoalChange(
+function planMemoryEffectsOnGoalChange(
   previous: ThreadGoal | null,
   next: ThreadGoal,
 ): GoalMemoryEffectPlan {
@@ -144,7 +144,7 @@ function commandAfterPersistEffects(
   if (nextGoal.status === "active") {
     effects.push({ type: "markContinuationQueued", goalId: nextGoal.goalId });
   }
-  if (nextGoal.status === "paused") {
+  if (nextGoal.status === "paused" && !goalIdChanged) {
     effects.push({ type: "resetRecovery" });
   } else if (nextGoal.status === "active" && wasPausedBefore && !goalIdChanged) {
     effects.push({ type: "resetRecovery" });

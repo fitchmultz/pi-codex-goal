@@ -4,10 +4,10 @@ import { test } from "node:test";
 import {
   applyGoalTransitionEffects,
   planGoalTransition,
-  planMemoryEffectsOnGoalChange,
   type GoalTransitionEffect,
   type GoalTransitionPlan,
 } from "../src/goal-transition.js";
+import type { ThreadGoal } from "../src/types.js";
 import { cloneGoal, createThreadGoal } from "../src/state.js";
 
 function effectTypes(effects: readonly GoalTransitionEffect[]): string[] {
@@ -36,25 +36,160 @@ function assertDisjointPrimitivePlan(plan: GoalTransitionPlan, label: string): v
   assertNoDuplicateEffectTypes(combined, `${label} combined`);
 }
 
-test("planMemoryEffectsOnGoalChange clears stopped runtime primitives when goal id changes", () => {
+type CommandSetTableCase = {
+  label: string;
+  build: () => { current: ThreadGoal; next: ThreadGoal };
+  persist: GoalTransitionPlan["persist"];
+  before: string[];
+  after: string[];
+};
+
+const commandSetTable: CommandSetTableCase[] = [
+  {
+    label: "active skip unchanged",
+    build: () => {
+      const goal = createThreadGoal("ship it");
+      return { current: goal, next: goal };
+    },
+    persist: "skip",
+    before: [],
+    after: ["markContinuationQueued"],
+  },
+  {
+    label: "paused skip unchanged",
+    build: () => {
+      const goal = createThreadGoal("ship it");
+      const paused = { ...cloneGoal(goal), status: "paused" as const };
+      return { current: paused, next: paused };
+    },
+    persist: "skip",
+    before: [],
+    after: ["resetRecovery"],
+  },
+  {
+    label: "active to same paused",
+    build: () => {
+      const goal = createThreadGoal("ship it");
+      const paused = { ...cloneGoal(goal), status: "paused" as const };
+      return { current: goal, next: paused };
+    },
+    persist: "set",
+    before: ["clearContinuation", "clearActiveAccounting", "clearBudgetWarning"],
+    after: ["resetRecovery"],
+  },
+  {
+    label: "active to different paused",
+    build: () => {
+      const current = createThreadGoal("old objective");
+      const next = { ...createThreadGoal("new objective"), status: "paused" as const };
+      return { current, next };
+    },
+    persist: "set",
+    before: [
+      "clearContinuation",
+      "clearActiveAccounting",
+      "resetRecovery",
+      "clearBudgetWarning",
+    ],
+    after: [],
+  },
+  {
+    label: "paused to same active",
+    build: () => {
+      const goal = createThreadGoal("ship it");
+      const paused = { ...cloneGoal(goal), status: "paused" as const };
+      const active = { ...cloneGoal(goal), status: "active" as const };
+      return { current: paused, next: active };
+    },
+    persist: "set",
+    before: ["clearBudgetWarning"],
+    after: ["markContinuationQueued", "resetRecovery"],
+  },
+  {
+    label: "paused to different active",
+    build: () => {
+      const paused = { ...createThreadGoal("old objective"), status: "paused" as const };
+      const next = createThreadGoal("new objective");
+      return { current: paused, next };
+    },
+    persist: "set",
+    before: [
+      "clearContinuation",
+      "clearActiveAccounting",
+      "resetRecovery",
+      "clearBudgetWarning",
+    ],
+    after: ["markContinuationQueued"],
+  },
+  {
+    label: "active to different active",
+    build: () => {
+      const current = createThreadGoal("old objective");
+      const next = createThreadGoal("new objective");
+      return { current, next };
+    },
+    persist: "set",
+    before: [
+      "clearContinuation",
+      "clearActiveAccounting",
+      "resetRecovery",
+      "clearBudgetWarning",
+    ],
+    after: ["markContinuationQueued"],
+  },
+  {
+    label: "paused to different paused",
+    build: () => {
+      const current = { ...createThreadGoal("old objective"), status: "paused" as const };
+      const next = { ...createThreadGoal("new objective"), status: "paused" as const };
+      return { current, next };
+    },
+    persist: "set",
+    before: [
+      "clearContinuation",
+      "clearActiveAccounting",
+      "resetRecovery",
+      "clearBudgetWarning",
+    ],
+    after: [],
+  },
+];
+
+for (const tableCase of commandSetTable) {
+  test(`planGoalTransition command set table: ${tableCase.label}`, () => {
+    const { current, next } = tableCase.build();
+    const plan = planGoalTransition(current, {
+      kind: "set",
+      nextGoal: next,
+      source: "command",
+    });
+
+    assertDisjointPrimitivePlan(plan, tableCase.label);
+    assert.equal(plan.persist, tableCase.persist);
+    assert.deepEqual(effectTypes(plan.beforePersist), tableCase.before);
+    assert.deepEqual(effectTypes(plan.afterPersist), tableCase.after);
+  });
+}
+
+test("planGoalTransition command set with goal id change clears runtime memory before persist", () => {
   const previous = createThreadGoal("first");
   const next = createThreadGoal("second");
 
-  const plan = planMemoryEffectsOnGoalChange(previous, next);
-  assert.equal(plan.clearContinuation, true);
-  assert.equal(plan.clearActiveAccounting, true);
-  assert.equal(plan.resetRecovery, true);
-  assert.equal(plan.clearBudgetWarning, true);
-});
+  const plan = planGoalTransition(previous, {
+    kind: "set",
+    nextGoal: next,
+    source: "command",
+  });
 
-test("planMemoryEffectsOnGoalChange pauses clear continuation and accounting without recovery reset", () => {
-  const goal = createThreadGoal("ship it");
-  const paused = { ...cloneGoal(goal), status: "paused" as const };
-
-  const plan = planMemoryEffectsOnGoalChange(goal, paused);
-  assert.equal(plan.clearContinuation, true);
-  assert.equal(plan.clearActiveAccounting, true);
-  assert.equal(plan.resetRecovery, false);
+  assertDisjointPrimitivePlan(plan, "command goal id change");
+  assert.equal(plan.persist, "set");
+  assert.deepEqual(effectTypes(plan.beforePersist), [
+    "clearContinuation",
+    "clearActiveAccounting",
+    "resetRecovery",
+    "clearBudgetWarning",
+  ]);
+  assert.deepEqual(effectTypes(plan.afterPersist), ["markContinuationQueued"]);
 });
 
 test("planGoalTransition command set replacing paused goal resets recovery only before persist", () => {
