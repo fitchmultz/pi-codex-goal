@@ -218,8 +218,13 @@ function consumeAbortingTurnObligationsForMatchedGoals(
 ): { consumedOlder: boolean; consumedActiveGoalMatch: boolean } {
   let consumedOlder = false;
   let consumedActiveGoalMatch = false;
+  const seenGoalIds = new Set<string>();
 
   for (const goalId of matchedGoalIds) {
+    if (seenGoalIds.has(goalId)) {
+      continue;
+    }
+    seenGoalIds.add(goalId);
     if (removeFirstObligationContainingGoal(older, goalId)) {
       consumedOlder = true;
       continue;
