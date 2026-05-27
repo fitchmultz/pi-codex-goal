@@ -199,39 +199,43 @@ function removeFirstAnonymousEligibleObligation(obligations: AgentEndObligation[
   return true;
 }
 
-function removeFirstObligationContainingGoal(
-  obligations: AgentEndObligation[],
-  goalId: string,
-): boolean {
-  const index = obligations.findIndex((obligation) => obligation.goalIds.has(goalId));
-  if (index === -1) {
-    return false;
-  }
-  obligations.splice(index, 1);
-  return true;
-}
-
 function consumeAbortingTurnObligationsForMatchedGoals(
   older: AgentEndObligation[],
   active: AgentEndObligation[],
   matchedGoalIds: readonly string[],
 ): { consumedOlder: boolean; consumedActiveGoalMatch: boolean } {
+  if (matchedGoalIds.length === 0) {
+    return { consumedOlder: false, consumedActiveGoalMatch: false };
+  }
+
+  const remaining = new Set(matchedGoalIds);
   let consumedOlder = false;
   let consumedActiveGoalMatch = false;
-  const seenGoalIds = new Set<string>();
 
-  for (const goalId of matchedGoalIds) {
-    if (seenGoalIds.has(goalId)) {
+  for (let index = 0; index < older.length && remaining.size > 0; ) {
+    const obligation = older[index]!;
+    if (!obligationMatchesAnyGoal(obligation, remaining)) {
+      index += 1;
       continue;
     }
-    seenGoalIds.add(goalId);
-    if (removeFirstObligationContainingGoal(older, goalId)) {
-      consumedOlder = true;
+    for (const goalId of obligation.goalIds) {
+      remaining.delete(goalId);
+    }
+    older.splice(index, 1);
+    consumedOlder = true;
+  }
+
+  for (let index = 0; index < active.length && remaining.size > 0; ) {
+    const obligation = active[index]!;
+    if (!obligationMatchesAnyGoal(obligation, remaining)) {
+      index += 1;
       continue;
     }
-    if (removeFirstObligationContainingGoal(active, goalId)) {
-      consumedActiveGoalMatch = true;
+    for (const goalId of obligation.goalIds) {
+      remaining.delete(goalId);
     }
+    active.splice(index, 1);
+    consumedActiveGoalMatch = true;
   }
 
   return { consumedOlder, consumedActiveGoalMatch };

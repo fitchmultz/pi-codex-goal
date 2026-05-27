@@ -683,6 +683,49 @@ test("abortingTurn: older id-less agent_end error during newer active abort stay
   assert.equal(guard.isBlockingContinuation(), false);
 });
 
+test("abortingTurn: older multi-goal obligation with active overlap stays aborting until active terminal", () => {
+  const guard = createStaleQueuedWorkGuard();
+  guard.noteStaleWorkStarted("goal-0");
+  guard.noteStaleWorkStarted("goal-1");
+  guard.planContextAbort(0);
+  guard.planTurnStart();
+
+  guard.noteStaleWorkStarted("goal-1");
+  guard.planContextAbort(1);
+  assert.equal(guard.lifecycleKind(), "abortingTurn");
+
+  const olderPlan = guard.planAgentEnd([
+    {
+      role: "custom",
+      customType: CUSTOM_ENTRY_TYPE,
+      details: { kind: "continuation", goalId: "goal-0" },
+    },
+    {
+      role: "custom",
+      customType: CUSTOM_ENTRY_TYPE,
+      details: { kind: "continuation", goalId: "goal-1" },
+    },
+    abortedAssistant,
+  ]);
+  assert.equal(olderPlan.skip, true);
+  assert.deepEqual(effectTypes(olderPlan), ["refreshUi"]);
+  assert.equal(guard.lifecycleKind(), "abortingTurn");
+  assert.equal(guard.isBlockingContinuation(), true);
+
+  const activePlan = guard.planAgentEnd([
+    {
+      role: "custom",
+      customType: CUSTOM_ENTRY_TYPE,
+      details: { kind: "continuation", goalId: "goal-1" },
+    },
+    abortedAssistant,
+  ]);
+  assert.equal(activePlan.skip, true);
+  assert.deepEqual(effectTypes(activePlan), ["clearAccounting", "refreshUi"]);
+  assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
+  assert.equal(guard.isBlockingContinuation(), false);
+});
+
 test("abortingTurn: duplicate same-goal stale aborts consume older agent_end first", () => {
   const guard = createStaleQueuedWorkGuard();
   guard.noteStaleWorkStarted("goal-shared");
