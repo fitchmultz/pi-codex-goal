@@ -18,7 +18,7 @@ import {
   recoveryPendingAttentionMessage,
 } from "../src/recovery.js";
 import {
-  acknowledgeHostOverflowUserResetCleared,
+  applyHostOverflowUserResetPersistence,
   beginHostOverflowRecovery,
   createGoalRecoveryMachine,
   goalStartTurnStrategy,
@@ -251,10 +251,10 @@ test("resetRecoveryMachine clears active host overflow recovery but preserves us
   assert.equal(recoveryPhaseBlocksContinuation(state.phase), false);
 });
 
-test("acknowledgeHostOverflowUserResetCleared keeps active host overflow recovery without user reset", () => {
+test("applyHostOverflowUserResetPersistence(false) keeps active host overflow recovery without user reset", () => {
   const state = createGoalRecoveryMachine();
   beginHostOverflowRecovery(state);
-  acknowledgeHostOverflowUserResetCleared(state);
+  assert.equal(applyHostOverflowUserResetPersistence(state, false), true);
   assert.equal(state.phase.kind, "hostOverflowRecovering");
   assert.equal(goalStartTurnStrategy(state.phase), "hiddenFollowUp");
 });

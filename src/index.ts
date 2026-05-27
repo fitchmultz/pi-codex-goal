@@ -520,7 +520,6 @@ export default function (pi: ExtensionAPI): void {
     const continuationGoalId = continuationGoalIdFromPrompt(event.text);
 
     if (event.source !== "extension") {
-      clearActiveHostOverflowRecovery(recoveryState);
       recoveryRuntime.onUserInput();
       applyStaleQueuedWorkEffects(staleQueuedWorkGuard.planUserInputClearAbort().effects, ctx);
       if (continuationGoalId !== null) {

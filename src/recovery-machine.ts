@@ -1,7 +1,6 @@
 import {
   applyPersistedHostOverflowUserReset,
   clearHostOverflowRecoveryActive,
-  clearHostOverflowUserReset,
   hostOverflowRecoveringNeedsUserStartPhase,
   idleRecoveryPhase,
   recoveryPhaseNeedsUserStartTurn,
@@ -102,10 +101,6 @@ export function setRecoveryPausedAttention(state: GoalRecoveryMachineState, reas
 
 export function clearActiveHostOverflowRecovery(state: GoalRecoveryMachineState): void {
   state.phase = clearHostOverflowRecoveryActive(state.phase);
-}
-
-export function acknowledgeHostOverflowUserResetCleared(state: GoalRecoveryMachineState): void {
-  state.phase = clearHostOverflowUserReset(state.phase);
 }
 
 export function applyHostOverflowUserResetPersistence(

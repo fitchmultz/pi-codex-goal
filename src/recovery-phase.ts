@@ -8,10 +8,21 @@ export type GoalStartTurnStrategy = "hiddenFollowUp" | "userFollowUp";
 
 export const idleRecoveryPhase: RecoveryPhase = { kind: "idle" };
 
+function assertNever(value: never): never {
+  throw new Error(`Unexpected recovery phase: ${JSON.stringify(value)}`);
+}
+
 export function recoveryPhaseNeedsUserStartTurn(phase: RecoveryPhase): boolean {
-  return (
-    phase.kind === "hostOverflowRecoveringNeedsUserStart" || phase.kind === "hostOverflowNeedsUserStart"
-  );
+  switch (phase.kind) {
+    case "idle":
+    case "hostOverflowRecovering":
+      return false;
+    case "hostOverflowRecoveringNeedsUserStart":
+    case "hostOverflowNeedsUserStart":
+      return true;
+    default:
+      return assertNever(phase);
+  }
 }
 
 export function goalStartTurnStrategy(phase: RecoveryPhase): GoalStartTurnStrategy {
@@ -19,7 +30,16 @@ export function goalStartTurnStrategy(phase: RecoveryPhase): GoalStartTurnStrate
 }
 
 export function recoveryPhaseBlocksContinuation(phase: RecoveryPhase): boolean {
-  return phase.kind === "hostOverflowRecoveringNeedsUserStart" || phase.kind === "hostOverflowRecovering";
+  switch (phase.kind) {
+    case "idle":
+    case "hostOverflowNeedsUserStart":
+      return false;
+    case "hostOverflowRecoveringNeedsUserStart":
+    case "hostOverflowRecovering":
+      return true;
+    default:
+      return assertNever(phase);
+  }
 }
 
 export function hostOverflowRecoveringNeedsUserStartPhase(): RecoveryPhase {
@@ -32,8 +52,11 @@ export function clearHostOverflowRecoveryActive(phase: RecoveryPhase): RecoveryP
       return { kind: "hostOverflowNeedsUserStart" };
     case "hostOverflowRecovering":
       return idleRecoveryPhase;
-    default:
+    case "idle":
+    case "hostOverflowNeedsUserStart":
       return phase;
+    default:
+      return assertNever(phase);
   }
 }
 
@@ -43,8 +66,11 @@ export function clearHostOverflowUserReset(phase: RecoveryPhase): RecoveryPhase 
       return { kind: "hostOverflowRecovering" };
     case "hostOverflowNeedsUserStart":
       return idleRecoveryPhase;
-    default:
+    case "idle":
+    case "hostOverflowRecovering":
       return phase;
+    default:
+      return assertNever(phase);
   }
 }
 
@@ -61,7 +87,9 @@ export function applyPersistedHostOverflowUserReset(
     case "hostOverflowRecoveringNeedsUserStart":
     case "hostOverflowNeedsUserStart":
       return phase;
-    default:
+    case "idle":
       return { kind: "hostOverflowNeedsUserStart" };
+    default:
+      return assertNever(phase);
   }
 }
