@@ -21,10 +21,14 @@ export type GoalTransitionRequest =
       kind: "recovery_shutdown_pause";
       nextGoal: ThreadGoal;
       recoveryReason: string;
+    }
+  | {
+      kind: "runtime_accounting";
+      nextGoal: ThreadGoal;
+      crossedBudget: boolean;
     };
 
 export interface GoalMemoryEffectPlan {
-  resetStoppedRuntime: boolean;
   clearContinuation: boolean;
   clearActiveAccounting: boolean;
   resetRecovery: boolean;
@@ -36,18 +40,21 @@ interface GoalTransitionEffectPlanShared {
   markContinuationQueued: boolean;
   resetRecoveryBeforePersist: boolean;
   resetRecoveryAfterPersist: boolean;
-  resetStoppedRuntimeBeforePersist: boolean;
   clearContinuationBeforePersist: boolean;
+  clearActiveAccountingBeforePersist: boolean;
   clearHostOverflowRecovery: boolean;
   recoveryPausedReason: string | null;
-  stopStatusRefresh: boolean;
-  refreshUi: boolean;
 }
 
 export type GoalTransitionEffectPlan =
   | (GoalTransitionEffectPlanShared & {
       persist: "skip";
       nextGoal: ThreadGoal | null;
+    })
+  | (GoalTransitionEffectPlanShared & {
+      persist: "defer";
+      nextGoal: ThreadGoal;
+      memory: GoalMemoryEffectPlan;
     })
   | (GoalTransitionEffectPlanShared & {
       persist: "set";
@@ -66,18 +73,21 @@ export function planMemoryEffectsOnGoalChange(
 ): GoalMemoryEffectPlan {
   const goalIdChanged = (previous?.goalId ?? null) !== next.goalId;
 
-  let resetStoppedRuntime = false;
   let clearContinuation = false;
   let clearActiveAccounting = false;
   let resetRecovery = false;
   let clearBudgetWarning = false;
 
   if (goalIdChanged) {
-    resetStoppedRuntime = true;
+    clearContinuation = true;
+    clearActiveAccounting = true;
+    resetRecovery = true;
     clearBudgetWarning = true;
   }
   if (next.status === "complete") {
-    resetStoppedRuntime = true;
+    clearContinuation = true;
+    clearActiveAccounting = true;
+    resetRecovery = true;
   } else if (next.status === "paused") {
     clearContinuation = true;
     clearActiveAccounting = true;
@@ -91,7 +101,6 @@ export function planMemoryEffectsOnGoalChange(
   }
 
   return {
-    resetStoppedRuntime,
     clearContinuation,
     clearActiveAccounting,
     resetRecovery,
@@ -101,11 +110,23 @@ export function planMemoryEffectsOnGoalChange(
 
 function mergeMemoryPlans(...plans: readonly GoalMemoryEffectPlan[]): GoalMemoryEffectPlan {
   return {
-    resetStoppedRuntime: plans.some((plan) => plan.resetStoppedRuntime),
     clearContinuation: plans.some((plan) => plan.clearContinuation),
     clearActiveAccounting: plans.some((plan) => plan.clearActiveAccounting),
     resetRecovery: plans.some((plan) => plan.resetRecovery),
     clearBudgetWarning: plans.some((plan) => plan.clearBudgetWarning),
+  };
+}
+
+function runtimeTransitionShared(): GoalTransitionEffectPlanShared {
+  return {
+    source: "runtime",
+    markContinuationQueued: false,
+    resetRecoveryBeforePersist: false,
+    resetRecoveryAfterPersist: false,
+    clearContinuationBeforePersist: false,
+    clearActiveAccountingBeforePersist: false,
+    clearHostOverflowRecovery: false,
+    recoveryPausedReason: null,
   };
 }
 
@@ -118,12 +139,10 @@ function recoveryPauseShared(
     markContinuationQueued: false,
     resetRecoveryBeforePersist: false,
     resetRecoveryAfterPersist: false,
-    resetStoppedRuntimeBeforePersist: false,
     clearContinuationBeforePersist: true,
+    clearActiveAccountingBeforePersist: false,
     clearHostOverflowRecovery,
     recoveryPausedReason: recoveryReason,
-    stopStatusRefresh: false,
-    refreshUi: true,
   };
 }
 
@@ -135,7 +154,6 @@ export function planGoalTransition(
     case "clear": {
       return {
         memory: {
-          resetStoppedRuntime: true,
           clearContinuation: true,
           clearActiveAccounting: true,
           resetRecovery: true,
@@ -147,12 +165,10 @@ export function planGoalTransition(
         markContinuationQueued: false,
         resetRecoveryBeforePersist: false,
         resetRecoveryAfterPersist: false,
-        resetStoppedRuntimeBeforePersist: false,
         clearContinuationBeforePersist: false,
+        clearActiveAccountingBeforePersist: false,
         clearHostOverflowRecovery: false,
         recoveryPausedReason: null,
-        stopStatusRefresh: true,
-        refreshUi: true,
       };
     }
     case "abort_pause": {
@@ -160,14 +176,12 @@ export function planGoalTransition(
       const shared: GoalTransitionEffectPlanShared = {
         source: "runtime",
         markContinuationQueued: false,
-        resetRecoveryBeforePersist: false,
+        resetRecoveryBeforePersist: true,
         resetRecoveryAfterPersist: false,
-        resetStoppedRuntimeBeforePersist: true,
-        clearContinuationBeforePersist: false,
+        clearContinuationBeforePersist: true,
+        clearActiveAccountingBeforePersist: true,
         clearHostOverflowRecovery: false,
         recoveryPausedReason: null,
-        stopStatusRefresh: false,
-        refreshUi: true,
       };
       if (current && goalsEquivalent(current, nextGoal)) {
         return { ...shared, persist: "skip", nextGoal };
@@ -178,7 +192,6 @@ export function planGoalTransition(
         nextGoal,
         memory: mergeMemoryPlans(
           {
-            resetStoppedRuntime: true,
             clearContinuation: true,
             clearActiveAccounting: true,
             resetRecovery: true,
@@ -195,12 +208,10 @@ export function planGoalTransition(
         markContinuationQueued: false,
         resetRecoveryBeforePersist: true,
         resetRecoveryAfterPersist: false,
-        resetStoppedRuntimeBeforePersist: false,
         clearContinuationBeforePersist: true,
+        clearActiveAccountingBeforePersist: false,
         clearHostOverflowRecovery: false,
         recoveryPausedReason: null,
-        stopStatusRefresh: false,
-        refreshUi: true,
       };
       if (current && goalsEquivalent(current, nextGoal)) {
         return { ...shared, persist: "skip", nextGoal };
@@ -238,6 +249,28 @@ export function planGoalTransition(
         memory: planMemoryEffectsOnGoalChange(current, nextGoal),
       };
     }
+    case "runtime_accounting": {
+      const { nextGoal, crossedBudget } = request;
+      const shared = runtimeTransitionShared();
+      if (current && goalsEquivalent(current, nextGoal)) {
+        return { ...shared, persist: "skip", nextGoal };
+      }
+      const memory = planMemoryEffectsOnGoalChange(current, nextGoal);
+      if (crossedBudget) {
+        return {
+          ...shared,
+          persist: "set",
+          nextGoal,
+          memory,
+        };
+      }
+      return {
+        ...shared,
+        persist: "defer",
+        nextGoal,
+        memory,
+      };
+    }
     case "set": {
       const { nextGoal, source, wasPausedBefore = false } = request;
       const commandEffects =
@@ -247,27 +280,25 @@ export function planGoalTransition(
               resetRecoveryBeforePersist: false,
               resetRecoveryAfterPersist:
                 (nextGoal.status === "active" && wasPausedBefore) || nextGoal.status === "paused",
-              resetStoppedRuntimeBeforePersist: false,
               clearContinuationBeforePersist: false,
+              clearActiveAccountingBeforePersist: false,
             }
           : {
               markContinuationQueued: false,
               resetRecoveryBeforePersist: false,
               resetRecoveryAfterPersist: false,
-              resetStoppedRuntimeBeforePersist: false,
               clearContinuationBeforePersist: false,
+              clearActiveAccountingBeforePersist: false,
             };
       const shared: GoalTransitionEffectPlanShared = {
         source,
         markContinuationQueued: commandEffects.markContinuationQueued,
         resetRecoveryBeforePersist: commandEffects.resetRecoveryBeforePersist,
         resetRecoveryAfterPersist: commandEffects.resetRecoveryAfterPersist,
-        resetStoppedRuntimeBeforePersist: commandEffects.resetStoppedRuntimeBeforePersist,
         clearContinuationBeforePersist: commandEffects.clearContinuationBeforePersist,
+        clearActiveAccountingBeforePersist: commandEffects.clearActiveAccountingBeforePersist,
         clearHostOverflowRecovery: false,
         recoveryPausedReason: null,
-        stopStatusRefresh: false,
-        refreshUi: true,
       };
       if (current && goalsEquivalent(current, nextGoal)) {
         return { ...shared, persist: "skip", nextGoal };
@@ -287,7 +318,6 @@ export function planGoalTransition(
 }
 
 export interface GoalMemoryEffectHandlers {
-  resetStoppedRuntime: () => void;
   clearContinuation: () => void;
   clearActiveAccounting: () => void;
   resetRecovery: () => void;
@@ -298,9 +328,6 @@ export function applyGoalMemoryEffects(
   plan: GoalMemoryEffectPlan,
   handlers: GoalMemoryEffectHandlers,
 ): void {
-  if (plan.resetStoppedRuntime) {
-    handlers.resetStoppedRuntime();
-  }
   if (plan.clearContinuation) {
     handlers.clearContinuation();
   }
@@ -323,7 +350,7 @@ export interface GoalTransitionPostPersistHandlers {
 export function applyGoalTransitionPostPersistEffects(
   plan: Pick<
     GoalTransitionEffectPlan,
-    "resetRecoveryAfterPersist" | "markContinuationQueued" | "nextGoal" | "persist"
+    "resetRecoveryAfterPersist" | "markContinuationQueued" | "nextGoal"
   >,
   handlers: GoalTransitionPostPersistHandlers,
 ): void {

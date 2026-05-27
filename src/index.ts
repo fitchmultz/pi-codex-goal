@@ -15,7 +15,6 @@ import {
   applyGoalMemoryEffects,
   applyGoalTransitionPostPersistEffects,
   planGoalTransition,
-  planMemoryEffectsOnGoalChange,
   type GoalTransitionRequest,
 } from "./goal-transition.js";
 import {
@@ -156,12 +155,6 @@ export default function (pi: ExtensionAPI): void {
     }
   };
 
-  const clearStoppedRuntimeState = (): void => {
-    clearContinuationState();
-    clearActiveAccounting();
-    resetErrorRecovery();
-  };
-
   const syncStatusRefresh = (): void => {
     if (goal?.status === "active" && statusContext && !statusRefreshTimer) {
       statusRefreshTimer = setInterval(() => {
@@ -226,18 +219,12 @@ export default function (pi: ExtensionAPI): void {
     extensionQueuedGoalWorkMessageIdForRuntime(message, continuationGoalIdFromRuntimePrompt);
 
   const goalMemoryHandlers = {
-    resetStoppedRuntime: clearStoppedRuntimeState,
     clearContinuation: clearContinuationState,
     clearActiveAccounting,
     resetRecovery: resetErrorRecovery,
     clearBudgetWarning: () => {
       accounting.budgetWarningSentFor = null;
     },
-  };
-
-  const setGoalInMemory = (nextGoal: ThreadGoal): void => {
-    applyGoalMemoryEffects(planMemoryEffectsOnGoalChange(goal, nextGoal), goalMemoryHandlers);
-    goal = nextGoal;
   };
 
   const applyGoalTransition = (
@@ -249,11 +236,11 @@ export default function (pi: ExtensionAPI): void {
     if (plan.resetRecoveryBeforePersist) {
       resetErrorRecovery();
     }
-    if (plan.resetStoppedRuntimeBeforePersist) {
-      clearStoppedRuntimeState();
-    }
     if (plan.clearContinuationBeforePersist) {
       clearContinuationState();
+    }
+    if (plan.clearActiveAccountingBeforePersist) {
+      clearActiveAccounting();
     }
     if (plan.clearHostOverflowRecovery) {
       clearActiveHostOverflowRecovery(recoveryState);
@@ -268,11 +255,9 @@ export default function (pi: ExtensionAPI): void {
       goal = null;
       lastPersistedGoal = null;
       lastRuntimePersistAt = null;
-      if (plan.stopStatusRefresh) {
-        stopStatusRefresh();
-      }
+      stopStatusRefresh();
       pi.appendEntry(CUSTOM_ENTRY_TYPE, clearEntry(clearedGoalId, plan.source));
-      if (plan.refreshUi && ctx) {
+      if (ctx) {
         refreshUi(ctx);
       }
       return true;
@@ -285,7 +270,16 @@ export default function (pi: ExtensionAPI): void {
           continuationQueuedFor = goalId;
         },
       });
-      if (plan.refreshUi && ctx) {
+      if (ctx) {
+        refreshUi(ctx);
+      }
+      return false;
+    }
+
+    if (plan.persist === "defer") {
+      applyGoalMemoryEffects(plan.memory, goalMemoryHandlers);
+      goal = plan.nextGoal;
+      if (ctx) {
         refreshUi(ctx);
       }
       return false;
@@ -301,7 +295,7 @@ export default function (pi: ExtensionAPI): void {
         continuationQueuedFor = goalId;
       },
     });
-    if (plan.refreshUi && ctx) {
+    if (ctx) {
       refreshUi(ctx);
     }
 
@@ -388,10 +382,10 @@ export default function (pi: ExtensionAPI): void {
 
   const goalAccounting = createGoalAccounting({
     getGoal: () => goal,
-    setGoal: setGoalInMemory,
     getAccounting: () => accounting,
-    flushGoalPersistence,
-    refreshUi,
+    applyRuntimeAccountingTransition(ctx, nextGoal, crossedBudget) {
+      applyGoalTransition({ kind: "runtime_accounting", nextGoal, crossedBudget }, ctx);
+    },
     sendMessage: pi.sendMessage.bind(pi),
   });
 

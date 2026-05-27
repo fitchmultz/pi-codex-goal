@@ -9,21 +9,22 @@ import {
 } from "../src/goal-transition.js";
 import { cloneGoal, createThreadGoal } from "../src/state.js";
 
-test("planMemoryEffectsOnGoalChange clears stopped runtime when goal id changes", () => {
+test("planMemoryEffectsOnGoalChange clears stopped runtime primitives when goal id changes", () => {
   const previous = createThreadGoal("first");
   const next = createThreadGoal("second");
 
   const plan = planMemoryEffectsOnGoalChange(previous, next);
-  assert.equal(plan.resetStoppedRuntime, true);
+  assert.equal(plan.clearContinuation, true);
+  assert.equal(plan.clearActiveAccounting, true);
+  assert.equal(plan.resetRecovery, true);
   assert.equal(plan.clearBudgetWarning, true);
 });
 
-test("planMemoryEffectsOnGoalChange pauses clear continuation and accounting without full reset", () => {
+test("planMemoryEffectsOnGoalChange pauses clear continuation and accounting without recovery reset", () => {
   const goal = createThreadGoal("ship it");
   const paused = { ...cloneGoal(goal), status: "paused" as const };
 
   const plan = planMemoryEffectsOnGoalChange(goal, paused);
-  assert.equal(plan.resetStoppedRuntime, false);
   assert.equal(plan.clearContinuation, true);
   assert.equal(plan.clearActiveAccounting, true);
   assert.equal(plan.resetRecovery, false);
@@ -45,25 +46,30 @@ test("planGoalTransition command set marks continuation and defers recovery rese
   assert.equal(plan.resetRecoveryBeforePersist, false);
 });
 
-test("planGoalTransition abort pause resets stopped runtime before paused memory effects", () => {
+test("planGoalTransition abort pause clears stopped runtime primitives before paused memory effects", () => {
   const goal = createThreadGoal("ship it");
   const paused = { ...cloneGoal(goal), status: "paused" as const };
 
   const plan = planGoalTransition(goal, { kind: "abort_pause", nextGoal: paused });
   assert.equal(plan.persist, "set");
-  assert.equal(plan.memory.resetStoppedRuntime, true);
+  assert.equal(plan.clearContinuationBeforePersist, true);
+  assert.equal(plan.clearActiveAccountingBeforePersist, true);
+  assert.equal(plan.resetRecoveryBeforePersist, true);
+  assert.equal(plan.memory.clearContinuation, true);
+  assert.equal(plan.memory.resetRecovery, true);
 });
 
-test("planGoalTransition clear stops status refresh and persists clear", () => {
+test("planGoalTransition clear persists clear with full memory reset", () => {
   const goal = createThreadGoal("ship it");
   const plan = planGoalTransition(goal, { kind: "clear", source: "command" });
 
   assert.equal(plan.persist, "clear");
-  assert.equal(plan.stopStatusRefresh, true);
   assert.equal(plan.nextGoal, null);
+  assert.equal(plan.memory.clearContinuation, true);
+  assert.equal(plan.memory.resetRecovery, true);
 });
 
-test("planGoalTransition recovery pause owns continuation clear, reason, and refresh", () => {
+test("planGoalTransition recovery pause owns continuation clear and reason", () => {
   const goal = createThreadGoal("ship it");
   const paused = { ...cloneGoal(goal), status: "paused" as const };
   const plan = planGoalTransition(goal, {
@@ -75,7 +81,6 @@ test("planGoalTransition recovery pause owns continuation clear, reason, and ref
   assert.equal(plan.persist, "set");
   assert.equal(plan.clearContinuationBeforePersist, true);
   assert.equal(plan.recoveryPausedReason, "context_length_exceeded");
-  assert.equal(plan.refreshUi, true);
   assert.equal(plan.memory.clearContinuation, true);
 });
 
@@ -97,16 +102,12 @@ test("applyGoalMemoryEffects invokes every handler when all flags are true", () 
   const calls: string[] = [];
   applyGoalMemoryEffects(
     {
-      resetStoppedRuntime: true,
       clearContinuation: true,
       clearActiveAccounting: true,
       resetRecovery: true,
       clearBudgetWarning: true,
     },
     {
-      resetStoppedRuntime: () => {
-        calls.push("resetStoppedRuntime");
-      },
       clearContinuation: () => {
         calls.push("clearContinuation");
       },
@@ -123,7 +124,6 @@ test("applyGoalMemoryEffects invokes every handler when all flags are true", () 
   );
 
   assert.deepEqual(calls, [
-    "resetStoppedRuntime",
     "clearContinuation",
     "clearActiveAccounting",
     "resetRecovery",
@@ -158,12 +158,64 @@ test("applyGoalTransitionPostPersistEffects applies skip-plan command side effec
   ]);
 });
 
-test("planGoalTransition abort pause clears stopped runtime before persist when persistence skips", () => {
+test("planGoalTransition abort pause clears stopped runtime primitives before persist when persistence skips", () => {
   const goal = createThreadGoal("ship it");
   const paused = { ...cloneGoal(goal), status: "paused" as const };
   const plan = planGoalTransition(paused, { kind: "abort_pause", nextGoal: paused });
 
   assert.equal(plan.persist, "skip");
   assert.equal("memory" in plan, false);
-  assert.equal(plan.resetStoppedRuntimeBeforePersist, true);
+  assert.equal(plan.clearContinuationBeforePersist, true);
+  assert.equal(plan.clearActiveAccountingBeforePersist, true);
+  assert.equal(plan.resetRecoveryBeforePersist, true);
+});
+
+test("planGoalTransition runtime accounting defers persistence for ordinary usage updates", () => {
+  const goal = createThreadGoal("ship it");
+  const next = {
+    ...cloneGoal(goal),
+    usage: { tokensUsed: 5, activeSeconds: 3 },
+    updatedAt: goal.updatedAt + 1,
+  };
+
+  const plan = planGoalTransition(goal, {
+    kind: "runtime_accounting",
+    nextGoal: next,
+    crossedBudget: false,
+  });
+
+  assert.equal(plan.persist, "defer");
+  assert.equal(plan.memory.clearBudgetWarning, true);
+});
+
+test("planGoalTransition runtime accounting persists immediately when budget is crossed", () => {
+  const goal = createThreadGoal("ship it", 10);
+  const limited = {
+    ...cloneGoal(goal),
+    status: "budgetLimited" as const,
+    usage: { tokensUsed: 10, activeSeconds: 1 },
+    updatedAt: goal.updatedAt + 1,
+  };
+
+  const plan = planGoalTransition(goal, {
+    kind: "runtime_accounting",
+    nextGoal: limited,
+    crossedBudget: true,
+  });
+
+  assert.equal(plan.persist, "set");
+  assert.equal(plan.memory.clearContinuation, true);
+  assert.equal(plan.memory.resetRecovery, true);
+});
+
+test("planGoalTransition skip plans cannot carry memory", () => {
+  const goal = createThreadGoal("ship it");
+  const plan = planGoalTransition(goal, {
+    kind: "runtime_accounting",
+    nextGoal: goal,
+    crossedBudget: false,
+  });
+
+  assert.equal(plan.persist, "skip");
+  assert.equal("memory" in plan, false);
 });

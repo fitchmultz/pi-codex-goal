@@ -53,10 +53,12 @@ export function isToolUseAssistantMessage(message: AssistantTurnMessage): boolea
 
 interface GoalAccountingDeps {
   getGoal: () => ThreadGoal | null;
-  setGoal: (nextGoal: ThreadGoal) => void;
   getAccounting: () => AccountingState;
-  flushGoalPersistence: (source: "runtime") => boolean;
-  refreshUi: (ctx: ExtensionContext) => void;
+  applyRuntimeAccountingTransition: (
+    ctx: ExtensionContext,
+    nextGoal: ThreadGoal,
+    crossedBudget: boolean,
+  ) => void;
   sendMessage: ExtensionAPI["sendMessage"];
 }
 
@@ -106,12 +108,7 @@ export function createGoalAccounting(deps: GoalAccountingDeps) {
       return;
     }
 
-    deps.setGoal(result.goal);
-    deps.refreshUi(ctx);
-
-    if (result.crossedBudget) {
-      deps.flushGoalPersistence("runtime");
-    }
+    deps.applyRuntimeAccountingTransition(ctx, result.goal, result.crossedBudget);
 
     if (allowBudgetSteering && result.crossedBudget && accounting.budgetWarningSentFor !== result.goal.goalId) {
       accounting.budgetWarningSentFor = result.goal.goalId;
