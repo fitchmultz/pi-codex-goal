@@ -7,6 +7,7 @@ import {
   onRecoveryUserInput,
   planRecoveryForAssistantError,
   planRecoveryForSilentContextOverflow,
+  requireHostOverflowUserReset,
   setRecoveryPausedAttention,
   setRecoveryPendingAttention,
   type GoalRecoveryMachineState,
@@ -77,14 +78,16 @@ export function createGoalRecoveryRuntime(deps: RecoveryRuntimeDeps) {
 
   const beginOverflowRecovery = (ctx: ExtensionContext): boolean => {
     const goal = deps.getGoal();
-    if (!goal || goal.status !== "active") {
-      return false;
+    const hasActiveGoal = Boolean(goal && goal.status === "active");
+
+    if (hasActiveGoal) {
+      deps.clearContinuationState();
+      const { persistHostOverflowCapReset } = beginHostOverflowRecovery(deps.getRecoveryState());
+      deps.refreshUi(ctx);
+      return persistHostOverflowCapReset;
     }
 
-    deps.clearContinuationState();
-    const { persistHostOverflowCapReset } = beginHostOverflowRecovery(deps.getRecoveryState());
-    deps.refreshUi(ctx);
-    return persistHostOverflowCapReset;
+    return requireHostOverflowUserReset(deps.getRecoveryState());
   };
 
   const finishSuccessfulAssistantTurn = (

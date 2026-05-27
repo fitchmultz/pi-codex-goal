@@ -121,6 +121,13 @@ export function syncHostOverflowUserResetFromSession(
   state.phase = applyPersistedHostOverflowUserReset(state.phase, needsUserReset);
 }
 
+/** Session-level overflow: require a user-started goal turn even without an active goal. */
+export function requireHostOverflowUserReset(state: GoalRecoveryMachineState): boolean {
+  const persistHostOverflowCapReset = !recoveryPhaseNeedsUserStartTurn(state.phase);
+  state.phase = applyPersistedHostOverflowUserReset(state.phase, true);
+  return persistHostOverflowCapReset;
+}
+
 export function beginHostOverflowRecovery(state: GoalRecoveryMachineState): {
   attention: string;
   persistHostOverflowCapReset: boolean;

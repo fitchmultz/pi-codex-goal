@@ -21,6 +21,7 @@ import {
   applyHostOverflowUserResetPersistence,
   beginHostOverflowRecovery,
   createGoalRecoveryMachine,
+  requireHostOverflowUserReset,
   goalStartTurnStrategy,
   isRepeatOverflowCompactionDue,
   onRecoverySessionCompact,
@@ -265,6 +266,18 @@ test("beginHostOverflowRecovery skips cap-reset persistence when user reset alre
   const result = beginHostOverflowRecovery(state);
   assert.equal(result.persistHostOverflowCapReset, false);
   assert.equal(state.phase.kind, "hostOverflowRecoveringNeedsUserStart");
+});
+
+test("requireHostOverflowUserReset records session-level user start without active recovery", () => {
+  const state = createGoalRecoveryMachine();
+  assert.equal(requireHostOverflowUserReset(state), true);
+  assert.equal(state.phase.kind, "hostOverflowNeedsUserStart");
+  assert.equal(state.attention, null);
+  assert.equal(recoveryPhaseBlocksContinuation(state.phase), false);
+  assert.equal(recoveryPhaseNeedsUserStartTurn(state.phase), true);
+  assert.equal(goalStartTurnStrategy(state.phase), "userFollowUp");
+  assert.equal(requireHostOverflowUserReset(state), false);
+  assert.equal(state.phase.kind, "hostOverflowNeedsUserStart");
 });
 
 test("recovery session compact preserves overflow attempt counts after host compaction", () => {

@@ -5,6 +5,7 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import { createGoalRecoveryMachine } from "../src/recovery-machine.js";
 import { createGoalRecoveryRuntime } from "../src/recovery-runtime.js";
+import { recoveryPhaseNeedsUserStartTurn } from "../src/recovery-phase.js";
 import { CONTEXT_OVERFLOW_SIGNATURE } from "../src/recovery.js";
 import type { ThreadGoal } from "../src/types.js";
 
@@ -18,20 +19,23 @@ const activeGoal: ThreadGoal = {
   updatedAt: 0,
 };
 
-function createRecoveryTestRuntime() {
+function createRecoveryTestRuntime(goal: ThreadGoal | null = activeGoal) {
   let recoveryState = createGoalRecoveryMachine();
   let continueCount = 0;
+  let refreshCount = 0;
 
   const ctx = {
     ui: { setStatus() {} },
   } as unknown as ExtensionContext;
 
   const runtime = createGoalRecoveryRuntime({
-    getGoal: () => activeGoal,
+    getGoal: () => goal,
     getRecoveryState: () => recoveryState,
     clearContinuationState: () => {},
     pauseGoalForRecovery: () => {},
-    refreshUi: () => {},
+    refreshUi: () => {
+      refreshCount += 1;
+    },
     maybeContinue: () => {
       continueCount += 1;
     },
@@ -43,11 +47,35 @@ function createRecoveryTestRuntime() {
     get continueCount() {
       return continueCount;
     },
+    get refreshCount() {
+      return refreshCount;
+    },
     get recoveryState() {
       return recoveryState;
     },
   };
 }
+
+test("beginOverflowRecovery without an active goal records user reset only", () => {
+  const harness = createRecoveryTestRuntime(null);
+
+  assert.equal(harness.runtime.beginOverflowRecovery(harness.ctx), true);
+  assert.equal(harness.recoveryState.phase.kind, "hostOverflowNeedsUserStart");
+  assert.equal(harness.recoveryState.attention, null);
+  assert.equal(recoveryPhaseNeedsUserStartTurn(harness.recoveryState.phase), true);
+  assert.equal(harness.refreshCount, 0);
+  assert.equal(harness.runtime.beginOverflowRecovery(harness.ctx), false);
+});
+
+test("beginOverflowRecovery with a paused goal records user reset without pending attention", () => {
+  const pausedGoal: ThreadGoal = { ...activeGoal, status: "paused" };
+  const harness = createRecoveryTestRuntime(pausedGoal);
+
+  assert.equal(harness.runtime.beginOverflowRecovery(harness.ctx), true);
+  assert.equal(harness.recoveryState.phase.kind, "hostOverflowNeedsUserStart");
+  assert.equal(harness.recoveryState.attention, null);
+  assert.equal(harness.refreshCount, 0);
+});
 
 test("persistent provider errors plan pending attention without scheduling hidden continuation", () => {
   const harness = createRecoveryTestRuntime();
