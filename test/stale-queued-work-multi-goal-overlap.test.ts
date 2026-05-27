@@ -85,3 +85,82 @@ test("older multi-goal stale abort with active overlap keeps replacement active 
     Date.now = originalNow;
   }
 });
+
+test("same-goal stale abort unblocks continuation when active agent_end arrives after active turn_end without older terminal", async () => {
+  const originalNow = Date.now;
+  let now = 1_000;
+  Date.now = () => now;
+  try {
+    const harness = createRuntimeHarness();
+    await harness.runCommand("goal A");
+    const queuedA = harness.sentMessages[0];
+    assert.ok(queuedA);
+    const messageA = queuedCustomMessage(queuedA, 1);
+    const goalAId = harness.snapshot().goal?.goalId;
+    assert.ok(goalAId);
+
+    await harness.runCommand("goal B");
+    const replacement = harness.snapshot().goal;
+    assert.equal(replacement?.objective, "goal B");
+    harness.sentMessages.length = 0;
+
+    await emitQueuedTurnThroughContext(harness, [messageA], 0);
+    assert.equal(harness.abortCount, 1);
+
+    await emitQueuedTurnThroughContext(harness, [messageA, messageA], 1);
+    assert.equal(harness.abortCount, 2);
+
+    const staleGoalContinuation = {
+      role: "custom" as const,
+      customType: CUSTOM_ENTRY_TYPE,
+      details: { kind: "continuation" as const, goalId: goalAId },
+    };
+
+    now = 4_000;
+    await harness.emit("turn_end", {
+      type: "turn_end",
+      turnIndex: 1,
+      message: assistantMessage("aborted", { input: 20, output: 5 }),
+      toolResults: [],
+    });
+    assert.equal(harness.snapshot().goal?.goalId, replacement?.goalId);
+    assert.equal(harness.snapshot().goal?.status, "active");
+    assert.equal(harness.sentMessages.length, 0);
+
+    now = 5_000;
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [
+        staleGoalContinuation,
+        { ...staleGoalContinuation },
+        assistantMessage("aborted", { input: 12, output: 3 }),
+      ],
+    });
+    assert.equal(harness.snapshot().goal?.goalId, replacement?.goalId);
+    assert.equal(harness.snapshot().goal?.status, "active");
+    assert.equal(harness.sentMessages.length, 0);
+
+    harness.sentMessages.length = 0;
+    await harness.emit("session_tree", { type: "session_tree" });
+
+    const goal = harness.snapshot().goal;
+    assert.equal(goal?.goalId, replacement?.goalId);
+    assert.equal(goal?.status, "active");
+    assert.equal(harness.sentMessages.length, 1);
+    assert.deepEqual(harness.sentMessages[0]?.message.details, {
+      kind: "continuation",
+      goalId: replacement?.goalId,
+    });
+
+    now = 6_000;
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [staleGoalContinuation, assistantMessage("aborted", { input: 8, output: 2 })],
+    });
+    assert.equal(harness.snapshot().goal?.goalId, replacement?.goalId);
+    assert.equal(harness.snapshot().goal?.status, "active");
+    assert.equal(harness.sentMessages.length, 1);
+  } finally {
+    Date.now = originalNow;
+  }
+});

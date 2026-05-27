@@ -796,6 +796,51 @@ test("abortingTurn: duplicate same-goal matches in one active agent_end consume 
   assert.equal(guard.isBlockingContinuation(), false);
 });
 
+test("abortingTurn: same-goal active agent_end after active turn_end finishes without older terminal", () => {
+  const guard = createStaleQueuedWorkGuard();
+  const sharedGoalMessage = {
+    role: "custom" as const,
+    customType: CUSTOM_ENTRY_TYPE,
+    details: { kind: "continuation" as const, goalId: "goal-shared" },
+  };
+
+  guard.noteStaleWorkStarted("goal-shared");
+  guard.planContextAbort(0);
+  guard.planTurnStart();
+
+  guard.noteStaleWorkStarted("goal-shared");
+  guard.planContextAbort(1);
+  assert.equal(guard.lifecycleKind(), "abortingTurn");
+
+  const activeTurnEndPlan = guard.planTurnEnd(1, abortedAssistant);
+  assert.equal(activeTurnEndPlan.skip, true);
+  assert.deepEqual(effectTypes(activeTurnEndPlan), ["clearAccounting", "refreshUi"]);
+  assert.equal(guard.lifecycleKind(), "abortingTurn");
+  assert.equal(guard.isBlockingContinuation(), true);
+
+  const activeDuplicatePlan = guard.planAgentEnd([
+    sharedGoalMessage,
+    { ...sharedGoalMessage },
+    abortedAssistant,
+  ]);
+  assert.equal(activeDuplicatePlan.skip, true);
+  assert.deepEqual(effectTypes(activeDuplicatePlan), ["clearAccounting", "refreshUi"]);
+  assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
+  assert.equal(guard.isBlockingContinuation(), false);
+
+  const lateOlderPlan = guard.planAgentEnd([sharedGoalMessage, abortedAssistant]);
+  assert.equal(lateOlderPlan.skip, true);
+  assert.deepEqual(effectTypes(lateOlderPlan), ["refreshUi"]);
+  assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
+  assert.equal(guard.isBlockingContinuation(), false);
+
+  const lateOlderTurnEndPlan = guard.planTurnEnd(0, abortedAssistant);
+  assert.equal(lateOlderTurnEndPlan.skip, true);
+  assert.deepEqual(effectTypes(lateOlderTurnEndPlan), ["refreshUi"]);
+  assert.equal(guard.lifecycleKind(), "idle");
+  assert.equal(guard.isBlockingContinuation(), false);
+});
+
 test("abortingTurn: goal-bearing agent_end clears active obligation without anonymous remainder", () => {
   const guard = createStaleQueuedWorkGuard();
   guard.noteStaleWorkStarted("goal-1");

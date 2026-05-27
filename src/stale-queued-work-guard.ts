@@ -199,10 +199,50 @@ function removeFirstAnonymousEligibleObligation(obligations: AgentEndObligation[
   return true;
 }
 
+function isSubsetOfSet(values: readonly string[], superset: ReadonlySet<string>): boolean {
+  for (const value of values) {
+    if (!superset.has(value)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function activeTurnEndConsumed(
+  aborting: AbortingTurnState,
+  terminalCleanup: TerminalCleanup,
+): boolean {
+  const { activeTurnIndex } = aborting;
+  return activeTurnIndex !== null && !terminalCleanup.pendingTurnEndIndexes.has(activeTurnIndex);
+}
+
+function consumeMatchedAbortingTurnObligations(
+  obligations: AgentEndObligation[],
+  remaining: Set<string>,
+): boolean {
+  let consumed = false;
+
+  for (let index = 0; index < obligations.length && remaining.size > 0; ) {
+    const obligation = obligations[index]!;
+    if (!obligationMatchesAnyGoal(obligation, remaining)) {
+      index += 1;
+      continue;
+    }
+    for (const goalId of obligation.goalIds) {
+      remaining.delete(goalId);
+    }
+    obligations.splice(index, 1);
+    consumed = true;
+  }
+
+  return consumed;
+}
+
 function consumeAbortingTurnObligationsForMatchedGoals(
   older: AgentEndObligation[],
   active: AgentEndObligation[],
   matchedGoalIds: readonly string[],
+  preferActiveFirst: boolean,
 ): { consumedOlder: boolean; consumedActiveGoalMatch: boolean } {
   if (matchedGoalIds.length === 0) {
     return { consumedOlder: false, consumedActiveGoalMatch: false };
@@ -212,30 +252,12 @@ function consumeAbortingTurnObligationsForMatchedGoals(
   let consumedOlder = false;
   let consumedActiveGoalMatch = false;
 
-  for (let index = 0; index < older.length && remaining.size > 0; ) {
-    const obligation = older[index]!;
-    if (!obligationMatchesAnyGoal(obligation, remaining)) {
-      index += 1;
-      continue;
-    }
-    for (const goalId of obligation.goalIds) {
-      remaining.delete(goalId);
-    }
-    older.splice(index, 1);
-    consumedOlder = true;
-  }
-
-  for (let index = 0; index < active.length && remaining.size > 0; ) {
-    const obligation = active[index]!;
-    if (!obligationMatchesAnyGoal(obligation, remaining)) {
-      index += 1;
-      continue;
-    }
-    for (const goalId of obligation.goalIds) {
-      remaining.delete(goalId);
-    }
-    active.splice(index, 1);
-    consumedActiveGoalMatch = true;
+  if (preferActiveFirst) {
+    consumedActiveGoalMatch = consumeMatchedAbortingTurnObligations(active, remaining);
+    consumedOlder = consumeMatchedAbortingTurnObligations(older, remaining);
+  } else {
+    consumedOlder = consumeMatchedAbortingTurnObligations(older, remaining);
+    consumedActiveGoalMatch = consumeMatchedAbortingTurnObligations(active, remaining);
   }
 
   return { consumedOlder, consumedActiveGoalMatch };
@@ -447,11 +469,17 @@ export function createStaleQueuedWorkGuard(): StaleQueuedWorkGuard {
       messages,
       allPendingGoalIds(terminalCleanup),
     );
+    const activeGoalIds = pendingGoalIdsFromObligations(active);
+    const preferActiveFirst =
+      activeTurnEndConsumed(aborting, terminalCleanup) &&
+      matchedGoalIds.length > 0 &&
+      isSubsetOfSet(matchedGoalIds, activeGoalIds);
 
     let { consumedOlder, consumedActiveGoalMatch } = consumeAbortingTurnObligationsForMatchedGoals(
       older,
       active,
       matchedGoalIds,
+      preferActiveFirst,
     );
 
     let finishActive = consumedActiveGoalMatch;
