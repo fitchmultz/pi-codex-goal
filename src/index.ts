@@ -13,6 +13,7 @@ import { compactContinuationPrompt, continuationGoalIdFromPrompt } from "./promp
 import { isCommandResumeQueuedGoalMessage } from "./queued-goal-messages.js";
 import {
   applyGoalMemoryEffects,
+  applyGoalTransitionPostPersistEffects,
   planGoalTransition,
   planMemoryEffectsOnGoalChange,
   type GoalTransitionRequest,
@@ -251,6 +252,9 @@ export default function (pi: ExtensionAPI): void {
     if (plan.resetRecoveryBeforePersist) {
       resetErrorRecovery();
     }
+    if (plan.resetStoppedRuntimeBeforePersist) {
+      clearStoppedRuntimeState();
+    }
     if (plan.clearContinuationBeforePersist) {
       clearContinuationState();
     }
@@ -278,6 +282,15 @@ export default function (pi: ExtensionAPI): void {
     }
 
     if (plan.persist === "skip") {
+      applyGoalTransitionPostPersistEffects(plan, {
+        resetRecoveryAfterPersist: resetErrorRecovery,
+        markContinuationQueued: (goalId) => {
+          continuationQueuedFor = goalId;
+        },
+      });
+      if (plan.refreshUi && ctx) {
+        refreshUi(ctx);
+      }
       return false;
     }
 
@@ -285,12 +298,12 @@ export default function (pi: ExtensionAPI): void {
     goal = plan.nextGoal;
     const persisted = flushGoalPersistence(plan.source);
 
-    if (plan.resetRecoveryAfterPersist) {
-      resetErrorRecovery();
-    }
-    if (plan.markContinuationQueued && plan.nextGoal) {
-      continuationQueuedFor = plan.nextGoal.goalId;
-    }
+    applyGoalTransitionPostPersistEffects(plan, {
+      resetRecoveryAfterPersist: resetErrorRecovery,
+      markContinuationQueued: (goalId) => {
+        continuationQueuedFor = goalId;
+      },
+    });
     if (plan.refreshUi && ctx) {
       refreshUi(ctx);
     }

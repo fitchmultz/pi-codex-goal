@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  applyGoalMemoryEffects,
+  applyGoalTransitionPostPersistEffects,
   planGoalTransition,
   planMemoryEffectsOnGoalChange,
 } from "../src/goal-transition.js";
@@ -61,4 +63,79 @@ test("planGoalTransition clear stops status refresh and persists clear", () => {
   assert.equal(plan.persist, "clear");
   assert.equal(plan.stopStatusRefresh, true);
   assert.equal(plan.nextGoal, null);
+});
+
+test("applyGoalMemoryEffects invokes every handler when all flags are true", () => {
+  const calls: string[] = [];
+  applyGoalMemoryEffects(
+    {
+      resetStoppedRuntime: true,
+      clearContinuation: true,
+      clearActiveAccounting: true,
+      resetRecovery: true,
+      clearBudgetWarning: true,
+    },
+    {
+      resetStoppedRuntime: () => {
+        calls.push("resetStoppedRuntime");
+      },
+      clearContinuation: () => {
+        calls.push("clearContinuation");
+      },
+      clearActiveAccounting: () => {
+        calls.push("clearActiveAccounting");
+      },
+      resetRecovery: () => {
+        calls.push("resetRecovery");
+      },
+      clearBudgetWarning: () => {
+        calls.push("clearBudgetWarning");
+      },
+    },
+  );
+
+  assert.deepEqual(calls, [
+    "resetStoppedRuntime",
+    "clearContinuation",
+    "clearActiveAccounting",
+    "resetRecovery",
+    "clearBudgetWarning",
+  ]);
+});
+
+test("applyGoalTransitionPostPersistEffects applies skip-plan command side effects", () => {
+  const goal = createThreadGoal("ship it");
+  const plan = planGoalTransition(goal, {
+    kind: "set",
+    nextGoal: goal,
+    source: "command",
+    wasPausedBefore: true,
+  });
+  assert.ok(plan);
+  assert.equal(plan.persist, "skip");
+
+  const calls: string[] = [];
+  applyGoalTransitionPostPersistEffects(plan, {
+    resetRecoveryAfterPersist: () => {
+      calls.push("resetRecoveryAfterPersist");
+    },
+    markContinuationQueued: (goalId) => {
+      calls.push(`markContinuationQueued:${goalId}`);
+    },
+  });
+
+  assert.deepEqual(calls, [
+    "resetRecoveryAfterPersist",
+    `markContinuationQueued:${goal.goalId}`,
+  ]);
+});
+
+test("planGoalTransition abort pause clears stopped runtime before persist when persistence skips", () => {
+  const goal = createThreadGoal("ship it");
+  const paused = { ...cloneGoal(goal), status: "paused" as const };
+  const plan = planGoalTransition(paused, { kind: "abort_pause", nextGoal: paused });
+
+  assert.ok(plan);
+  assert.equal(plan.persist, "skip");
+  assert.equal(plan.resetStoppedRuntimeBeforePersist, true);
 });

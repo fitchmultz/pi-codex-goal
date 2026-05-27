@@ -35,6 +35,7 @@ export interface GoalTransitionEffectPlan {
   markContinuationQueued: boolean;
   resetRecoveryBeforePersist: boolean;
   resetRecoveryAfterPersist: boolean;
+  resetStoppedRuntimeBeforePersist: boolean;
   clearContinuationBeforePersist: boolean;
   clearHostOverflowRecovery: boolean;
   recoveryPausedReason: string | null;
@@ -111,6 +112,7 @@ export function planGoalTransition(
         markContinuationQueued: false,
         resetRecoveryBeforePersist: false,
         resetRecoveryAfterPersist: false,
+        resetStoppedRuntimeBeforePersist: false,
         clearContinuationBeforePersist: false,
         clearHostOverflowRecovery: false,
         recoveryPausedReason: null,
@@ -137,6 +139,7 @@ export function planGoalTransition(
         markContinuationQueued: false,
         resetRecoveryBeforePersist: false,
         resetRecoveryAfterPersist: false,
+        resetStoppedRuntimeBeforePersist: true,
         clearContinuationBeforePersist: false,
         clearHostOverflowRecovery: false,
         recoveryPausedReason: null,
@@ -154,6 +157,7 @@ export function planGoalTransition(
         markContinuationQueued: false,
         resetRecoveryBeforePersist: true,
         resetRecoveryAfterPersist: false,
+        resetStoppedRuntimeBeforePersist: false,
         clearContinuationBeforePersist: true,
         clearHostOverflowRecovery: false,
         recoveryPausedReason: null,
@@ -170,6 +174,7 @@ export function planGoalTransition(
         markContinuationQueued: false,
         resetRecoveryBeforePersist: false,
         resetRecoveryAfterPersist: false,
+        resetStoppedRuntimeBeforePersist: false,
         clearContinuationBeforePersist: false,
         clearHostOverflowRecovery: false,
         recoveryPausedReason: null,
@@ -186,6 +191,7 @@ export function planGoalTransition(
         markContinuationQueued: false,
         resetRecoveryBeforePersist: false,
         resetRecoveryAfterPersist: false,
+        resetStoppedRuntimeBeforePersist: false,
         clearContinuationBeforePersist: true,
         clearHostOverflowRecovery: true,
         recoveryPausedReason: request.recoveryReason,
@@ -204,12 +210,14 @@ export function planGoalTransition(
               resetRecoveryBeforePersist: false,
               resetRecoveryAfterPersist:
                 (nextGoal.status === "active" && wasPausedBefore) || nextGoal.status === "paused",
+              resetStoppedRuntimeBeforePersist: false,
               clearContinuationBeforePersist: false,
             }
           : {
               markContinuationQueued: false,
               resetRecoveryBeforePersist: false,
               resetRecoveryAfterPersist: false,
+              resetStoppedRuntimeBeforePersist: false,
               clearContinuationBeforePersist: false,
             };
 
@@ -221,6 +229,7 @@ export function planGoalTransition(
         markContinuationQueued: commandEffects.markContinuationQueued,
         resetRecoveryBeforePersist: commandEffects.resetRecoveryBeforePersist,
         resetRecoveryAfterPersist: commandEffects.resetRecoveryAfterPersist,
+        resetStoppedRuntimeBeforePersist: commandEffects.resetStoppedRuntimeBeforePersist,
         clearContinuationBeforePersist: commandEffects.clearContinuationBeforePersist,
         clearHostOverflowRecovery: false,
         recoveryPausedReason: null,
@@ -249,7 +258,6 @@ export function applyGoalMemoryEffects(
 ): void {
   if (plan.resetStoppedRuntime) {
     handlers.resetStoppedRuntime();
-    return;
   }
   if (plan.clearContinuation) {
     handlers.clearContinuation();
@@ -262,5 +270,25 @@ export function applyGoalMemoryEffects(
   }
   if (plan.clearBudgetWarning) {
     handlers.clearBudgetWarning();
+  }
+}
+
+export interface GoalTransitionPostPersistHandlers {
+  resetRecoveryAfterPersist: () => void;
+  markContinuationQueued: (goalId: string) => void;
+}
+
+export function applyGoalTransitionPostPersistEffects(
+  plan: Pick<
+    GoalTransitionEffectPlan,
+    "resetRecoveryAfterPersist" | "markContinuationQueued" | "nextGoal"
+  >,
+  handlers: GoalTransitionPostPersistHandlers,
+): void {
+  if (plan.resetRecoveryAfterPersist) {
+    handlers.resetRecoveryAfterPersist();
+  }
+  if (plan.markContinuationQueued && plan.nextGoal) {
+    handlers.markContinuationQueued(plan.nextGoal.goalId);
   }
 }
