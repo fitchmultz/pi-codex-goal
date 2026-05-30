@@ -87,3 +87,48 @@ While a goal is active, the extension:
 - shows Codex-style status labels with compact token or elapsed-time usage in the pi footer when UI is available
 
 Token counts are formatted with commas and compact abbreviations, for example `123M (123,456,789) tokens`. Token totals use pi's completed assistant turn input plus output usage. Cache read and cache write channels are excluded because they are provider cache accounting fields, not extra sent and received text tokens. Pi does not currently expose a separate extension usage total for automatic compaction summary calls.
+
+## Smoke test with Cursor Composer 2.5
+
+Use this interactive smoke test to confirm Pi is authenticated to Cursor, `pi-cursor-sdk` can bridge goal tools, `/goal` creates a goal, the hidden continuation runs, the model verifies real filesystem evidence, and `update_goal` marks the goal complete.
+
+**Prerequisites:** Pi installed, this extension installed (`pi install npm:pi-codex-goal` or local `pi install .`), and Cursor provider auth configured (Cursor User API Key).
+
+**1. Confirm Composer 2.5 is available:**
+
+```sh
+pi --list-models cursor | rg 'composer-2\.5'
+```
+
+**2. Launch Pi interactively:**
+
+```sh
+pi --model cursor/composer-2.5 --cursor-no-fast \
+  --session-dir /tmp/pi-codex-goal-slash-smoke-session
+```
+
+**3. In the TUI, paste this `/goal` prompt:**
+
+```text
+/goal Create /tmp/pi-codex-goal-slash-smoke.txt containing PI_GOAL_SLASH_OK, verify the file content from the filesystem, inspect the current goal, and mark the goal complete only after verification. Final reply must include the verified file path, verified content, and final goal status.
+```
+
+**4. Expected final assistant output (example):**
+
+```text
+Verified file path: /tmp/pi-codex-goal-slash-smoke.txt
+Verified content: PI_GOAL_SLASH_OK
+Final goal status: complete
+```
+
+**5. Optional session evidence to confirm the full path:**
+
+- `customType: pi-codex-goal`, `source: command`
+- Hidden continuation `details.kind: command_start`
+- `model: cursor/composer-2.5`, `api: cursor-sdk`
+- `get_goal` status before completion: `active`
+- `update_goal` final status: `complete`
+
+In bridged MCP environments, the model may call `pi__get_goal`, `pi__create_goal`, and `pi__update_goal` instead of the bare tool names.
+
+**Warning:** Do not use `pi -p '/goal ...'` as the primary smoke path. `/goal` is a registered Pi slash command designed for interactive TUI dispatch; non-interactive `-p` runs are unreliable for slash-command smoke tests. Use the interactive steps above.
