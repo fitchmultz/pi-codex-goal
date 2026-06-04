@@ -154,6 +154,72 @@ test("completed turns count input plus output and continue active goals", async 
   });
 });
 
+test("high context usage holds automatic goal continuation", async () => {
+  const harness = createRuntimeHarness({
+    contextUsage: { tokens: 170_000, contextWindow: 200_000, percent: 85 },
+  });
+  await harness.runCommand("ship it");
+  const queued = harness.sentMessages[0];
+  assert.ok(queued);
+  const queuedMessage = queuedCustomMessage(queued);
+  harness.sentMessages.length = 0;
+
+  await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+  await harness.emit("message_start", {
+    type: "message_start",
+    message: queuedMessage,
+  });
+  await harness.emit("turn_end", {
+    type: "turn_end",
+    turnIndex: 0,
+    message: assistantMessage("stop", {
+      input: 30,
+      output: 12,
+      cacheRead: 160_000,
+      cacheWrite: 0,
+      totalTokens: 170_000,
+    }),
+    toolResults: [],
+  });
+
+  const goal = harness.snapshot().goal;
+  assert.equal(goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 0);
+  assert.match(harness.notifications.at(-1)?.message ?? "", /Run \/compact, then \/goal resume/);
+});
+
+test("goal continuation resumes once context usage drops", async () => {
+  const harness = createRuntimeHarness({
+    contextUsage: { tokens: 170_000, contextWindow: 200_000, percent: 85 },
+  });
+  await harness.runCommand("ship it");
+  const queued = harness.sentMessages[0];
+  assert.ok(queued);
+  const queuedMessage = queuedCustomMessage(queued);
+  harness.sentMessages.length = 0;
+
+  await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+  await harness.emit("message_start", {
+    type: "message_start",
+    message: queuedMessage,
+  });
+  harness.setContextUsage({ tokens: 80_000, contextWindow: 200_000, percent: 40 });
+  await harness.emit("turn_end", {
+    type: "turn_end",
+    turnIndex: 0,
+    message: assistantMessage("stop", { input: 30, output: 12 }),
+    toolResults: [],
+  });
+
+  const goal = harness.snapshot().goal;
+  assert.equal(goal?.status, "active");
+  assert.equal(harness.sentMessages.length, 1);
+  assert.deepEqual(harness.sentMessages[0]?.message.details, {
+    kind: "continuation",
+    goalId: goal?.goalId,
+  });
+});
+
 test("tool-use turn ends do not queue continuation before tool execution finishes", async () => {
   const harness = createRuntimeHarness();
   await harness.runCommand("ship it");

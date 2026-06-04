@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import { mock } from "node:test";
 
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type {
+  ContextUsage,
+  ExtensionAPI,
+  ExtensionCommandContext,
+  ExtensionContext,
+} from "@earendil-works/pi-coding-agent";
 
 import goalExtension, { __testHooks } from "../../src/index.js";
 import { isContextOverflowError } from "../../src/recovery.js";
@@ -36,12 +41,14 @@ export function createRuntimeHarness(options: {
   pendingMessages?: boolean;
   compactBehavior?: "success" | "error" | "unavailable";
   compactCompletion?: "immediate" | "manual";
+  contextUsage?: ContextUsage;
   contextWindow?: number;
 } = {}) {
   const entries: ReturnType<ExtensionCommandContext["sessionManager"]["getBranch"]> = [];
   const handlers = new Map<string, EventHandler[]>();
   const sentMessages: SentMessage[] = [];
   const sentUserMessages: SentUserMessage[] = [];
+  const notifications: Array<{ message: string; level?: string }> = [];
   const tools = new Map<string, (params: Record<string, unknown>) => Promise<unknown>>();
   const compactCalls: Array<{
     customInstructions?: string;
@@ -59,6 +66,7 @@ export function createRuntimeHarness(options: {
     pendingMessages: options.pendingMessages ?? false,
     compactBehavior: options.compactBehavior ?? "success",
     compactCompletion: options.compactCompletion ?? "immediate",
+    contextUsage: options.contextUsage,
     hostOverflowRecoveryAttempted: false,
   };
   let commandHandler: ((args: string, ctx: ExtensionCommandContext) => void | Promise<void>) | null = null;
@@ -179,7 +187,9 @@ export function createRuntimeHarness(options: {
     getTheme: () => undefined,
     getToolsExpanded: () => false,
     input: async () => undefined,
-    notify() {},
+    notify(message, level) {
+      notifications.push(level === undefined ? { message } : { message, level });
+    },
     onTerminalInput: () => () => {},
     pasteToEditor() {},
     select: async () => undefined,
@@ -207,7 +217,7 @@ export function createRuntimeHarness(options: {
     },
     cwd: "/tmp",
     fork: async () => ({ cancelled: false }),
-    getContextUsage: () => undefined,
+    getContextUsage: () => runtime.contextUsage,
     getSystemPrompt: () => "",
     hasUI: true,
     compact(options) {
@@ -306,6 +316,7 @@ export function createRuntimeHarness(options: {
     runTool,
     reloadExtension,
     reloadSession,
+    notifications,
     sentMessages,
     sentUserMessages,
     setIdle(idle: boolean) {
@@ -313,6 +324,9 @@ export function createRuntimeHarness(options: {
     },
     setPendingMessages(pendingMessages: boolean) {
       runtime.pendingMessages = pendingMessages;
+    },
+    setContextUsage(contextUsage: ContextUsage | undefined) {
+      runtime.contextUsage = contextUsage;
     },
     setContextWindow(contextWindow: number) {
       ctx.model = {

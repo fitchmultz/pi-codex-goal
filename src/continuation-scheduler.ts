@@ -24,6 +24,7 @@ export function createContinuationScheduler(deps: ContinuationSchedulerDeps) {
   let continuationScheduledDelayMs: number | null = null;
   let continuationTimer: ReturnType<typeof setTimeout> | null = null;
   let passthroughContinuationInput: { text: string; turnIndex: number | null } | null = null;
+  let highContextNoticeFor: string | null = null;
 
   const clearContinuationTimer = (): void => {
     if (continuationTimer) {
@@ -96,6 +97,28 @@ export function createContinuationScheduler(deps: ContinuationSchedulerDeps) {
     return Boolean(goal?.status === "active" && isRecoveryPendingAttention(deps.getRecoveryState().attention));
   };
 
+  const shouldHoldForHighContext = (goalId: string, ctx: ExtensionContext): boolean => {
+    const usage = ctx.getContextUsage();
+    if (!usage || usage.tokens === null || usage.contextWindow <= 0) {
+      return false;
+    }
+
+    const percent = usage.percent ?? (usage.tokens / usage.contextWindow) * 100;
+    if (percent < 85) {
+      highContextNoticeFor = null;
+      return false;
+    }
+
+    if (highContextNoticeFor !== goalId && ctx.hasUI) {
+      ctx.ui.notify(
+        `Goal continuation paused because context is high (${percent.toFixed(1)}%). Run /compact, then /goal resume if you want to continue the goal.`,
+        "warning",
+      );
+      highContextNoticeFor = goalId;
+    }
+    return true;
+  };
+
   const sendContinuation = (goalToContinue: ThreadGoal): void => {
     continuationQueuedFor = goalToContinue.goalId;
     deps.pi.sendMessage(
@@ -152,6 +175,9 @@ export function createContinuationScheduler(deps: ContinuationSchedulerDeps) {
     }
 
     const goalId = goal.goalId;
+    if (shouldHoldForHighContext(goalId, ctx)) {
+      return;
+    }
     if (!ctx.isIdle() || ctx.hasPendingMessages()) {
       scheduleContinuationCheck(goalId, ctx, CONTINUATION_RETRY_MS);
       return;
@@ -162,12 +188,18 @@ export function createContinuationScheduler(deps: ContinuationSchedulerDeps) {
     if (!currentGoal || currentGoal.status !== "active" || currentGoal.goalId !== goalId) {
       return;
     }
+    if (shouldHoldForHighContext(goalId, ctx)) {
+      return;
+    }
     sendContinuation(currentGoal);
   };
 
   const maybeContinueAfterCurrentEvent = (ctx: ExtensionContext): void => {
     const goal = deps.getGoal();
     if (!canPlanContinuationFor(goal)) {
+      return;
+    }
+    if (shouldHoldForHighContext(goal.goalId, ctx)) {
       return;
     }
     scheduleContinuationCheck(goal.goalId, ctx, 0);
