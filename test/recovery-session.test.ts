@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { mock, test } from "node:test";
 
 import { pendingRecoveryShutdownReason } from "../src/goal-runtime-session-handlers.js";
 import { createRecoveryPausedAttention, createRecoveryPendingAttention } from "../src/recovery.js";
@@ -225,22 +225,27 @@ test("session_tree to a different active goal clears stale overflow recovery and
 });
 
 test("delayed session_compact keeps goal active without premature pause or extension follow-up", async () => {
-  const harness = createRuntimeHarness();
-  await harness.runCommand("ship it");
-  harness.sentMessages.length = 0;
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const harness = createRuntimeHarness();
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
 
-  await emitPersistentAssistantError(harness, 0, "context_length_exceeded");
+    await emitPersistentAssistantError(harness, 0, "context_length_exceeded");
 
-  assert.equal(harness.snapshot().goal?.status, "active");
-  assert.equal(harness.sentMessages.length, 0);
+    assert.equal(harness.snapshot().goal?.status, "active");
+    assert.equal(harness.sentMessages.length, 0);
 
-  await harness.emit("session_before_compact", sessionBeforeCompactEvent());
+    await harness.emit("session_before_compact", sessionBeforeCompactEvent());
 
-  assert.equal(harness.snapshot().goal?.status, "active");
-  assert.equal(harness.sentMessages.length, 0);
+    assert.equal(harness.snapshot().goal?.status, "active");
+    assert.equal(harness.sentMessages.length, 0);
 
-  await harness.emit("session_compact", sessionCompactEvent({ reason: "overflow", willRetry: true }));
+    await harness.emit("session_compact", sessionCompactEvent({ reason: "overflow", willRetry: true }));
 
-  assert.equal(harness.snapshot().goal?.status, "active");
-  assert.equal(harness.sentMessages.length, 0);
+    assert.equal(harness.snapshot().goal?.status, "active");
+    assert.equal(harness.sentMessages.length, 0);
+  } finally {
+    mock.timers.reset();
+  }
 });

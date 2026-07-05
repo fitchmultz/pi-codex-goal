@@ -31,49 +31,71 @@ export function createSessionEventHandlers(deps: GoalRuntimeSessionHandlerContex
     resumeGoalWithContinuation,
   } = deps;
 
-  let hostOverflowPostCompactFallbackTimer: ReturnType<typeof setTimeout> | null = null;
+  let postCompactContinuationFallbackTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const clearHostOverflowPostCompactFallback = (): void => {
-    if (!hostOverflowPostCompactFallbackTimer) {
+  const clearPostCompactContinuationFallback = (): void => {
+    if (!postCompactContinuationFallbackTimer) {
       return;
     }
-    clearTimeout(hostOverflowPostCompactFallbackTimer);
-    hostOverflowPostCompactFallbackTimer = null;
+    clearTimeout(postCompactContinuationFallbackTimer);
+    postCompactContinuationFallbackTimer = null;
   };
 
-  const scheduleHostOverflowPostCompactFallback = (ctx: ExtensionContext): void => {
-    clearHostOverflowPostCompactFallback();
-    if (!recoveryPhaseBlocksContinuation(runtimeState.recoveryState.phase)) {
+  const schedulePostCompactContinuationFallback = (
+    ctx: ExtensionContext,
+    options: { clearHostOverflowRecovery: boolean },
+  ): void => {
+    clearPostCompactContinuationFallback();
+    const scheduledGoal = stateController.getGoal();
+    if (!scheduledGoal || scheduledGoal.status !== "active") {
+      return;
+    }
+    if (
+      options.clearHostOverflowRecovery &&
+      !recoveryPhaseBlocksContinuation(runtimeState.recoveryState.phase)
+    ) {
       return;
     }
 
+    const scheduledGoalId = scheduledGoal.goalId;
     const scheduledTurnIndex = runtimeState.currentTurnIndex;
-    hostOverflowPostCompactFallbackTimer = setTimeout(() => {
-      hostOverflowPostCompactFallbackTimer = null;
+    const scheduledAgentRunSequence = runtimeState.agentRunSequence;
+    postCompactContinuationFallbackTimer = setTimeout(() => {
+      postCompactContinuationFallbackTimer = null;
       const goal = stateController.getGoal();
-      if (!goal || goal.status !== "active") {
+      if (!goal || goal.status !== "active" || goal.goalId !== scheduledGoalId) {
         return;
       }
       if (runtimeState.currentTurnIndex !== scheduledTurnIndex) {
         return;
       }
-      if (!recoveryPhaseBlocksContinuation(runtimeState.recoveryState.phase)) {
+      if (runtimeState.agentRunSequence !== scheduledAgentRunSequence) {
         return;
       }
       if (!ctx.isIdle() || ctx.hasPendingMessages()) {
         return;
       }
 
-      clearActiveHostOverflowRecovery(runtimeState.recoveryState);
-      status.refreshUi(ctx);
+      const recoveryBlocksContinuation = recoveryPhaseBlocksContinuation(
+        runtimeState.recoveryState.phase,
+      );
+      if (options.clearHostOverflowRecovery) {
+        if (!recoveryBlocksContinuation) {
+          return;
+        }
+        clearActiveHostOverflowRecovery(runtimeState.recoveryState);
+        status.refreshUi(ctx);
+      } else if (recoveryBlocksContinuation) {
+        return;
+      }
       continuation.maybeContinue(ctx);
     }, CONTINUATION_RETRY_MS);
-    hostOverflowPostCompactFallbackTimer.unref?.();
+    postCompactContinuationFallbackTimer.unref?.();
   };
 
   return {
     onSessionStart: (async (event, ctx) => {
-      clearHostOverflowPostCompactFallback();
+      clearPostCompactContinuationFallback();
       deps.providerLimitAutoResume.clear();
       stateController.reloadFromSession(ctx);
       goalAccounting.beginAccounting();
@@ -94,7 +116,7 @@ export function createSessionEventHandlers(deps: GoalRuntimeSessionHandlerContex
     }) satisfies ExtensionHandler<SessionStartEvent>,
 
     onSessionTree: (async (_event, ctx) => {
-      clearHostOverflowPostCompactFallback();
+      clearPostCompactContinuationFallback();
       deps.providerLimitAutoResume.clear();
       stateController.reloadFromSession(ctx);
       goalAccounting.beginAccounting();
@@ -128,18 +150,21 @@ export function createSessionEventHandlers(deps: GoalRuntimeSessionHandlerContex
       recoveryRuntime.onSessionCompact();
       status.refreshUi(ctx);
       if (event.willRetry) {
-        clearHostOverflowPostCompactFallback();
+        // A host retry is expected, but keep a guarded fallback in case no retry turn arrives.
+        schedulePostCompactContinuationFallback(ctx, {
+          clearHostOverflowRecovery: wasRecoveringFromHostOverflow,
+        });
         return;
       }
       if (!recoveryPhaseBlocksContinuation(runtimeState.recoveryState.phase)) {
         continuation.maybeContinueAfterCurrentEvent(ctx);
       } else if (wasRecoveringFromHostOverflow) {
-        scheduleHostOverflowPostCompactFallback(ctx);
+        schedulePostCompactContinuationFallback(ctx, { clearHostOverflowRecovery: true });
       }
     }) satisfies ExtensionHandler<SessionCompactEvent>,
 
     onSessionShutdown: (async (_event, ctx) => {
-      clearHostOverflowPostCompactFallback();
+      clearPostCompactContinuationFallback();
       deps.providerLimitAutoResume.clear();
       continuation.clearPassthroughContinuationInput();
       applyStaleQueuedWorkEffects(runtimeState.staleQueuedWorkGuard.planSessionShutdown().effects, ctx, deps);

@@ -476,6 +476,77 @@ test("session compaction queues continuation for active goals after the compacti
   }
 });
 
+test("willRetry session compaction falls back after grace when host retry never starts", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const harness = createRuntimeHarness();
+    await harness.runCommand("ship it");
+    const queued = harness.sentMessages[0];
+    assert.ok(queued);
+    const content = String(queued.message.content);
+    harness.sentMessages.length = 0;
+
+    await harness.emit("before_agent_start", {
+      type: "before_agent_start",
+      prompt: content,
+      systemPrompt: "",
+      systemPromptOptions: {},
+    });
+    await harness.emit("session_compact", sessionCompactEvent({ willRetry: true }));
+
+    const goal = harness.snapshot().goal;
+    assert.equal(goal?.status, "active");
+    assert.equal(harness.sentMessages.length, 0);
+
+    flushContinuationScheduler();
+    assert.equal(harness.sentMessages.length, 1);
+    assert.deepEqual(harness.sentMessages[0]?.message.details, {
+      kind: "continuation",
+      goalId: goal?.goalId,
+    });
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test("willRetry session compaction fallback does not continue a replaced active goal", async () => {
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const harness = createRuntimeHarness();
+    await harness.runCommand("ship it");
+    const queued = harness.sentMessages[0];
+    assert.ok(queued);
+    const content = String(queued.message.content);
+    harness.sentMessages.length = 0;
+
+    await harness.emit("before_agent_start", {
+      type: "before_agent_start",
+      prompt: content,
+      systemPrompt: "",
+      systemPromptOptions: {},
+    });
+    const oldGoalId = harness.snapshot().goal?.goalId;
+    assert.ok(oldGoalId);
+
+    await harness.emit("session_compact", sessionCompactEvent({ willRetry: true }));
+    await harness.runCommand("replacement");
+
+    const replacementGoal = harness.snapshot().goal;
+    assert.equal(replacementGoal?.status, "active");
+    assert.notEqual(replacementGoal?.goalId, oldGoalId);
+    assert.equal(harness.sentMessages.length, 1);
+
+    flushContinuationScheduler();
+    assert.equal(harness.sentMessages.length, 1);
+    assert.deepEqual(harness.sentMessages[0]?.message.details, {
+      kind: "command_start",
+      goalId: replacementGoal?.goalId,
+    });
+  } finally {
+    mock.timers.reset();
+  }
+});
+
 test("session compaction accelerates an existing idle retry after length stops", async () => {
   mock.timers.enable({ apis: ["setTimeout"] });
   try {

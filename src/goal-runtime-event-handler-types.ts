@@ -94,7 +94,7 @@ export interface StaleQueuedWorkEffectContext {
 }
 
 export interface GoalRuntimeInputContextHandlerContext extends StaleQueuedWorkEffectContext {
-  runtimeState: Pick<GoalRuntimeState, "currentTurnIndex" | "staleQueuedWorkGuard">;
+  runtimeState: Pick<GoalRuntimeState, "agentRunSequence" | "currentTurnIndex" | "staleQueuedWorkGuard">;
   stateController: Pick<
     GoalStateController,
     "getGoal" | "isCurrentActiveGoalId" | "persistHostOverflowUserReset"
@@ -131,7 +131,10 @@ export interface GoalRuntimeAgentHandlerContext extends StaleQueuedWorkEffectCon
 }
 
 export interface GoalRuntimeSessionHandlerContext extends StaleQueuedWorkEffectContext {
-  runtimeState: Pick<GoalRuntimeState, "currentTurnIndex" | "recoveryState" | "staleQueuedWorkGuard">;
+  runtimeState: Pick<
+    GoalRuntimeState,
+    "agentRunSequence" | "currentTurnIndex" | "recoveryState" | "staleQueuedWorkGuard"
+  >;
   stateController: Pick<
     GoalStateController,
     "applyGoalTransition" | "flushGoalPersistence" | "getGoal" | "reloadFromSession"

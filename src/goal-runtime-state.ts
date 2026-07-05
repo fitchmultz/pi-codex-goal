@@ -8,6 +8,7 @@ import {
 export interface GoalRuntimeState {
   accounting: AccountingState;
   recoveryState: GoalRecoveryMachineState;
+  agentRunSequence: number;
   currentTurnIndex: number | null;
   staleQueuedWorkGuard: StaleQueuedWorkGuard;
 }
@@ -16,6 +17,7 @@ export function createGoalRuntimeState(): GoalRuntimeState {
   return {
     accounting: createAccountingState(),
     recoveryState: createGoalRecoveryMachine(),
+    agentRunSequence: 0,
     currentTurnIndex: null,
     staleQueuedWorkGuard: createStaleQueuedWorkGuard(),
   };
