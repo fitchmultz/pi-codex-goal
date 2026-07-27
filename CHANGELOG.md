@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Pause active goals when an automatic continuation only inspects goal status and makes no actionable progress, preventing blocked goals from requeueing hidden continuations indefinitely.
+- Add regression coverage for goal-only inspection continuation loops.
+
 ## 0.1.38 - 2026-07-19
 
 - Make Pi the sole compaction owner: remove the extension's hardcoded 50k `turn_end` trigger so Pi's effective compaction settings determine threshold behavior and host/extension races cannot produce `Already compacted` or interrupt an active goal.

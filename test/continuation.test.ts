@@ -299,6 +299,36 @@ test("agent_end, not agent_settled, drives deliberate per-run goal continuation"
   assert.equal(harness.sentMessages.length, 1);
 });
 
+test("goal-only inspection turns pause active goals instead of looping", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  harness.sentMessages.length = 0;
+
+  const inspectionTurn = {
+    ...assistantMessage("toolUse", { input: 20, output: 4 }),
+    content: [
+      {
+        type: "toolCall" as const,
+        id: "get-goal-call",
+        name: "get_goal",
+        arguments: {},
+      },
+    ],
+  };
+
+  await harness.emit("agent_end", {
+    type: "agent_end",
+    messages: [inspectionTurn, assistantMessage("stop", { input: 30, output: 12 })],
+  });
+
+  assert.equal(harness.snapshot().goal?.status, "paused");
+  assert.equal(harness.sentMessages.length, 0);
+  assert.match(
+    harness.footerStatuses.at(-1) ?? "",
+    /Goal needs attention.*no actionable progress/,
+  );
+});
+
 test("agent end waits for idle before continuing active goals", async () => {
   mock.timers.enable({ apis: ["setTimeout"] });
   try {

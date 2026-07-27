@@ -131,7 +131,10 @@ export interface GoalRuntimeTurnHandlerContext extends StaleQueuedWorkEffectCont
 
 export interface GoalRuntimeAgentHandlerContext extends StaleQueuedWorkEffectContext {
   runtimeState: Pick<GoalRuntimeState, "agentRunSequence" | "staleQueuedWorkGuard">;
-  stateController: Pick<GoalStateController, "beginOverflowRecovery" | "flushGoalPersistence" | "pauseForAbort">;
+  stateController: Pick<
+    GoalStateController,
+    "applyGoalTransition" | "beginOverflowRecovery" | "flushGoalPersistence" | "pauseForAbort"
+  >;
   continuation: Pick<
     GoalRuntimeContinuationPort,
     "clearPassthroughContinuationInput" | "maybeContinue"

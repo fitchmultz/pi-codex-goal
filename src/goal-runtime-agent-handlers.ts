@@ -9,6 +9,34 @@ import {
 } from "./goal-runtime-event-utils.js";
 import type { GoalRuntimeAgentHandlerContext } from "./goal-runtime-event-handler-types.js";
 
+function isGoalInspectionToolName(name: unknown): boolean {
+  return name === "get_goal" || (typeof name === "string" && name.endsWith("__get_goal"));
+}
+
+function hasOnlyGoalInspectionToolCalls(messages: readonly { role?: string; content?: unknown }[]): boolean {
+  let toolCallCount = 0;
+
+  for (const message of messages) {
+    if (message.role !== "assistant" || !Array.isArray(message.content)) {
+      continue;
+    }
+    for (const block of message.content) {
+      if (!block || typeof block !== "object" || (block as { type?: unknown }).type !== "toolCall") {
+        continue;
+      }
+      toolCallCount += 1;
+      if (!isGoalInspectionToolName((block as { name?: unknown }).name)) {
+        return false;
+      }
+    }
+  }
+
+  return toolCallCount > 0;
+}
+
+const BLOCKED_GOAL_INSPECTION_REASON =
+  "active goal continuation made no actionable progress; user input is required";
+
 export function createAgentEventHandlers(deps: GoalRuntimeAgentHandlerContext) {
   const { runtimeState, stateController, continuation, goalAccounting, resetErrorRecovery } = deps;
 
@@ -48,6 +76,14 @@ export function createAgentEventHandlers(deps: GoalRuntimeAgentHandlerContext) {
       if (lastAssistant && recordAssistantContextOverflow(lastAssistant, ctx, deps)) {
         return;
       }
+      if (hasOnlyGoalInspectionToolCalls(event.messages)) {
+        stateController.applyGoalTransition(
+          { kind: "recovery_pause", recoveryReason: BLOCKED_GOAL_INSPECTION_REASON },
+          ctx,
+        );
+        return;
+      }
+
       resetErrorRecovery();
       continuation.maybeContinue(ctx);
     }) satisfies ExtensionHandler<AgentEndEvent>,
