@@ -15,7 +15,7 @@ const CreateGoalParams = Type.Object({
   }),
   token_budget: Type.Optional(
     Type.Integer({
-      description: "Optional positive integer token budget.",
+      description: "Optional positive integer token budget. Omit or set to null for unbounded (no limit).",
       minimum: 1,
     }),
   ),
