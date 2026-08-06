@@ -162,6 +162,9 @@ export function createRuntimeHarness(options: {
     registerMessageRenderer() {
       unsupportedHarnessMethod("pi.registerMessageRenderer");
     },
+    registerMarkdownTransformer() {
+      unsupportedHarnessMethod("pi.registerMarkdownTransformer");
+    },
     registerProvider() {
       unsupportedHarnessMethod("pi.registerProvider");
     },
@@ -295,6 +298,7 @@ export function createRuntimeHarness(options: {
     isProjectTrusted: () => true,
     mode: "tui",
     model: undefined,
+    scopedModels: [],
     modelRegistry: {} as ExtensionCommandContext["modelRegistry"],
     navigateTree: async () => ({ cancelled: false }),
     newSession: async () => ({ cancelled: false }),

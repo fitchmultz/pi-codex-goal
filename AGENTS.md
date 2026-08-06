@@ -17,7 +17,7 @@ pi install -l npm:pi-codex-goal
 pi install -l https://github.com/fitchmultz/pi-codex-goal@vX.Y.Z
 ```
 
-Those write duplicate package entries under `.pi/` for the current project, causing `get_goal`, `create_goal`, and `update_goal` tool-registration conflicts with the global local-checkout install. For install-path release verification, use an isolated temp project/config directory or remove the project-local entries immediately after the check. With Pi 0.79+ project trust, pass `--approve` for isolated project-local package install/list/non-interactive smoke commands when those commands must load `.pi/settings.json`. If conflicts appear, inspect `pi list --approve` and `.pi/settings.json`, then remove any project-local `pi-codex-goal` npm/GitHub installs so only the global local-checkout package remains active.
+Those write duplicate package entries under `.pi/` for the current project, causing `get_goal`, `create_goal`, and `update_goal` tool-registration conflicts with the global local-checkout install. For install-path release verification, use an isolated temp project/config directory or remove the project-local entries immediately after the check. On Pi 0.84.0 or later, pass `--approve` for isolated project-local package install/list/non-interactive smoke commands when those commands must load `.pi/settings.json`. If conflicts appear, inspect `pi list --approve` and `.pi/settings.json`, then remove any project-local `pi-codex-goal` npm/GitHub installs so only the global local-checkout package remains active.
 
 ## Verify before finishing
 
@@ -50,4 +50,4 @@ The required gate runs the full suite plus a real model-backed goal-tool smoke o
 | Recovery | `recovery*.ts` |
 | Domain | `state.ts`, `types.ts`, `goal-persistence.ts` |
 
-Current structural audit and remediation record: `docs/CODEBASE_AUDIT.md`.
+Historical 0.1.33 structural audit and remediation record: `docs/CODEBASE_AUDIT.md`.

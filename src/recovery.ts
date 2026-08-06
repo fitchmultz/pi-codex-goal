@@ -1,4 +1,4 @@
-import { isContextOverflow } from "@earendil-works/pi-ai/compat";
+import { isContextOverflow } from "@earendil-works/pi-ai";
 
 import { assistantMessageForOverflowCheck } from "./recovery-adapters.js";
 

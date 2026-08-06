@@ -110,7 +110,7 @@ test("SDK runtime uses Pi settings for the sole persisted threshold compaction",
 
   let nextContextTokens = 247_783;
   let streamCalls = 0;
-  session.agent.streamFn = (activeModel) => {
+  session.agent.streamFunction = (activeModel) => {
     streamCalls += 1;
     return assistantResponse(
       activeModel,
@@ -172,6 +172,10 @@ test("SDK runtime emits a continuation after willRetry compaction when no retry 
 
   try {
     const runner = session.extensionRunner;
+    assert.equal(runner.getToolDefinition("get_goal")?.executionMode, undefined);
+    for (const toolName of ["create_goal", "update_goal"]) {
+      assert.equal(runner.getToolDefinition(toolName)?.executionMode, "sequential");
+    }
     const createGoal = runner.getToolDefinition("create_goal");
     assert.ok(createGoal);
     const result = await createGoal.execute(

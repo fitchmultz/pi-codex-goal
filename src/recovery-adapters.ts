@@ -1,4 +1,4 @@
-import type { AssistantMessage, StopReason } from "@earendil-works/pi-ai/compat";
+import type { AssistantMessage, StopReason } from "@earendil-works/pi-ai";
 
 export interface OverflowCheckAssistantMessage {
   stopReason?: string;
