@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.0 - 2026-08-06
+
+- Raise the minimum supported Pi version to 0.84.0 and pin the development/type-validation baseline to the exact 0.84.0 release.
+- Align the SDK runtime smoke with Pi 0.84.0's public `Agent.streamFunction` API and use current pi-ai root exports instead of the compatibility subpath.
+- Align the extension test harness with Pi 0.84.0's `registerMarkdownTransformer()` and read-only `scopedModels` context contracts, and serialize the mutating goal tools because they share one session state machine.
+- Audit the full repository against every Pi 0.84.0 breaking change; the extension does not use JSON/RPC streaming, model-auth forwarding, dynamic providers, pi-agent-core harness sessions, custom harness filesystems, or remote sessions, so those migrations require no runtime compatibility code.
+- Require Pi 0.84.0 or later in install and compatibility documentation while retaining optional wildcard Pi peers as required by Pi package loading.
+- Refresh the development lockfile, including the patched `protobufjs` 7.6.5 transitive dependency.
+
+### Validation
+
+- Ran `npm run verify` and a clean public-registry `npm ci && npm run verify` under Pi 0.84.0: `tsc --noEmit`, 6 platform-smoke checks, and 333 regular tests passed in each run.
+- Ran `npm audit --omit=optional` with no vulnerabilities and `npm publish --dry-run --ignore-scripts --registry=https://registry.npmjs.org`; both passed.
+- Packed the release and installed it project-locally with an isolated Pi 0.84.0 executable/config, verified extension and prompt discovery over RPC, and completed a tmux model-backed `/goal` flow that created and read an exact file, called `get_goal`, called `update_goal`, and rendered the final fullscreen `Goal achieved` status.
+- The Crabbox macOS/Ubuntu/native-Windows matrix could not start on this shared host: its doctor stopped before every product suite because Crabbox, model-auth environment, localhost SSH, and Parallels `prlctl` were unavailable. No Crabbox product test ran or failed; the matrix remains required and unchanged for capable environments.
+
 ## 0.1.39 - 2026-07-28
 
 - Pause active goals when a hidden continuation run only calls `get_goal` / namespaced `*__get_goal` and makes no actionable progress, so blocked status-inspection loops stop and surface `/goal resume` attention instead of spinning forever (#47).

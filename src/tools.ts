@@ -1,4 +1,4 @@
-import { StringEnum } from "@earendil-works/pi-ai/compat";
+import { StringEnum } from "@earendil-works/pi-ai";
 import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
@@ -76,6 +76,7 @@ export function registerGoalTools(pi: ExtensionAPI, host: ToolHost): void {
       "Create one goal with an objective and optional positive token budget. Fails when a non-complete goal already exists unless replace_existing is true; replaces a completed goal.",
     promptGuidelines: TOOL_PROMPT_GUIDELINES,
     parameters: CreateGoalParams,
+    executionMode: "sequential",
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const current = host.getGoal();
       const shouldReplaceExisting = params.replace_existing === true && current !== null && current.status !== "complete";
@@ -98,6 +99,7 @@ export function registerGoalTools(pi: ExtensionAPI, host: ToolHost): void {
     promptSnippet: "Mark the current goal complete only after an evidence-backed completion audit proves no required work remains.",
     promptGuidelines: TOOL_PROMPT_GUIDELINES,
     parameters: UpdateGoalParams,
+    executionMode: "sequential",
     async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
       const result = host.completeGoal("tool", ctx);
       if (!result.ok || !result.goal) {
