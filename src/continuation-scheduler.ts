@@ -31,6 +31,7 @@ export function createContinuationScheduler(deps: ContinuationSchedulerDeps) {
   let continuationScheduledDelayMs: number | null = null;
   let continuationTimer: ReturnType<typeof setTimeout> | null = null;
   let postCompactContinuationTimer: ReturnType<typeof setTimeout> | null = null;
+  let postCompactContinuationFallback: (() => void) | null = null;
   let passthroughContinuationInput: { text: string; turnIndex: number | null } | null = null;
 
   const clearContinuationTimer = (): void => {
@@ -43,11 +44,11 @@ export function createContinuationScheduler(deps: ContinuationSchedulerDeps) {
   };
 
   const clearPostCompactContinuationFallback = (): void => {
-    if (!postCompactContinuationTimer) {
-      return;
+    if (postCompactContinuationTimer) {
+      clearTimeout(postCompactContinuationTimer);
+      postCompactContinuationTimer = null;
     }
-    clearTimeout(postCompactContinuationTimer);
-    postCompactContinuationTimer = null;
+    postCompactContinuationFallback = null;
   };
 
   const clearContinuationState = (): void => {
@@ -211,31 +212,59 @@ export function createContinuationScheduler(deps: ContinuationSchedulerDeps) {
     }
 
     const goalId = goal.goalId;
-    const runFallback = (): void => {
+    const runFallback = (ignoreRunIdentity: boolean): void => {
       postCompactContinuationTimer = null;
       const currentGoal = deps.getGoal();
-      if (!currentGoal || currentGoal.status !== "active" || currentGoal.goalId !== goalId) {
+      if (
+        !canSchedulePostCompactFallbackFor(currentGoal, options.prepareContinuation) ||
+        currentGoal.goalId !== goalId
+      ) {
+        clearPostCompactContinuationFallback();
         return;
       }
-      if (deps.getCurrentTurnIndex() !== options.turnIndex) {
-        return;
-      }
-      if (deps.getAgentRunSequence() !== options.agentRunSequence) {
+      if (
+        !ignoreRunIdentity &&
+        (deps.getCurrentTurnIndex() !== options.turnIndex ||
+          deps.getAgentRunSequence() !== options.agentRunSequence)
+      ) {
+        // A host retry now owns continuation. Keep the fallback dormant until
+        // agent_settled proves that retry left no runnable work behind.
         return;
       }
       if (!ctx.isIdle() || ctx.hasPendingMessages()) {
-        postCompactContinuationTimer = setTimeout(runFallback, CONTINUATION_RETRY_MS);
+        postCompactContinuationTimer = setTimeout(
+          () => runFallback(false),
+          CONTINUATION_RETRY_MS,
+        );
         postCompactContinuationTimer.unref?.();
         return;
       }
       if (options.prepareContinuation && !options.prepareContinuation()) {
+        clearPostCompactContinuationFallback();
         return;
       }
+      clearPostCompactContinuationFallback();
       maybeContinue(ctx);
     };
 
-    postCompactContinuationTimer = setTimeout(runFallback, CONTINUATION_RETRY_MS);
+    postCompactContinuationFallback = () => {
+      if (postCompactContinuationTimer) {
+        clearTimeout(postCompactContinuationTimer);
+        postCompactContinuationTimer = null;
+      }
+      // agent_settled guarantees that no host retry remains runnable, so a
+      // lifecycle identity change no longer justifies abandoning the fallback.
+      runFallback(true);
+    };
+    postCompactContinuationTimer = setTimeout(
+      () => runFallback(false),
+      CONTINUATION_RETRY_MS,
+    );
     postCompactContinuationTimer.unref?.();
+  };
+
+  const settlePostCompactContinuationFallback = (): void => {
+    postCompactContinuationFallback?.();
   };
 
   return {
@@ -251,5 +280,6 @@ export function createContinuationScheduler(deps: ContinuationSchedulerDeps) {
     maybeContinueAfterCurrentEvent,
     maybeContinueAfterPostCompactFallback,
     notePassthroughContinuationInput,
+    settlePostCompactContinuationFallback,
   };
 }
