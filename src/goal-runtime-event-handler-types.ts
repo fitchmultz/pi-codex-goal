@@ -1,5 +1,6 @@
 import type {
   AgentEndEvent,
+  AgentSettledEvent,
   AgentStartEvent,
   BeforeAgentStartEvent,
   ContextEvent,
@@ -35,6 +36,7 @@ export interface GoalRuntimeEventHandlers {
   onSessionTree: ExtensionHandler<SessionTreeEvent>;
   onBeforeAgentStart: ExtensionHandler<BeforeAgentStartEvent, undefined>;
   onAgentStart: ExtensionHandler<AgentStartEvent>;
+  onAgentSettled: ExtensionHandler<AgentSettledEvent>;
   onMessageStart: ExtensionHandler<MessageStartEvent>;
   onTurnStart: ExtensionHandler<TurnStartEvent>;
   onToolExecutionEnd: ExtensionHandler<ToolExecutionEndEvent>;
@@ -74,6 +76,7 @@ export interface GoalRuntimeContinuationPort {
     },
   ) => void;
   notePassthroughContinuationInput: (input: string) => void;
+  settlePostCompactContinuationFallback: () => void;
 }
 
 export interface GoalAccountingPort {
@@ -152,7 +155,9 @@ export interface GoalRuntimeAgentHandlerContext extends StaleQueuedWorkEffectCon
   >;
   continuation: Pick<
     GoalRuntimeContinuationPort,
-    "clearPassthroughContinuationInput" | "maybeContinue"
+    | "clearPassthroughContinuationInput"
+    | "maybeContinue"
+    | "settlePostCompactContinuationFallback"
   >;
   goalAccounting: Pick<GoalAccountingPort, "accountProgress">;
   recoveryRuntime: Pick<

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Resume an active goal from `agent_settled` when a post-compaction fallback remains pending, so a successful compaction or an empty host retry cannot strand the goal without a queued continuation (#53).
+
 ## 0.2.0 - 2026-08-06
 
 - Raise the minimum supported Pi version to 0.84.0 and pin the development/type-validation baseline to the exact 0.84.0 release.

@@ -1,4 +1,9 @@
-import type { AgentEndEvent, AgentStartEvent, ExtensionHandler } from "@earendil-works/pi-coding-agent";
+import type {
+  AgentEndEvent,
+  AgentSettledEvent,
+  AgentStartEvent,
+  ExtensionHandler,
+} from "@earendil-works/pi-coding-agent";
 
 import { assistantTurnTokens, isAbortedAssistantMessage } from "./goal-accounting.js";
 import { isErrorAssistantMessage, type AssistantErrorMessage } from "./recovery.js";
@@ -20,6 +25,10 @@ export function createAgentEventHandlers(deps: GoalRuntimeAgentHandlerContext) {
       runtimeState.agentRunFromContinuation = false;
       runtimeState.agentRunToolNames = [];
     }) satisfies ExtensionHandler<AgentStartEvent>,
+
+    onAgentSettled: (() => {
+      continuation.settlePostCompactContinuationFallback();
+    }) satisfies ExtensionHandler<AgentSettledEvent>,
 
     onAgentEnd: (async (event, ctx) => {
       continuation.clearPassthroughContinuationInput();
