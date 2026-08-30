@@ -5,9 +5,9 @@
   "type": "module",
   "author": "Mitch Fultz (https://github.com/fitchmultz)",
   "license": "MIT",
-  "main": "src/index.ts",
+  "main": "dist/index.js",
   "files": [
-    "src",
+    "dist",
     "docs",
     "scripts",
     "AGENTS.md",
@@ -36,13 +36,15 @@
   "homepage": "https://github.com/fitchmultz/pi-codex-goal#readme",
   "pi": {
     "extensions": [
-      "./src/index.ts"
+      "./dist/index.js"
     ],
     "prompts": [
       "./prompts"
     ]
   },
   "scripts": {
+    "build": "node --input-type=module --eval \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true });\" && tsc -p tsconfig.build.json",
+    "prepack": "npm run build",
     "test": "node --import tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
     "check:platform-smoke": "node scripts/platform-smoke/check.mjs",

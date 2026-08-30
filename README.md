@@ -49,7 +49,7 @@ On this maintainer machine, the active install is a global/user package that alr
 
 Compatibility note: this package supports Pi 0.84.0 or later on Node 24. The latest published npm artifact remains the reproducible source of truth for its own published version's metadata. Pi-bundled runtime packages remain optional wildcard peers as required by Pi package loading; the support floor is declared here and validated by the source tree's exact Pi 0.84.0 development dependencies.
 
-Release note: npm installs and pinned GitHub tags are the reproducible release artifacts. Installing from the repository default branch can include unreleased changes that will ship in a future package release, even when `package.json` still identifies the latest published version.
+Release note: npm installs and pinned GitHub tags are the reproducible release artifacts. Published packages load the precompiled `dist/index.js` extension; `npm pack` and `npm publish` rebuild it from TypeScript before creating the artifact. Installing from the repository default branch can include unreleased changes that will ship in a future package release, even when `package.json` still identifies the latest published version.
 
 ## Best way to create goals
 

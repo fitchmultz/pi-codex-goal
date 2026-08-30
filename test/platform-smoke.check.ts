@@ -296,6 +296,8 @@ test("npm pack includes platform smoke docs and scripts", () => {
   const packs = JSON.parse(result.stdout) as Array<{ files: Array<{ path: string }> }>;
   const paths = new Set(packs[0]?.files.map((file) => file.path) ?? []);
   for (const path of [
+    "dist/index.js",
+    "dist/index.d.ts",
     "docs/platform-smoke.md",
     ".crabboxignore",
     "platform-smoke.config.mjs",
@@ -303,7 +305,7 @@ test("npm pack includes platform smoke docs and scripts", () => {
   ]) {
     assert.ok(paths.has(path), `expected npm pack to include ${path}`);
   }
-  for (const forbidden of [".artifacts/", ".crabbox/", ".debug/", ".env", ".env."]) {
+  for (const forbidden of [".artifacts/", ".crabbox/", ".debug/", ".env", ".env.", "src/"]) {
     assert.equal([...paths].some((path) => path === forbidden || path.startsWith(forbidden)), false);
   }
   assert.equal([...paths].some((path) => path.endsWith(".tgz")), false);
