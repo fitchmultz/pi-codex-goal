@@ -51,6 +51,8 @@ Compatibility note: this package supports Pi 0.84.0 or later on Node 24. The lat
 
 Release note: npm installs and pinned GitHub tags are the reproducible release artifacts. Installing from the repository default branch can include unreleased changes that will ship in a future package release, even when `package.json` still identifies the latest published version.
 
+Published packages load the precompiled `dist/index.js` extension; `npm pack` and `npm publish` rebuild it from TypeScript before creating the artifact. Git and local directory installs load `src/index.ts` without a build or production TypeScript dependency. Pi selects the single index entry in `extensions/`: `index.ts` in a checkout (even after a build), or `index.js` in the npm artifact, which omits the source entry.
+
 ## Best way to create goals
 
 Use the included `/create-goal` prompt template instead of writing a goal by hand. Agents write better goal completion contracts than humans do because they can expand a plain task into outcome, verification, constraints, iteration, audit, and blocked-stop requirements before calling the `create_goal` tool.

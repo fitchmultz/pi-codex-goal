@@ -12,6 +12,7 @@
     ]
   },
   "include": [
+    "extensions/**/*.ts",
     "src/**/*.ts",
     "test/**/*.ts"
   ]

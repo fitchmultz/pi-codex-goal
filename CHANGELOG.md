@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1 - 2026-09-05
+
+- Precompile the published npm extension to NodeNext ESM during `npm pack` and `npm publish`, so Pi loads `dist/index.js` instead of transpiling the TypeScript module graph at startup.
+- Exclude runtime TypeScript sources from the npm artifact while retaining declarations, source maps, prompts, documentation, and release-smoke tooling.
+- Keep Git and local directory installs build-free using Pi's native directory index selection, with exactly one source extension even when local build output exists.
+
 ## 0.2.0 - 2026-08-06
 
 - Raise the minimum supported Pi version to 0.84.0 and pin the development/type-validation baseline to the exact 0.84.0 release.
