@@ -8,6 +8,7 @@
   "main": "dist/index.js",
   "files": [
     "dist",
+    "extensions/index.js",
     "docs",
     "scripts",
     "AGENTS.md",
@@ -36,7 +37,7 @@
   "homepage": "https://github.com/fitchmultz/pi-codex-goal#readme",
   "pi": {
     "extensions": [
-      "./dist/index.js"
+      "./extensions"
     ],
     "prompts": [
       "./prompts"

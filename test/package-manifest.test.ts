@@ -22,7 +22,7 @@ function frontmatter(prompt: string): Record<string, string> {
   );
 }
 
-test("package exposes compiled runtime and create-goal prompt entrypoints", () => {
+test("package exposes source and compiled runtime plus create-goal prompt entrypoints", () => {
   const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
     main?: string;
     files?: string[];
@@ -31,8 +31,9 @@ test("package exposes compiled runtime and create-goal prompt entrypoints", () =
   };
 
   assert.equal(packageJson.main, "dist/index.js");
-  assert.deepEqual(packageJson.pi?.extensions, ["./dist/index.js"]);
+  assert.deepEqual(packageJson.pi?.extensions, ["./extensions"]);
   assert.ok(packageJson.files?.includes("dist"));
+  assert.ok(packageJson.files?.includes("extensions/index.js"));
   assert.equal(packageJson.files?.includes("src"), false);
   assert.equal(packageJson.scripts?.prepack, "npm run build");
   assert.ok(packageJson.files?.includes("prompts"));
