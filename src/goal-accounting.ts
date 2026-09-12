@@ -19,6 +19,12 @@ export interface AssistantTurnMessage {
   role: string;
   stopReason?: string;
   usage?: AssistantUsage;
+  content?: unknown;
+}
+
+interface SessionMessageEntry {
+  type: string;
+  message?: unknown;
 }
 
 export function createAccountingState(): AccountingState {
@@ -41,6 +47,40 @@ export function assistantTurnTokens(message: AssistantTurnMessage): number {
     return 0;
   }
   return usageChannelTokens(message.usage.input) + usageChannelTokens(message.usage.output);
+}
+
+function isAssistantTurnMessage(message: unknown): message is AssistantTurnMessage {
+  return Boolean(message && typeof message === "object" && (message as { role?: unknown }).role === "assistant");
+}
+
+function hasToolCallId(message: AssistantTurnMessage, toolCallId: string): boolean {
+  if (!Array.isArray(message.content)) {
+    return false;
+  }
+  return message.content.some((content) => {
+    if (!content || typeof content !== "object") {
+      return false;
+    }
+    const toolCall = content as { type?: unknown; id?: unknown };
+    return toolCall.type === "toolCall" && toolCall.id === toolCallId;
+  });
+}
+
+/** Returns input plus output tokens only when the current assistant message issued this tool call. */
+export function assistantTurnTokensForToolCall(
+  entries: Iterable<SessionMessageEntry>,
+  toolCallId: string,
+): number {
+  let currentAssistantMessage: AssistantTurnMessage | undefined;
+  for (const entry of entries) {
+    if (entry.type === "message" && isAssistantTurnMessage(entry.message)) {
+      currentAssistantMessage = entry.message;
+    }
+  }
+
+  return currentAssistantMessage && hasToolCallId(currentAssistantMessage, toolCallId)
+    ? assistantTurnTokens(currentAssistantMessage)
+    : 0;
 }
 
 export function isAbortedAssistantMessage(message: AssistantTurnMessage): boolean {
