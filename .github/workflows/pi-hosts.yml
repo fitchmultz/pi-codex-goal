@@ -1,0 +1,61 @@
+name: Pi host compatibility
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  host:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - host: published-0.85.1
+          - host: official-e4ce7b449
+            repository: earendil-works/pi
+            ref: e4ce7b449f4d91589c8760d6fbfa6eaaf82b05fe
+          - host: fork-b10a8c23
+            repository: fitchmultz/pi
+            ref: b10a8c236df2ae366ec04bc07aa65f76f512397b
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: extension
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      - run: npm ci
+        working-directory: extension
+      - uses: actions/checkout@v5
+        if: matrix.host != 'published-0.85.1'
+        with:
+          repository: ${{ matrix.repository }}
+          ref: ${{ matrix.ref }}
+          path: host
+      - name: Build exact source host
+        if: matrix.host != 'published-0.85.1'
+        working-directory: host
+        run: |
+          test "$(git rev-parse HEAD)" = '${{ matrix.ref }}'
+          npm ci --ignore-scripts
+          npm run build
+          echo "PI_TEST_HOST=$PWD/packages/coding-agent" >> "$GITHUB_ENV"
+      - name: Install exact published host
+        if: matrix.host == 'published-0.85.1'
+        run: |
+          npm install --prefix "$RUNNER_TEMP/published-host" --ignore-scripts --no-audit --no-fund @earendil-works/pi-coding-agent@0.85.1 @earendil-works/pi-ai@0.85.1 @earendil-works/pi-agent-core@0.85.1 @earendil-works/pi-tui@0.85.1
+          echo "PI_TEST_HOST=$RUNNER_TEMP/published-host/node_modules/@earendil-works/pi-coding-agent" >> "$GITHUB_ENV"
+      - name: Compile actual source and tests against selected host declarations
+        working-directory: extension
+        run: node scripts/check-pi-host.mjs "$PI_TEST_HOST"
+      - name: Native source, Git production, and npm package lifecycle
+        working-directory: extension
+        run: |
+          npm run build
+          export HOME="$RUNNER_TEMP/pi-host-home"
+          export PI_CODING_AGENT_DIR="$HOME/agent" PI_OFFLINE=1
+          mkdir -p "$PI_CODING_AGENT_DIR"
+          node --import ./test/helpers/pi-host-loader.mjs --import tsx --test test/package-loading.test.ts
