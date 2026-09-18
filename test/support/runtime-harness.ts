@@ -126,6 +126,7 @@ export function createRuntimeHarness(options: {
   };
 
   const pi: ExtensionAPI = {
+    ...{ registerBashCwdHook() { unsupportedHarnessMethod("pi.registerBashCwdHook"); } },
     appendEntry(customType: string, data: unknown) {
       entries.push({
         type: "custom",
@@ -209,6 +210,7 @@ export function createRuntimeHarness(options: {
     getBranch: () => entries,
     getCwd: () => "/tmp",
     getEntries: () => entries,
+    ...{ getEntriesRevision: () => entries.length },
     getEntry: () => undefined,
     getHeader: () => null,
     getLabel: () => undefined,
@@ -257,6 +259,14 @@ export function createRuntimeHarness(options: {
   };
 
   ctx = {
+    ...{
+      isBashRunning: () => false,
+      hasPendingSteeringMessages: () => runtime.pendingMessages,
+      getPendingNextTurnCount: () => 0,
+      getPendingInputCount: () => 0,
+      getCompactionSettings: () => ({ enabled: true, reserveTokens: 16384, keepRecentTokens: 20000 }),
+      newContext() { unsupportedHarnessMethod("ctx.newContext"); },
+    },
     abort() {
       runtime.abortCount += 1;
     },
