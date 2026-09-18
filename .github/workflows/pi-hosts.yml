@@ -14,14 +14,12 @@ jobs:
       matrix:
         include:
           - host: published-0.85.1
-            repository: earendil-works/pi
-            ref: e4ce7b449f4d91589c8760d6fbfa6eaaf82b05fe
           - host: official-e4ce7b449
             repository: earendil-works/pi
             ref: e4ce7b449f4d91589c8760d6fbfa6eaaf82b05fe
-          - host: fork-58715e4e
+          - host: fork-b10a8c23
             repository: fitchmultz/pi
-            ref: 58715e4e73fb53897a0452ee740e3905b5d1b7fd
+            ref: b10a8c236df2ae366ec04bc07aa65f76f512397b
     steps:
       - uses: actions/checkout@v5
         with:
