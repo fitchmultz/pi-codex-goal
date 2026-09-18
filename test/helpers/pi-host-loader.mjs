@@ -8,8 +8,8 @@ const host = resolve(process.env.PI_TEST_HOST);
 const require = createRequire(join(host, "package.json"));
 registerHooks({
 	resolve(specifier, context, nextResolve) {
-		// The compiled extension must resolve through the real host loader, not this test hook.
-		if (context.parentURL?.startsWith(new URL("../../dist/", import.meta.url).href)) return nextResolve(specifier, context);
+		// Select the test's SDK; package copies and host dependencies use native resolution.
+		if (!context.parentURL?.startsWith(new URL("../", import.meta.url).href)) return nextResolve(specifier, context);
 		if (specifier.startsWith("@earendil-works/pi-") || specifier === "typebox" || specifier.startsWith("typebox/")) {
 			const parts = specifier.split("/");
 			const name = specifier.startsWith("@") ? parts.splice(0, 2).join("/") : parts.shift();
