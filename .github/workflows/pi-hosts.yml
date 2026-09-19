@@ -14,9 +14,9 @@ jobs:
       matrix:
         include:
           - host: published-0.85.1
-          - host: official-e4ce7b449
+          - host: official-v0.85.1
             repository: earendil-works/pi
-            ref: e4ce7b449f4d91589c8760d6fbfa6eaaf82b05fe
+            ref: d981de1229ef899957bbe968bc8dcda02a21f477
           - host: fork-b10a8c23
             repository: fitchmultz/pi
             ref: b10a8c236df2ae366ec04bc07aa65f76f512397b
