@@ -14,9 +14,9 @@ jobs:
       matrix:
         include:
           - host: published-0.85.1
-          - host: official-e4ce7b449
+          - host: official-v0.85.1
             repository: earendil-works/pi
-            ref: e4ce7b449f4d91589c8760d6fbfa6eaaf82b05fe
+            ref: d981de1229ef899957bbe968bc8dcda02a21f477
           - host: fork-b10a8c23
             repository: fitchmultz/pi
             ref: b10a8c236df2ae366ec04bc07aa65f76f512397b
@@ -41,7 +41,15 @@ jobs:
         run: |
           test "$(git rev-parse HEAD)" = '${{ matrix.ref }}'
           npm ci --ignore-scripts
-          npm run build
+          if [ '${{ matrix.host }}' = 'official-v0.85.1' ]; then
+            # Build release source with its published model data, without regenerating from today's catalogs.
+            npm pack @earendil-works/pi-ai@0.85.1 --ignore-scripts --pack-destination "$RUNNER_TEMP"
+            tar -xzf "$RUNNER_TEMP/earendil-works-pi-ai-0.85.1.tgz" --strip-components=3 -C packages/ai/src/providers package/dist/providers/data
+            npm run build:offline
+            git diff --exit-code HEAD
+          else
+            npm run build
+          fi
           echo "PI_TEST_HOST=$PWD/packages/coding-agent" >> "$GITHUB_ENV"
       - name: Install exact published host
         if: matrix.host == 'published-0.85.1'
