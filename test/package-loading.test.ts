@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 
-import { InMemoryCredentialStore, validateToolArguments } from "@earendil-works/pi-ai";
+import { InMemoryCredentialStore, validateToolArguments, type ToolCall } from "@earendil-works/pi-ai";
 import {
   createAgentSession,
   DefaultResourceLoader,
@@ -93,10 +93,10 @@ async function checkPackage(root: string, packageRoot: string, extension: ".ts" 
     };
     const createGoal = runner.getToolDefinition("create_goal");
     assert.ok(createGoal);
-    const validateCreate = (args: Record<string, unknown>) => validateToolArguments(createGoal, {
+    const validateCreate = (args: ToolCall["arguments"]) => validateToolArguments(createGoal, {
       type: "toolCall", id: "create", name: "create_goal", arguments: args,
     });
-    const rejectBudget = async (args: Record<string, unknown>) => {
+    const rejectBudget = async (args: ToolCall["arguments"]) => {
       const before = await call("get_goal", {});
       const entries = structuredClone(sessionManager.getEntries());
       const persisted = readFileSync(sessionFile, "utf8");
