@@ -4,6 +4,7 @@ import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 
 function run(command: string, args: string[]) {
   return spawnSync(command, args, {
@@ -67,7 +68,7 @@ test("platform smoke scripts have working syntax and help", () => {
 });
 
 test("goal runtime smoke uses the installed Pi official executable", (t) => {
-  const root = mkdtempSync(join(tmpdir(), "pi-goal-cli-contract-"));
+  const root = mkdtempSync(join(tmpdir(), "pi-goal-cli-contract #-"));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   symlinkSync(resolve("node_modules"), join(root, "node_modules"), process.platform === "win32" ? "junction" : "dir");
   const preload = join(root, "cli-contract.mjs");
@@ -96,7 +97,7 @@ childProcess.spawnSync = (command, args, options) => {
 };
 syncBuiltinESMExports();
 `);
-  const result = spawnSync(process.execPath, ["--import", preload, resolve("scripts/platform-smoke/goal-runtime-smoke.mjs")], {
+  const result = spawnSync(process.execPath, ["--import", pathToFileURL(preload).href, resolve("scripts/platform-smoke/goal-runtime-smoke.mjs")], {
     cwd: root,
     env: { ...process.env, HOME: root, PI_CODING_AGENT_DIR: join(root, "agent"), PI_OFFLINE: "1" },
     encoding: "utf8",
