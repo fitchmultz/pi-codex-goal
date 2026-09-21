@@ -50,6 +50,7 @@
     "typecheck": "tsc --noEmit",
     "check:platform-smoke": "node scripts/platform-smoke/check.mjs",
     "verify": "npm run typecheck && npm run check:platform-smoke && npm test",
+    "check:compat": "npm run build && npm run verify",
     "smoke:platform": "node scripts/platform-smoke.mjs",
     "smoke:platform:doctor": "node scripts/platform-smoke.mjs doctor",
     "smoke:platform:macos": "node scripts/platform-smoke.mjs run --target macos",
@@ -74,8 +75,8 @@
     }
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "0.84.0",
-    "@earendil-works/pi-coding-agent": "0.84.0",
+    "@earendil-works/pi-ai": "0.86.1",
+    "@earendil-works/pi-coding-agent": "0.86.1",
     "@types/node": "^25.9.1",
     "tsx": "^4.22.3",
     "typebox": "1.3.7",
