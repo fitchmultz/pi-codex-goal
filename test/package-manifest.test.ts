@@ -41,7 +41,7 @@ test("package exposes source and compiled runtime plus create-goal prompt entryp
 });
 
 test("create-goal prompt keeps package frontmatter and expected completion-audit text", () => {
-  const prompt = readFileSync("prompts/create-goal.md", "utf8");
+  const prompt = readFileSync("prompts/create-goal.md", "utf8").replace(/\r\n/g, "\n");
   const metadata = frontmatter(prompt);
 
   assert.equal(metadata.description, "Convert a plain task into a strict evidence-based pi-codex goal and create it");

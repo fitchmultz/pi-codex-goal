@@ -201,7 +201,8 @@ test("npm artifact discovers and executes one compiled goal extension without so
   const root = tempRoot(t);
   const packs = JSON.parse(run("npm", ["pack", "--json", "--pack-destination", root], process.cwd())) as Array<{ filename: string }>;
   assert.ok(packs[0]);
-  run("tar", ["-xzf", join(root, packs[0].filename), "-C", root], process.cwd());
+  // A Windows drive colon in the archive argument means a remote host to GNU tar.
+  run("tar", ["-xzf", packs[0].filename], root);
   const packageRoot = join(root, "package");
   assert.equal(existsSync(join(packageRoot, "src")), false);
   assert.equal(existsSync(join(packageRoot, "node_modules")), false);
