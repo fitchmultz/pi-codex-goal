@@ -12,6 +12,7 @@ import {
 
 function contextUsage(tokens: number) {
   return {
+    source: "reported" as const,
     tokens,
     contextWindow: 272_000,
     percent: (tokens / 272_000) * 100,
