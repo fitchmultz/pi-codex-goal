@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1 - 2026-09-22
+
+- Align the native host test fixtures with Pi 0.87's registered tool definitions and session projection, and qualify official and fork hosts in one CI job. Runtime behavior is unchanged from 0.3.0.
+
 ## 0.3.0 - 2026-09-07
 
 - Require new explicit goal token budgets to be integers of at least 500,000, including replacements. Smaller budgets are rejected rather than raised; omitted budgets remain unlimited and existing saved budgets stay unchanged.
