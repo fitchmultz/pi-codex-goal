@@ -2,7 +2,7 @@
 
 `pi-codex-goal` uses a Crabbox-backed local platform smoke gate to prove the package on macOS, Ubuntu Linux, and native Windows before release-sensitive changes ship.
 
-Ordinary hosted CI only runs `npm run verify` on Node 24 for push and pull request checks. It does not run this Crabbox release matrix, lease targets, secrets, or model-backed platform smoke.
+Hosted pull-request CI qualifies the declared official Pi version and reviewed maintained fork on Ubuntu/Node 24, including `npm run check:compat` and clean consumer CLI probes. It does not run this Crabbox release matrix, lease targets, secrets, or model-backed platform smoke.
 
 This setup reuses the portable Crabbox platform-testing lessons without copying provider-specific smoke flows from another project. The gate includes a real model-backed pi run so release checks catch platform-specific extension failures before completion is claimed.
 
