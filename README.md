@@ -76,7 +76,7 @@ Validate types and tests before committing or opening a PR:
 npm run verify
 ```
 
-GitHub Actions runs this same ordinary hosted CI gate on Node 24 for `push` and `pull_request`. It does not run the Crabbox platform matrix.
+Pull-request CI runs `check:compat` against the declared official Pi version and the reviewed maintained fork on Ubuntu/Node 24. It also checks clean Git and npm consumer installs through the native Pi CLI. Hosted CI does not call a model or run the local Crabbox release gate.
 
 Cross-platform release-sensitive changes should also pass the local Crabbox platform smoke gate:
 
