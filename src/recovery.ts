@@ -15,6 +15,7 @@ export interface AssistantErrorMessage {
   role: string;
   stopReason?: string;
   errorMessage?: string;
+  provider?: string;
   usage?: {
     input: number;
     output: number;
@@ -56,16 +57,17 @@ export function isAssistantContextOverflow(
     return false;
   }
   if (contextWindow <= 0) {
-    return isContextOverflowError(message.errorMessage);
+    return isContextOverflowError(message.errorMessage, message.provider);
   }
   return isContextOverflow(assistantMessageForOverflowCheck(message), contextWindow);
 }
 
-export function isContextOverflowError(errorMessage: string | undefined): boolean {
+export function isContextOverflowError(errorMessage: string | undefined, provider?: string): boolean {
   return isContextOverflow(
     assistantMessageForOverflowCheck({
       stopReason: "error",
       errorMessage: errorMessage ?? "",
+      provider,
     }),
   );
 }

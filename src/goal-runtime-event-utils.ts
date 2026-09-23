@@ -106,7 +106,7 @@ export function handleAgentErrorMessage(
   context: GoalRuntimeOverflowRecoveryContext,
 ): void {
   recordAssistantContextOverflow(message, ctx, context);
-  if (!isContextOverflowError(message.errorMessage)) {
+  if (!isContextOverflowError(message.errorMessage, message.provider)) {
     context.recoveryRuntime.handlePersistentAssistantError(message, ctx);
   }
 }

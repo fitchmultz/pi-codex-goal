@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { mock, test } from "node:test";
 
+import { isContextOverflow } from "@earendil-works/pi-ai";
+
 import { formatFooterStatus } from "../src/format.js";
 import {
   createRecoveryPausedAttention,
@@ -119,35 +121,46 @@ test("host overflow session compaction falls back when promised host retry never
   }
 });
 
-test("host overflow retry success resumes goal continuation after clearing recovery flag", async () => {
-  const harness = createRuntimeHarness();
-  await harness.runCommand("ship it");
-  harness.sentMessages.length = 0;
+for (const { label, errorMessage } of [
+  { label: "generic", errorMessage: assistantMessage("error", { input: 30, output: 12 }, "context_length_exceeded") },
+  {
+    label: "Cerebras bodyless",
+    errorMessage: {
+      ...assistantMessage("error", { input: 0, output: 0 }, "400 status code (no body)"),
+      provider: "cerebras",
+    },
+  },
+]) {
+  test(`host overflow retry success resumes goal continuation (${label})`, async () => {
+    const harness = createRuntimeHarness({ contextWindow: 128_000 });
+    await harness.runCommand("ship it");
+    harness.sentMessages.length = 0;
+    assert.equal(isContextOverflow(errorMessage), true);
 
-  const errorMessage = assistantMessage("error", { input: 30, output: 12 }, "context_length_exceeded");
-  await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
-  await harness.emit("turn_end", {
-    type: "turn_end",
-    turnIndex: 0,
-    message: errorMessage,
-    toolResults: [],
-  });
-  await harness.emit("agent_end", {
-    type: "agent_end",
-    messages: [errorMessage],
-  });
-  await harness.emit("session_compact", sessionCompactEvent({ reason: "overflow", willRetry: true }));
-  assert.equal(harness.sentMessages.length, 0);
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    await harness.emit("turn_end", {
+      type: "turn_end",
+      turnIndex: 0,
+      message: errorMessage,
+      toolResults: [],
+    });
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [errorMessage],
+    });
+    await harness.emit("session_compact", sessionCompactEvent({ reason: "overflow", willRetry: true }));
+    assert.equal(harness.sentMessages.length, 0);
 
-  await harness.emit("agent_start", agentStartEvent());
-  await harness.emit("agent_end", {
-    type: "agent_end",
-    messages: [assistantMessage("stop", { input: 1, output: 1 })],
-  });
+    await harness.emit("agent_start", agentStartEvent());
+    await harness.emit("agent_end", {
+      type: "agent_end",
+      messages: [assistantMessage("stop", { input: 1, output: 1 })],
+    });
 
-  assert.equal(harness.snapshot().goal?.status, "active");
-  assert.equal(harness.sentMessages.length, 1);
-});
+    assert.equal(harness.snapshot().goal?.status, "active");
+    assert.equal(harness.sentMessages.length, 1);
+  });
+}
 
 test("repeated context length errors pause after host default overflow recovery", async () => {
   const harness = createRuntimeHarness();

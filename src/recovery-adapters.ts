@@ -3,6 +3,7 @@ import type { AssistantMessage, StopReason } from "@earendil-works/pi-ai";
 export interface OverflowCheckAssistantMessage {
   stopReason?: string;
   errorMessage?: string;
+  provider?: string | undefined;
   usage?: {
     input: number;
     output: number;
@@ -38,7 +39,7 @@ export function assistantMessageForOverflowCheck(message: OverflowCheckAssistant
     role: "assistant",
     content: [],
     api: OVERFLOW_CHECK_API,
-    provider: OVERFLOW_CHECK_PROVIDER,
+    provider: message.provider ?? OVERFLOW_CHECK_PROVIDER,
     model: OVERFLOW_CHECK_MODEL,
     usage: {
       input: usage.input,
