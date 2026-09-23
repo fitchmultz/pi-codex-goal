@@ -36,7 +36,7 @@ const UpdateGoalParams = Type.Object({
 export interface ToolHost {
   getGoal(): ThreadGoal | null;
   setGoal(goal: ThreadGoal, source: GoalEntrySource, ctx: ExtensionContext): void;
-  completeGoal(source: GoalEntrySource, ctx: ExtensionContext, toolCallId?: string): GoalResult;
+  completeGoal(source: GoalEntrySource, ctx: ExtensionContext, toolCallId: string): GoalResult;
 }
 
 function textResult(

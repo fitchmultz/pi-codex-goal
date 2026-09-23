@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mock, test } from "node:test";
 
-import type { TurnEndEvent } from "@earendil-works/pi-coding-agent";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 
 import { formatFooterStatus } from "../src/format.js";
 import { isGoalCustomEntry, setEntry } from "../src/state.js";
@@ -10,6 +10,7 @@ import {
   assistantMessage,
   createRuntimeHarness,
   emitPersistentAssistantError,
+  emitToolExecutionEnd,
   fireProviderLimitAutoResume,
   flushContinuationScheduler,
   goalUserContextMessage,
@@ -22,7 +23,7 @@ function assistantToolUseMessage(
   input: number,
   output: number,
   toolCalls: ReadonlyArray<{ id: string; name: string }>,
-): Extract<TurnEndEvent["message"], { role: "assistant" }> {
+): AssistantMessage {
   return {
     ...assistantMessage("toolUse", { input, output }),
     content: toolCalls.map((toolCall) => ({
@@ -31,7 +32,7 @@ function assistantToolUseMessage(
       name: toolCall.name,
       arguments: {},
     })),
-  } as Extract<TurnEndEvent["message"], { role: "assistant" }>;
+  };
 }
 
 test("aborted turns pause goals and do not queue continuation", async () => {
@@ -200,7 +201,7 @@ test("update_goal accounts its calling turn", async () => {
 
   const message = assistantToolUseMessage(100, 20, [{ id: "update-call", name: "update_goal" }]);
   await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
-  harness.appendAssistantMessage(message);
+  harness.appendMessage(message);
   await harness.runTool("update_goal", { status: "complete" }, "update-call");
   await harness.emit("turn_end", {
     type: "turn_end",
@@ -218,10 +219,10 @@ test("update_goal charges the current assistant message when a historical call r
   const harness = createRuntimeHarness();
   await harness.runTool("create_goal", { objective: "ship it" });
 
-  harness.appendAssistantMessage(assistantToolUseMessage(7, 3, [{ id: "", name: "update_goal" }]));
+  harness.appendMessage(assistantToolUseMessage(7, 3, [{ id: "", name: "update_goal" }]));
   const message = assistantToolUseMessage(100, 20, [{ id: "", name: "update_goal" }]);
   await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
-  harness.appendAssistantMessage(message);
+  harness.appendMessage(message);
   await harness.runTool("update_goal", { status: "complete" }, "");
   await harness.emit("turn_end", {
     type: "turn_end",
@@ -239,8 +240,8 @@ test("direct update_goal execution does not charge a historical call with the sa
   const harness = createRuntimeHarness();
   await harness.runTool("create_goal", { objective: "ship it" });
 
-  harness.appendAssistantMessage(assistantToolUseMessage(7, 3, [{ id: "", name: "update_goal" }]));
-  harness.appendAssistantMessage(assistantToolUseMessage(100, 20, [{ id: "bash-call", name: "bash" }]));
+  harness.appendMessage(assistantToolUseMessage(7, 3, [{ id: "", name: "update_goal" }]));
+  harness.appendMessage(assistantToolUseMessage(100, 20, [{ id: "bash-call", name: "bash" }]));
   await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
   await harness.runTool("update_goal", { status: "complete" }, "");
 
@@ -255,7 +256,7 @@ test("duplicate update_goal completion does not double count its calling turn", 
 
   const message = assistantToolUseMessage(100, 20, [{ id: "update-call", name: "update_goal" }]);
   await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
-  harness.appendAssistantMessage(message);
+  harness.appendMessage(message);
   await harness.runTool("update_goal", { status: "complete" }, "update-call");
   await harness.runTool("update_goal", { status: "complete" }, "update-call");
   await harness.emit("turn_end", {
@@ -291,7 +292,7 @@ test("update_goal counts a multi-tool assistant message once", async () => {
     { id: "update-call", name: "update_goal" },
   ]);
   await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
-  harness.appendAssistantMessage(message);
+  harness.appendMessage(message);
   await harness.emit("tool_execution_end", {
     type: "tool_execution_end",
     toolCallId: "bash-call",
@@ -300,7 +301,7 @@ test("update_goal counts a multi-tool assistant message once", async () => {
     result: {},
     isError: false,
   });
-  harness.appendToolResultMessage({
+  harness.appendMessage({
     role: "toolResult",
     toolCallId: "bash-call",
     toolName: "bash",
@@ -327,8 +328,9 @@ test("update_goal preserves completion when its calling turn crosses the budget"
 
   const message = assistantToolUseMessage(499_999, 2, [{ id: "update-call", name: "update_goal" }]);
   await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
-  harness.appendAssistantMessage(message);
-  await harness.runTool("update_goal", { status: "complete" }, "update-call");
+  harness.appendMessage(message);
+  const result = await harness.runTool("update_goal", { status: "complete" }, "update-call");
+  assert.match(JSON.stringify(result), /tokens used: 500,001 of 500,000/);
   await harness.emit("turn_end", {
     type: "turn_end",
     turnIndex: 0,
@@ -349,7 +351,7 @@ test("direct update_goal execution without a matching assistant entry contribute
   const unrelatedMessage = assistantToolUseMessage(100, 20, [{ id: "bash-call", name: "bash" }]);
   const callingMessage = assistantToolUseMessage(100, 20, [{ id: "update-call", name: "update_goal" }]);
   await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
-  harness.appendAssistantMessage(unrelatedMessage);
+  harness.appendMessage(unrelatedMessage);
   await harness.runTool("update_goal", { status: "complete" }, "update-call");
   await harness.emit("turn_end", {
     type: "turn_end",
@@ -443,6 +445,41 @@ test("replacement during an in-flight turn does not charge old tokens to the new
   assert.equal(goal?.usage.tokensUsed, 0);
   assert.equal(harness.sentMessages.length, 1);
 });
+
+for (const replacementSource of ["command", "tool"] as const) {
+  test(`${replacementSource} replacement counts tool time without claiming the old response's tokens`, async () => {
+    mock.timers.enable({ apis: ["Date"], now: 1_000_000 });
+    try {
+      const harness = createRuntimeHarness();
+      await harness.runTool("create_goal", { objective: "old goal" });
+      await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+      const message = assistantToolUseMessage(100, 20, [
+        { id: "create-call", name: "create_goal" },
+        { id: "update-call", name: "update_goal" },
+      ]);
+      if (replacementSource === "command") {
+        await harness.runCommand("new goal");
+        harness.appendMessage(message);
+      } else {
+        harness.appendMessage(message);
+        await harness.runTool("create_goal", { objective: "new goal", replace_existing: true }, "create-call");
+      }
+      await emitToolExecutionEnd(harness);
+      mock.timers.tick(5_000);
+      await emitToolExecutionEnd(harness);
+      await harness.runTool("update_goal", { status: "complete" }, "update-call");
+      await harness.emit("turn_end", { type: "turn_end", turnIndex: 0, message, toolResults: [] });
+
+      const goal = harness.snapshot().goal;
+      assert.equal(goal?.objective, "new goal");
+      assert.equal(goal?.status, "complete");
+      assert.equal(goal?.usage.tokensUsed, 0);
+      assert.equal(goal?.usage.activeSeconds, 5);
+    } finally {
+      mock.timers.reset();
+    }
+  });
+}
 
 test("goal tools return Codex-shaped response details", async () => {
   const harness = createRuntimeHarness();

@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { mock } from "node:test";
 
-import type { ToolResultMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type {
   ExtensionAPI,
   ExtensionCommandContext,
   ExtensionContext,
-  TurnEndEvent,
+  SessionMessageEntry,
 } from "@earendil-works/pi-coding-agent";
 
 import goalExtension, { __testHooks } from "../../src/index.js";
@@ -412,19 +412,7 @@ export function createRuntimeHarness(options: {
     return tool(toolCallId, params);
   }
 
-  function appendAssistantMessage(
-    message: Extract<TurnEndEvent["message"], { role: "assistant" }>,
-  ): void {
-    entries.push({
-      type: "message",
-      id: `entry-${++entryIndex}`,
-      parentId: null,
-      timestamp: new Date(0).toISOString(),
-      message,
-    });
-  }
-
-  function appendToolResultMessage(message: ToolResultMessage): void {
+  function appendMessage(message: SessionMessageEntry["message"]): void {
     entries.push({
       type: "message",
       id: `entry-${++entryIndex}`,
@@ -435,8 +423,7 @@ export function createRuntimeHarness(options: {
   }
 
   return {
-    appendAssistantMessage,
-    appendToolResultMessage,
+    appendMessage,
     compactCalls,
     footerStatuses,
     emit,
@@ -641,7 +628,7 @@ export function assistantMessage(
   stopReason: "stop" | "aborted" | "length" | "toolUse" | "error",
   usage: TestAssistantUsage,
   errorMessage?: string,
-) {
+): AssistantMessage {
   const cacheRead = usage.cacheRead ?? 0;
   const cacheWrite = usage.cacheWrite ?? 0;
 

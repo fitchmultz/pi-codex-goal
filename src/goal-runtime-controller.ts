@@ -31,7 +31,7 @@ export interface GoalRuntimeController extends GoalRuntimeEventHandlers {
   getGoalStartTurnStrategy(): GoalStartTurnStrategy;
   setGoal(goal: ThreadGoal, source: GoalEntrySource, ctx: ExtensionContext): void;
   clearGoal(source: GoalEntrySource, ctx: ExtensionContext): void;
-  completeGoal(source: GoalEntrySource, ctx: ExtensionContext, toolCallId?: string): GoalResult;
+  completeGoal(source: GoalEntrySource, ctx: ExtensionContext, toolCallId: string): GoalResult;
   cancelProviderLimitAutoResume(goalId: string, ctx: StatusContext): void;
   resumeGoalWithContinuation(goalId: string, source: GoalEntrySource, ctx: StatusContext): GoalResult;
 }
@@ -42,6 +42,7 @@ export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeContro
 
   const clearActiveAccounting = (): void => {
     runtimeState.accounting.activeGoalId = null;
+    runtimeState.accounting.turnGoalId = null;
     runtimeState.accounting.lastAccountedAt = null;
   };
 
@@ -166,11 +167,10 @@ export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeContro
   const completeGoal = (
     source: GoalEntrySource,
     ctx: ExtensionContext,
-    toolCallId?: string,
+    toolCallId: string,
   ): GoalResult => {
     providerLimitAutoResume.clear();
-    const completedTurnTokens =
-      toolCallId === undefined ? 0 : assistantTurnTokensForToolCall(ctx.sessionManager.getBranch(), toolCallId);
+    const completedTurnTokens = assistantTurnTokensForToolCall(ctx.sessionManager.getBranch(), toolCallId);
     goalAccounting.accountProgress(ctx, false, completedTurnTokens, true);
     return stateController.completeGoal(source, ctx);
   };
