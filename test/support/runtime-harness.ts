@@ -303,9 +303,9 @@ export function createRuntimeHarness(options: {
       getPendingNextTurnCount() {
         return unsupportedHarnessMethod("ctx.getPendingNextTurnCount");
       },
-      getPendingInputCount: options.supportsPendingInputCount === false
-        ? undefined
-        : () => runtime.pendingInputCount,
+      getPendingInputCount() {
+        return runtime.pendingInputCount;
+      },
       getPendingToolCalls() {
         return unsupportedHarnessMethod("ctx.getPendingToolCalls");
       },
@@ -369,6 +369,10 @@ export function createRuntimeHarness(options: {
     ui,
     waitForIdle: async () => {},
   } satisfies ExtensionCommandContext;
+
+  if (options.supportsPendingInputCount === false) {
+    Reflect.deleteProperty(ctx, "getPendingInputCount");
+  }
 
   if (options.contextWindow !== undefined) {
     ctx.model = {
