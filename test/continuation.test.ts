@@ -560,8 +560,8 @@ test("goal tools return Codex-shaped response details", async () => {
   assert.match(String(completed.details.completionBudgetReport), /^Goal achieved\. Report final budget usage to the user:/);
 });
 
-test("agent_end, not agent_settled, drives deliberate per-run goal continuation", async () => {
-  const harness = createRuntimeHarness();
+test("agent_end queues continuation while the host is still running", async () => {
+  const harness = createRuntimeHarness({ idle: false });
   await harness.runCommand("ship it");
   const queued = harness.sentMessages[0];
   assert.ok(queued);

@@ -161,14 +161,14 @@ export function createContinuationScheduler(deps: ContinuationSchedulerDeps) {
     continuationTimer.unref?.();
   };
 
-  const maybeContinue = (ctx: ExtensionContext): void => {
+  const maybeContinue = (ctx: ExtensionContext, duringAgentEnd = false): void => {
     const goal = deps.getGoal();
     if (!canPlanContinuationFor(goal)) {
       return;
     }
 
     const goalId = goal.goalId;
-    if (!ctx.isIdle() || ctx.hasPendingMessages()) {
+    if ((!duringAgentEnd && !ctx.isIdle()) || ctx.hasPendingMessages()) {
       scheduleContinuationCheck(goalId, ctx, CONTINUATION_RETRY_MS);
       return;
     }
