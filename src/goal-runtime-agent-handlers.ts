@@ -62,7 +62,7 @@ export function createAgentEventHandlers(deps: GoalRuntimeAgentHandlerContext) {
         return;
       }
       resetErrorRecovery();
-      continuation.maybeContinue(ctx);
+      continuation.maybeContinue(ctx, true);
     }) satisfies ExtensionHandler<AgentEndEvent>,
   };
 }

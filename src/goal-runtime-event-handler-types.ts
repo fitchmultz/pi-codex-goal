@@ -63,7 +63,7 @@ export interface GoalRuntimeContinuationPort {
   clearPassthroughContinuationInput: () => void;
   continuationGoalIdFromRuntimePrompt: (prompt: string) => string | null;
   markContinuationQueued: (goalId: string) => void;
-  maybeContinue: (ctx: ExtensionContext) => void;
+  maybeContinue: (ctx: ExtensionContext, duringAgentEnd?: boolean) => void;
   maybeContinueAfterCurrentEvent: (ctx: ExtensionContext) => void;
   maybeContinueAfterPostCompactFallback: (
     ctx: ExtensionContext,
