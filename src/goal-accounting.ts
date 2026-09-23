@@ -6,6 +6,7 @@ import { CUSTOM_ENTRY_TYPE, type ThreadGoal } from "./types.js";
 
 export interface AccountingState {
   activeGoalId: string | null;
+  /** Response owner stays fixed through pause/resume and replacements until the next turn starts. */
   turnGoalId: string | null;
   lastAccountedAt: number | null;
   budgetWarningSentFor: string | null;
@@ -75,13 +76,6 @@ interface GoalAccountingDeps {
 }
 
 export function createGoalAccounting(deps: GoalAccountingDeps) {
-  const clearActiveAccounting = (): void => {
-    const accounting = deps.getAccounting();
-    accounting.activeGoalId = null;
-    accounting.turnGoalId = null;
-    accounting.lastAccountedAt = null;
-  };
-
   const beginAccounting = (newTurn = true): void => {
     const goal = deps.getGoal();
     const accounting = deps.getAccounting();
@@ -107,10 +101,16 @@ export function createGoalAccounting(deps: GoalAccountingDeps) {
     const goal = deps.getGoal();
     const accounting = deps.getAccounting();
     const canAccount = goal?.status === "active" || (accountBudgetLimited && goal?.status === "budgetLimited");
-    if (!goal || accounting.activeGoalId !== goal.goalId || !canAccount) {
-      // Mid-turn replacements start an elapsed-time clock, but cannot own this response's tokens.
+    if (!goal || !canAccount) {
       beginAccounting(false);
       return;
+    }
+    if (accounting.activeGoalId !== goal.goalId) {
+      // Re-arm elapsed time after resume/replacement without changing the response's owner.
+      beginAccounting(false);
+      if (accounting.activeGoalId !== goal.goalId) {
+        return;
+      }
     }
 
     const now = Date.now();
@@ -143,7 +143,6 @@ export function createGoalAccounting(deps: GoalAccountingDeps) {
   };
 
   return {
-    clearActiveAccounting,
     beginAccounting,
     accountProgress,
   };

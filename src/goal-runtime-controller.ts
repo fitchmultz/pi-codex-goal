@@ -42,7 +42,6 @@ export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeContro
 
   const clearActiveAccounting = (): void => {
     runtimeState.accounting.activeGoalId = null;
-    runtimeState.accounting.turnGoalId = null;
     runtimeState.accounting.lastAccountedAt = null;
   };
 

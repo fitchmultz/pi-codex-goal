@@ -446,6 +446,34 @@ test("replacement during an in-flight turn does not charge old tokens to the new
   assert.equal(harness.sentMessages.length, 1);
 });
 
+for (const [complete, precedingTool] of [[false, false], [false, true], [true, false], [true, true]]) {
+  test(`pause/resume preserves response tokens (complete: ${complete}, preceding tool: ${precedingTool})`, async () => {
+    const harness = createRuntimeHarness();
+    await harness.runTool("create_goal", { objective: "ship it" });
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+    const message = complete || precedingTool
+      ? assistantToolUseMessage(100, 20, [
+          ...(precedingTool ? [{ id: "bash-call", name: "bash" }] : []),
+          ...(complete ? [{ id: "update-call", name: "update_goal" }] : []),
+        ])
+      : assistantMessage("stop", { input: 100, output: 20 });
+    harness.appendMessage(message);
+    await harness.runCommand("pause");
+    await harness.runCommand("resume");
+    if (precedingTool) {
+      await emitToolExecutionEnd(harness);
+    }
+    if (complete) {
+      await harness.runTool("update_goal", { status: "complete" }, "update-call");
+    }
+    await harness.emit("turn_end", { type: "turn_end", turnIndex: 0, message, toolResults: [] });
+
+    const goal = harness.snapshot().goal;
+    assert.equal(goal?.status, complete ? "complete" : "active");
+    assert.equal(goal?.usage.tokensUsed, 120);
+  });
+}
+
 for (const replacementSource of ["command", "tool"] as const) {
   test(`${replacementSource} replacement counts tool time without claiming the old response's tokens`, async () => {
     mock.timers.enable({ apis: ["Date"], now: 1_000_000 });
