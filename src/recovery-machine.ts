@@ -165,7 +165,7 @@ export function planRecoveryForAssistantError(
   state: GoalRecoveryMachineState,
   message: AssistantErrorMessage,
 ): RecoveryAction {
-  if (isContextOverflowError(message.errorMessage)) {
+  if (isContextOverflowError(message.errorMessage, message.provider)) {
     return incrementOverflowCompactionAttempts(state);
   }
 
