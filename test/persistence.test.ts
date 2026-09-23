@@ -80,6 +80,43 @@ test("repeated tool_execution_end events coalesce runtime persistence when usage
   }
 });
 
+test("subsecond tool time survives turns without charging the gap", async () => {
+  const originalNow = Date.now;
+  let now = 1_000;
+  Date.now = () => now;
+  try {
+    const harness = createRuntimeHarness();
+    await harness.runCommand("ship it");
+    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+
+    for (let index = 0; index < 4; index += 1) {
+      now += 750;
+      await emitToolExecutionEnd(harness);
+      if (index === 1) {
+        await harness.emit("turn_end", {
+          type: "turn_end",
+          turnIndex: 0,
+          message: assistantMessage("toolUse", { input: 0, output: 0 }),
+          toolResults: [],
+        });
+        now += 1_750;
+        await harness.emit("turn_start", { type: "turn_start", turnIndex: 1, timestamp: 2 });
+      }
+    }
+
+    await harness.emit("turn_end", {
+      type: "turn_end",
+      turnIndex: 1,
+      message: assistantMessage("stop", { input: 0, output: 0 }),
+      toolResults: [],
+    });
+
+    assert.equal(harness.snapshot().goal?.usage.activeSeconds, 3);
+  } finally {
+    Date.now = originalNow;
+  }
+});
+
 test("turn_end flushes coalesced runtime usage to session entries", async () => {
   const originalNow = Date.now;
   let now = 1_000;

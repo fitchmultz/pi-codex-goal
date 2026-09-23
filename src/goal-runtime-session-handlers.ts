@@ -60,6 +60,7 @@ export function createSessionEventHandlers(deps: GoalRuntimeSessionHandlerContex
     onSessionStart: (async (event, ctx) => {
       continuation.clearPostCompactContinuationFallback();
       deps.providerLimitAutoResume.clear();
+      deps.clearActiveAccounting();
       stateController.reloadFromSession(ctx);
       goalAccounting.beginAccounting();
       const goal = stateController.getGoal();
@@ -81,6 +82,7 @@ export function createSessionEventHandlers(deps: GoalRuntimeSessionHandlerContex
     onSessionTree: (async (_event, ctx) => {
       continuation.clearPostCompactContinuationFallback();
       deps.providerLimitAutoResume.clear();
+      deps.clearActiveAccounting();
       stateController.reloadFromSession(ctx);
       goalAccounting.beginAccounting();
       continuation.maybeContinue(ctx);
