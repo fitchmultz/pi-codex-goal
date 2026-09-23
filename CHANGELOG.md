@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Reject completion from an old response after `/goal` replaces its goal, leaving the replacement active for its own work.
 - Include the assistant response calling `update_goal` in the final token report, without charging a replacement goal for a response generated for its predecessor.
 
 ## 0.3.1 - 2026-09-22

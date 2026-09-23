@@ -508,14 +508,29 @@ for (const replacementSource of ["command", "tool"] as const) {
       await emitToolExecutionEnd(harness);
       mock.timers.tick(5_000);
       await emitToolExecutionEnd(harness);
-      await harness.runTool("update_goal", { status: "complete" }, "update-call");
+      if (replacementSource === "command") {
+        await assert.rejects(
+          harness.runTool("update_goal", { status: "complete" }, "update-call"),
+          /Goal changed while this response was running/,
+        );
+      } else {
+        await harness.runTool("update_goal", { status: "complete" }, "update-call");
+      }
       await harness.emit("turn_end", { type: "turn_end", turnIndex: 0, message, toolResults: [] });
 
       const goal = harness.snapshot().goal;
       assert.equal(goal?.objective, "new goal");
-      assert.equal(goal?.status, "complete");
+      assert.equal(goal?.status, replacementSource === "command" ? "active" : "complete");
       assert.equal(goal?.usage.tokensUsed, 0);
       assert.equal(goal?.usage.activeSeconds, 5);
+
+      if (replacementSource === "command") {
+        await harness.emit("turn_start", { type: "turn_start", turnIndex: 1, timestamp: 2 });
+        harness.appendMessage(assistantToolUseMessage(10, 2, [{ id: "finish-new", name: "update_goal" }]));
+        await harness.runTool("update_goal", { status: "complete" }, "finish-new");
+        assert.equal(harness.snapshot().goal?.status, "complete");
+        assert.equal(harness.snapshot().goal?.usage.tokensUsed, 12);
+      }
     } finally {
       mock.timers.reset();
     }

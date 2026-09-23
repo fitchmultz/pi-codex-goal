@@ -124,6 +124,7 @@ export interface GoalRuntimeTurnHandlerContext extends StaleQueuedWorkEffectCont
     | "accounting"
     | "agentRunFromContinuation"
     | "agentRunToolNames"
+    | "completionGoalId"
     | "currentTurnIndex"
     | "staleQueuedWorkGuard"
   >;
@@ -131,6 +132,7 @@ export interface GoalRuntimeTurnHandlerContext extends StaleQueuedWorkEffectCont
     GoalStateController,
     | "beginOverflowRecovery"
     | "flushGoalPersistence"
+    | "getGoal"
     | "maybeFlushRuntimePersistence"
     | "pauseForAbort"
   >;

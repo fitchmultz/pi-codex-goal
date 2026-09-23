@@ -168,6 +168,14 @@ export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeContro
     ctx: ExtensionContext,
     toolCallId: string,
   ): GoalResult => {
+    const goal = stateController.getGoal();
+    if (goal && runtimeState.completionGoalId !== null && runtimeState.completionGoalId !== goal.goalId) {
+      return {
+        ok: false,
+        message: "Goal changed while this response was running; inspect the current goal before marking it complete.",
+        goal,
+      };
+    }
     providerLimitAutoResume.clear();
     const completedTurnTokens = assistantTurnTokensForToolCall(ctx.sessionManager.getBranch(), toolCallId);
     goalAccounting.accountProgress(ctx, false, completedTurnTokens, true);
@@ -180,6 +188,10 @@ export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeContro
     setGoal(nextGoal, source, ctx) {
       providerLimitAutoResume.clear();
       stateController.applyGoalTransition({ kind: "set", nextGoal, source }, ctx);
+      // A tool-created goal is known to this response, unlike a concurrent /goal replacement.
+      if (source === "tool") {
+        runtimeState.completionGoalId = nextGoal.goalId;
+      }
     },
     clearGoal(source, ctx) {
       providerLimitAutoResume.clear();
