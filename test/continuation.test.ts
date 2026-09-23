@@ -581,53 +581,6 @@ test("agent_end queues continuation while the host is still running", async () =
   assert.equal(harness.sentMessages.length, 1);
 });
 
-test("agent_end waits for pending print input before queuing a continuation", async () => {
-  mock.timers.enable({ apis: ["setTimeout"] });
-  try {
-    const harness = createRuntimeHarness({ idle: false, pendingInputCount: 1 });
-    await harness.runTool("create_goal", { objective: "ship it" });
-    await harness.emit("agent_end", {
-      type: "agent_end",
-      messages: [assistantMessage("stop", { input: 30, output: 12 })],
-    });
-    assert.equal(harness.sentMessages.length, 0);
-
-    harness.setPendingInputCount(0);
-    await harness.emit("before_agent_start", {
-      type: "before_agent_start",
-      prompt: "second user prompt",
-      systemPrompt: "",
-      systemPromptOptions: {},
-    });
-    await harness.emit("agent_end", {
-      type: "agent_end",
-      messages: [assistantMessage("stop", { input: 10, output: 5 })],
-    });
-    assert.equal(harness.sentMessages.length, 1);
-  } finally {
-    mock.timers.reset();
-  }
-});
-
-test("agent_end retains idle scheduling when the host cannot count pending input", async () => {
-  mock.timers.enable({ apis: ["setTimeout"] });
-  try {
-    const harness = createRuntimeHarness({ idle: false, supportsPendingInputCount: false });
-    await harness.runTool("create_goal", { objective: "ship it" });
-    await harness.emit("agent_end", {
-      type: "agent_end",
-      messages: [assistantMessage("stop", { input: 30, output: 12 })],
-    });
-    assert.equal(harness.sentMessages.length, 0);
-
-    harness.setIdle(true);
-    flushContinuationScheduler();
-    assert.equal(harness.sentMessages.length, 1);
-  } finally {
-    mock.timers.reset();
-  }
-});
-
 test("agent end waits for idle before continuing active goals", async () => {
   mock.timers.enable({ apis: ["setTimeout"] });
   try {

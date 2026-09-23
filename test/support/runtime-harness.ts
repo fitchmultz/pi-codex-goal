@@ -86,8 +86,6 @@ export function sessionShutdownEvent(
 export function createRuntimeHarness(options: {
   idle?: boolean;
   pendingMessages?: boolean;
-  pendingInputCount?: number;
-  supportsPendingInputCount?: boolean;
   compactBehavior?: "success" | "error" | "unavailable";
   compactCompletion?: "immediate" | "manual";
   contextWindow?: number;
@@ -112,7 +110,6 @@ export function createRuntimeHarness(options: {
     abortCount: 0,
     idle: options.idle ?? true,
     pendingMessages: options.pendingMessages ?? false,
-    pendingInputCount: options.pendingInputCount ?? 0,
     compactBehavior: options.compactBehavior ?? "success",
     compactCompletion: options.compactCompletion ?? "immediate",
     contextUsage: options.contextUsage,
@@ -304,7 +301,7 @@ export function createRuntimeHarness(options: {
         return unsupportedHarnessMethod("ctx.getPendingNextTurnCount");
       },
       getPendingInputCount() {
-        return runtime.pendingInputCount;
+        return unsupportedHarnessMethod("ctx.getPendingInputCount");
       },
       getPendingToolCalls() {
         return unsupportedHarnessMethod("ctx.getPendingToolCalls");
@@ -369,10 +366,6 @@ export function createRuntimeHarness(options: {
     ui,
     waitForIdle: async () => {},
   } satisfies ExtensionCommandContext;
-
-  if (options.supportsPendingInputCount === false) {
-    Reflect.deleteProperty(ctx, "getPendingInputCount");
-  }
 
   if (options.contextWindow !== undefined) {
     ctx.model = {
@@ -446,9 +439,6 @@ export function createRuntimeHarness(options: {
     },
     setPendingMessages(pendingMessages: boolean) {
       runtime.pendingMessages = pendingMessages;
-    },
-    setPendingInputCount(pendingInputCount: number) {
-      runtime.pendingInputCount = pendingInputCount;
     },
     setContextUsage(contextUsage: ReturnType<ExtensionContext["getContextUsage"]>) {
       runtime.contextUsage = contextUsage;

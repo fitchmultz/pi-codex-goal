@@ -168,11 +168,7 @@ export function createContinuationScheduler(deps: ContinuationSchedulerDeps) {
     }
 
     const goalId = goal.goalId;
-    // ponytail: Older Pi cannot expose queued CLI inputs; keep idle scheduling until the host provides this count.
-    const pendingInputCount =
-      (ctx as ExtensionContext & { getPendingInputCount?: () => number }).getPendingInputCount?.();
-    const canQueueDuringAgentEnd = duringAgentEnd && pendingInputCount !== undefined;
-    if ((!canQueueDuringAgentEnd && !ctx.isIdle()) || ctx.hasPendingMessages() || (pendingInputCount ?? 0) > 0) {
+    if ((!duringAgentEnd && !ctx.isIdle()) || ctx.hasPendingMessages()) {
       scheduleContinuationCheck(goalId, ctx, CONTINUATION_RETRY_MS);
       return;
     }
