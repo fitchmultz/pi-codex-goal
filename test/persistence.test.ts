@@ -80,7 +80,7 @@ test("repeated tool_execution_end events coalesce runtime persistence when usage
   }
 });
 
-test("subsecond tool completions retain accumulated active time across turns", async () => {
+test("subsecond tool time survives turns without charging the gap", async () => {
   const originalNow = Date.now;
   let now = 1_000;
   Date.now = () => now;
@@ -99,6 +99,7 @@ test("subsecond tool completions retain accumulated active time across turns", a
           message: assistantMessage("toolUse", { input: 0, output: 0 }),
           toolResults: [],
         });
+        now += 1_750;
         await harness.emit("turn_start", { type: "turn_start", turnIndex: 1, timestamp: 2 });
       }
     }

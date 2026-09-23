@@ -9,6 +9,7 @@ export interface AccountingState {
   /** Response owner stays fixed through pause/resume and replacements; cleared once turn_end accounts it. */
   turnGoalId: string | null;
   lastAccountedAt: number | null;
+  lastSampledAt: number | null;
   budgetWarningSentFor: string | null;
 }
 
@@ -28,6 +29,7 @@ export function createAccountingState(): AccountingState {
     activeGoalId: null,
     turnGoalId: null,
     lastAccountedAt: null,
+    lastSampledAt: null,
     budgetWarningSentFor: null,
   };
 }
@@ -85,13 +87,21 @@ export function createGoalAccounting(deps: GoalAccountingDeps) {
     if (!goal || goal.status !== "active") {
       accounting.activeGoalId = null;
       accounting.lastAccountedAt = null;
+      accounting.lastSampledAt = null;
       return;
     }
 
-    if (accounting.activeGoalId !== goal.goalId || accounting.lastAccountedAt === null) {
-      accounting.lastAccountedAt = Date.now();
-    }
+    const now = Date.now();
+    // Carry unfinished milliseconds without charging the gap before this turn.
+    const remainder =
+      accounting.activeGoalId === goal.goalId &&
+      accounting.lastAccountedAt !== null &&
+      accounting.lastSampledAt !== null
+        ? accounting.lastSampledAt - accounting.lastAccountedAt
+        : 0;
     accounting.activeGoalId = goal.goalId;
+    accounting.lastAccountedAt = now - remainder;
+    accounting.lastSampledAt = now;
   };
 
   const accountProgress = (
@@ -119,6 +129,7 @@ export function createGoalAccounting(deps: GoalAccountingDeps) {
     const lastAccountedAt = accounting.lastAccountedAt ?? now;
     const elapsed = Math.floor((now - lastAccountedAt) / 1000);
     accounting.lastAccountedAt = elapsed < 0 ? now : lastAccountedAt + elapsed * 1000;
+    accounting.lastSampledAt = now;
 
     const tokens = accounting.turnGoalId === goal.goalId ? completedTurnTokens : 0;
     const result = applyUsage(goal, tokens, elapsed, {
