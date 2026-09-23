@@ -18,6 +18,7 @@ export function createTurnEventHandlers(deps: GoalRuntimeTurnHandlerContext) {
   return {
     onTurnStart: (async (event, ctx) => {
       runtimeState.currentTurnIndex = event.turnIndex;
+      runtimeState.completionGoalId = stateController.getGoal()?.goalId ?? null;
       continuation.bindPassthroughContinuationInputToTurn(event.turnIndex);
       runStaleQueuedWorkPlan(runtimeState.staleQueuedWorkGuard.planTurnStart(), ctx, deps);
       goalAccounting.beginAccounting();
