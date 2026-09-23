@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 
-import { InMemoryCredentialStore, validateToolArguments } from "@earendil-works/pi-ai";
+import { InMemoryCredentialStore, validateToolArguments, type ToolCall } from "@earendil-works/pi-ai";
 import {
   createAgentSession,
   DefaultResourceLoader,
@@ -93,10 +93,10 @@ async function checkPackage(root: string, packageRoot: string, extension: ".ts" 
     };
     const createGoal = runner.getToolDefinition("create_goal");
     assert.ok(createGoal);
-    const validateCreate = (args: Record<string, unknown>) => validateToolArguments(createGoal, {
+    const validateCreate = (args: ToolCall["arguments"]) => validateToolArguments(createGoal, {
       type: "toolCall", id: "create", name: "create_goal", arguments: args,
     });
-    const rejectBudget = async (args: Record<string, unknown>) => {
+    const rejectBudget = async (args: ToolCall["arguments"]) => {
       const before = await call("get_goal", {});
       const entries = structuredClone(sessionManager.getEntries());
       const persisted = readFileSync(sessionFile, "utf8");
@@ -201,7 +201,8 @@ test("npm artifact discovers and executes one compiled goal extension without so
   const root = tempRoot(t);
   const packs = JSON.parse(run("npm", ["pack", "--json", "--pack-destination", root], process.cwd())) as Array<{ filename: string }>;
   assert.ok(packs[0]);
-  run("tar", ["-xzf", join(root, packs[0].filename), "-C", root], process.cwd());
+  // A Windows drive colon in the archive argument means a remote host to GNU tar.
+  run("tar", ["-xzf", packs[0].filename], root);
   const packageRoot = join(root, "package");
   assert.equal(existsSync(join(packageRoot, "src")), false);
   assert.equal(existsSync(join(packageRoot, "node_modules")), false);

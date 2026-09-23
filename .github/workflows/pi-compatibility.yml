@@ -1,0 +1,71 @@
+name: Pi compatibility
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pi-compatibility-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compatibility:
+    name: compatibility / compatibility
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      npm_config_cache: ${{ github.workspace }}/.npm-cache
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: extension
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: fitchmultz/.github
+          ref: fe049ea97a8c91d1a4c3a0958a85b37c7759dcc6 # v1.0.0
+          path: automation
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Use the reviewed npm version
+        run: npm install --global "$(node -p 'require("./automation/package.json").packageManager')"
+      - id: targets
+        run: |
+          echo "official=$(node -p 'require("./extension/package.json").devDependencies["@earendil-works/pi-coding-agent"]')" >> "$GITHUB_OUTPUT"
+          echo "fork=$(node -p 'require("./automation/host-targets.json").forkRef')" >> "$GITHUB_OUTPUT"
+      - name: Qualify official Pi
+        run: >
+          node automation/scripts/qualify.mjs --repo pi-codex-goal
+          --source "$GITHUB_WORKSPACE/extension"
+          --host official --target "${{ steps.targets.outputs.official }}"
+          --output "$RUNNER_TEMP/qualification-official"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: fitchmultz/pi
+          ref: ${{ steps.targets.outputs.fork }}
+          path: fork
+          persist-credentials: false
+      - name: Build the reviewed fork package
+        working-directory: fork
+        env:
+          PI_OFFLINE: '1'
+          PI_TELEMETRY: '0'
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run hydrate:model-data
+          npm run build:offline
+          node ../automation/scripts/pack-fork.mjs . "$RUNNER_TEMP/fork-package" "${{ steps.targets.outputs.fork }}"
+          git diff --exit-code
+      - name: Qualify maintained fork
+        env:
+          PI_COMPAT_FORK_REF: ${{ steps.targets.outputs.fork }}
+        run: >
+          node automation/scripts/qualify.mjs --repo pi-codex-goal
+          --source "$GITHUB_WORKSPACE/extension"
+          --host fork --target "$RUNNER_TEMP/fork-package"
+          --output "$RUNNER_TEMP/qualification-fork"

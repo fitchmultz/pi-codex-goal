@@ -132,6 +132,25 @@ export function createRuntimeHarness(options: {
   };
 
   const pi: ExtensionAPI = {
+    // Fork-only members are structurally checked when that SDK is selected.
+    // Keep unused capabilities fail-fast, not simulated host-feature coverage.
+    ...{
+      registerBashCwdHook() {
+        unsupportedHarnessMethod("pi.registerBashCwdHook");
+      },
+      registerToolSearch() {
+        unsupportedHarnessMethod("pi.registerToolSearch");
+      },
+      recordUsage() {
+        unsupportedHarnessMethod("pi.recordUsage");
+      },
+      getActiveToolReferences() {
+        return unsupportedHarnessMethod("pi.getActiveToolReferences");
+      },
+      setActiveToolReferences() {
+        unsupportedHarnessMethod("pi.setActiveToolReferences");
+      },
+    },
     appendEntry(customType: string, data: unknown) {
       entries.push({
         type: "custom",
@@ -211,6 +230,14 @@ export function createRuntimeHarness(options: {
   };
 
   const sessionManager: ExtensionCommandContext["sessionManager"] = {
+    ...{
+      buildSessionProjection() {
+        return unsupportedHarnessMethod("sessionManager.buildSessionProjection");
+      },
+      getEntriesRevision() {
+        return unsupportedHarnessMethod("sessionManager.getEntriesRevision");
+      },
+    },
     buildContextEntries: () => entries,
     getBranch: () => entries,
     getCwd: () => "/tmp",
@@ -263,6 +290,29 @@ export function createRuntimeHarness(options: {
   };
 
   ctx = {
+    ...{
+      isBashRunning() {
+        return unsupportedHarnessMethod("ctx.isBashRunning");
+      },
+      hasPendingSteeringMessages() {
+        return unsupportedHarnessMethod("ctx.hasPendingSteeringMessages");
+      },
+      getPendingNextTurnCount() {
+        return unsupportedHarnessMethod("ctx.getPendingNextTurnCount");
+      },
+      getPendingInputCount() {
+        return unsupportedHarnessMethod("ctx.getPendingInputCount");
+      },
+      getPendingToolCalls() {
+        return unsupportedHarnessMethod("ctx.getPendingToolCalls");
+      },
+      getCompactionSettings() {
+        return unsupportedHarnessMethod("ctx.getCompactionSettings");
+      },
+      newContext() {
+        unsupportedHarnessMethod("ctx.newContext");
+      },
+    },
     abort() {
       runtime.abortCount += 1;
     },

@@ -47,7 +47,7 @@ pi install .
 
 On this maintainer machine, the active install is a global/user package that already points at this checkout; do not also leave a project-local install under this repository's `.pi/` settings. Duplicate local and global installs both try to register `get_goal`, `create_goal`, and `update_goal`, which causes tool-registration conflicts. For install-path release checks, use an isolated temp project/config directory or remove the project-local entry immediately after the check.
 
-Compatibility note: this package supports Pi 0.84.0 or later on Node 24. The latest published npm artifact remains the reproducible source of truth for its own published version's metadata. Pi-bundled runtime packages remain optional wildcard peers as required by Pi package loading; the support floor is declared here and validated by the source tree's exact Pi 0.84.0 development dependencies.
+Compatibility note: this package supports Pi 0.84.0 or later on Node 24. The latest published npm artifact remains the reproducible source of truth for its own published version's metadata. Pi-bundled runtime packages remain optional wildcard peers as required by Pi package loading; the advertised support floor remains 0.84.0, while the current source qualification baseline is official Pi 0.86.1. Current-baseline checks alone do not requalify every older Pi release.
 
 Release note: npm installs and pinned GitHub tags are the reproducible release artifacts. Installing from the repository default branch can include unreleased changes that will ship in a future package release, even when `package.json` still identifies the latest published version.
 
@@ -68,13 +68,15 @@ The template follows the Codex goal-writing practices from:
 
 ## Development
 
+`npm run check:compat` runs the canonical build and `verify`, including native source/packed loading, runtime-only source installation, tool persistence, and SDK compaction/continuation tests. Use `npm ci --ignore-scripts` first and run with an empty HOME/agent profile. The selected host must be installed in this checkout's dependency graph; changing only a CLI on PATH does not select its SDK types. No live model is called. This does not replace the model-backed platform matrix or manual interactive checks below.
+
 Validate types and tests before committing or opening a PR:
 
 ```sh
 npm run verify
 ```
 
-GitHub Actions runs this same ordinary hosted CI gate on Node 24 for `push` and `pull_request`. It does not run the Crabbox platform matrix.
+Pull-request CI runs `check:compat` against the declared official Pi version and the reviewed maintained fork on Ubuntu/Node 24. It also checks clean Git and npm consumer installs through the native Pi CLI. Hosted CI does not call a model or run the local Crabbox release gate.
 
 Cross-platform release-sensitive changes should also pass the local Crabbox platform smoke gate:
 
