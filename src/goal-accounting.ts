@@ -6,7 +6,7 @@ import { CUSTOM_ENTRY_TYPE, type ThreadGoal } from "./types.js";
 
 export interface AccountingState {
   activeGoalId: string | null;
-  /** Response owner stays fixed through pause/resume and replacements until the next turn starts. */
+  /** Response owner stays fixed through pause/resume and replacements; cleared once turn_end accounts it. */
   turnGoalId: string | null;
   lastAccountedAt: number | null;
   budgetWarningSentFor: string | null;

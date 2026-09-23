@@ -60,6 +60,19 @@ test("aborted turns pause goals and do not queue continuation", async () => {
   assert.equal(harness.sentMessages.length, 0);
 });
 
+test("resuming between aborted turn_end and agent_end does not count the response twice", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runTool("create_goal", { objective: "ship it" });
+  await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+  const message = assistantMessage("aborted", { input: 40, output: 2 });
+  await harness.emit("turn_end", { type: "turn_end", turnIndex: 0, message, toolResults: [] });
+  assert.equal(harness.snapshot().goal?.usage.tokensUsed, 42);
+  await harness.runCommand("resume");
+  await harness.emit("agent_end", { type: "agent_end", messages: [message] });
+
+  assert.equal(harness.snapshot().goal?.usage.tokensUsed, 42);
+});
+
 test("a new user-driven agent start leaves a paused goal paused", async () => {
   const harness = createRuntimeHarness();
   await harness.runCommand("ship it");
