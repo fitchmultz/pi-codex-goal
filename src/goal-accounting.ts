@@ -88,8 +88,10 @@ export function createGoalAccounting(deps: GoalAccountingDeps) {
       return;
     }
 
+    if (accounting.activeGoalId !== goal.goalId || accounting.lastAccountedAt === null) {
+      accounting.lastAccountedAt = Date.now();
+    }
     accounting.activeGoalId = goal.goalId;
-    accounting.lastAccountedAt = Date.now();
   };
 
   const accountProgress = (
@@ -114,8 +116,9 @@ export function createGoalAccounting(deps: GoalAccountingDeps) {
     }
 
     const now = Date.now();
-    const elapsed = accounting.lastAccountedAt === null ? 0 : Math.floor((now - accounting.lastAccountedAt) / 1000);
-    accounting.lastAccountedAt = now;
+    const lastAccountedAt = accounting.lastAccountedAt ?? now;
+    const elapsed = Math.floor((now - lastAccountedAt) / 1000);
+    accounting.lastAccountedAt = elapsed < 0 ? now : lastAccountedAt + elapsed * 1000;
 
     const tokens = accounting.turnGoalId === goal.goalId ? completedTurnTokens : 0;
     const result = applyUsage(goal, tokens, elapsed, {
