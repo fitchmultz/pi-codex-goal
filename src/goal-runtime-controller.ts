@@ -2,7 +2,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 
 import { registerGoalCommand } from "./commands.js";
 import { createContinuationScheduler } from "./continuation-scheduler.js";
-import { createGoalAccounting } from "./goal-accounting.js";
+import { assistantTurnTokensForToolCall, createGoalAccounting } from "./goal-accounting.js";
 import { createGoalPersistence } from "./goal-persistence.js";
 import {
   createGoalRuntimeEventHandlers,
@@ -31,7 +31,7 @@ export interface GoalRuntimeController extends GoalRuntimeEventHandlers {
   getGoalStartTurnStrategy(): GoalStartTurnStrategy;
   setGoal(goal: ThreadGoal, source: GoalEntrySource, ctx: ExtensionContext): void;
   clearGoal(source: GoalEntrySource, ctx: ExtensionContext): void;
-  completeGoal(source: GoalEntrySource, ctx: ExtensionContext): GoalResult;
+  completeGoal(source: GoalEntrySource, ctx: ExtensionContext, toolCallId: string): GoalResult;
   cancelProviderLimitAutoResume(goalId: string, ctx: StatusContext): void;
   resumeGoalWithContinuation(goalId: string, source: GoalEntrySource, ctx: StatusContext): GoalResult;
 }
@@ -163,9 +163,14 @@ export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeContro
     resumeGoalWithContinuation,
   });
 
-  const completeGoal = (source: GoalEntrySource, ctx: ExtensionContext): GoalResult => {
+  const completeGoal = (
+    source: GoalEntrySource,
+    ctx: ExtensionContext,
+    toolCallId: string,
+  ): GoalResult => {
     providerLimitAutoResume.clear();
-    goalAccounting.accountProgress(ctx, false, 0, true);
+    const completedTurnTokens = assistantTurnTokensForToolCall(ctx.sessionManager.getBranch(), toolCallId);
+    goalAccounting.accountProgress(ctx, false, completedTurnTokens, true);
     return stateController.completeGoal(source, ctx);
   };
 

@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { mock } from "node:test";
 
-import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { AssistantMessage } from "@earendil-works/pi-ai";
+import type {
+  ExtensionAPI,
+  ExtensionCommandContext,
+  ExtensionContext,
+  SessionMessageEntry,
+} from "@earendil-works/pi-coding-agent";
 
 import goalExtension, { __testHooks } from "../../src/index.js";
 import { isContextOverflowError } from "../../src/recovery.js";
@@ -89,7 +95,7 @@ export function createRuntimeHarness(options: {
   const handlers = new Map<string, EventHandler[]>();
   const sentMessages: SentMessage[] = [];
   const sentUserMessages: SentUserMessage[] = [];
-  const tools = new Map<string, (params: Record<string, unknown>) => Promise<unknown>>();
+  const tools = new Map<string, (toolCallId: string, params: Record<string, unknown>) => Promise<unknown>>();
   const compactCalls: Array<{
     customInstructions?: string;
     onComplete?: (result: {
@@ -189,9 +195,9 @@ export function createRuntimeHarness(options: {
     },
     registerShortcut() {},
     registerTool(tool) {
-      tools.set(tool.name, (params) =>
+      tools.set(tool.name, (toolCallId, params) =>
         tool.execute(
-          "tool-call",
+          toolCallId,
           params as Parameters<typeof tool.execute>[1],
           undefined,
           undefined,
@@ -400,13 +406,24 @@ export function createRuntimeHarness(options: {
     return results;
   }
 
-  async function runTool(name: string, params: Record<string, unknown>) {
+  async function runTool(name: string, params: Record<string, unknown>, toolCallId = "tool-call") {
     const tool = tools.get(name);
     assert.ok(tool, `Expected tool ${name} to be registered.`);
-    return tool(params);
+    return tool(toolCallId, params);
+  }
+
+  function appendMessage(message: SessionMessageEntry["message"]): void {
+    entries.push({
+      type: "message",
+      id: `entry-${++entryIndex}`,
+      parentId: null,
+      timestamp: new Date(0).toISOString(),
+      message,
+    });
   }
 
   return {
+    appendMessage,
     compactCalls,
     footerStatuses,
     emit,
@@ -611,7 +628,7 @@ export function assistantMessage(
   stopReason: "stop" | "aborted" | "length" | "toolUse" | "error",
   usage: TestAssistantUsage,
   errorMessage?: string,
-) {
+): AssistantMessage {
   const cacheRead = usage.cacheRead ?? 0;
   const cacheWrite = usage.cacheWrite ?? 0;
 

@@ -47,6 +47,7 @@ export function createTurnEventHandlers(deps: GoalRuntimeTurnHandlerContext) {
 
       const completedTurnTokens = assistantTurnTokens(event.message);
       goalAccounting.accountProgress(ctx, true, completedTurnTokens);
+      runtimeState.accounting.turnGoalId = null;
       stateController.flushGoalPersistence("runtime");
       if (isAbortedAssistantMessage(event.message)) {
         stateController.pauseForAbort(ctx);

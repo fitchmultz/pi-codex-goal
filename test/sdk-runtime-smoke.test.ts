@@ -17,17 +17,20 @@ import {
 } from "@earendil-works/pi-coding-agent";
 
 import goalExtension, { __testHooks } from "../src/index.js";
+import { reconstructGoal } from "../src/state.js";
 import { CUSTOM_ENTRY_TYPE } from "../src/types.js";
 
 function assistantResponse(
   model: Parameters<StreamFunction>[0],
   contextTokens: number,
-  text: string,
+  content: string | AssistantMessage["content"],
 ): ReturnType<StreamFunction> {
   const stream = createAssistantMessageEventStream();
+  const parts: AssistantMessage["content"] = typeof content === "string" ? [{ type: "text", text: content }] : content;
+  const stopReason = parts.some((part) => part.type === "toolCall") ? "toolUse" : "stop";
   const message: AssistantMessage = {
     role: "assistant",
-    content: [{ type: "text", text }],
+    content: parts,
     api: model.api,
     provider: model.provider,
     model: model.id,
@@ -39,16 +42,87 @@ function assistantResponse(
       totalTokens: contextTokens,
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
     },
-    stopReason: "stop",
+    stopReason,
     timestamp: Date.now(),
   };
   queueMicrotask(() => {
     stream.push({ type: "start", partial: message });
-    stream.push({ type: "done", reason: "stop", message });
+    stream.push({ type: "done", reason: stopReason, message });
     stream.end();
   });
   return stream;
 }
+
+test("SDK completion report includes its calling response exactly once", async () => {
+  const modelRuntime = await ModelRuntime.create({
+    allowModelNetwork: false,
+    credentials: new InMemoryCredentialStore(),
+    modelsPath: null,
+  });
+  const loader = new DefaultResourceLoader({
+    cwd: process.cwd(),
+    agentDir: getAgentDir(),
+    noContextFiles: true,
+    noExtensions: true,
+    extensionFactories: [goalExtension],
+  });
+  await loader.reload();
+  modelRuntime.registerProvider("sdk-smoke", { apiKey: "test" });
+  const { session } = await createAgentSession({
+    cwd: process.cwd(),
+    agentDir: getAgentDir(),
+    model: {
+      provider: "sdk-smoke",
+      id: "completion",
+      name: "SDK Completion Smoke",
+      api: "openai-completions",
+      baseUrl: "http://localhost",
+      reasoning: false,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 1_000_000,
+      maxTokens: 1_000,
+    },
+    modelRuntime,
+    noTools: "builtin",
+    resourceLoader: loader,
+    sessionManager: SessionManager.inMemory(process.cwd()),
+    settingsManager: SettingsManager.inMemory({ compaction: { enabled: false } }),
+  });
+  let requests = 0;
+  session.agent.streamFunction = (model) => {
+    requests += 1;
+    if (requests > 2) {
+      assert.equal(requests, 3, "completed goals must not queue another continuation");
+      return assistantResponse(model, 7, "Done");
+    }
+    return assistantResponse(model, requests === 1 ? 410_000 : 100_000, [{
+      type: "toolCall",
+      id: `call-${requests}`,
+      name: requests === 1 ? "get_goal" : "update_goal",
+      arguments: requests === 1 ? {} : { status: "complete" },
+    }]);
+  };
+  try {
+    const runner = session.extensionRunner;
+    const createGoal = runner.getToolDefinition("create_goal");
+    assert.ok(createGoal);
+    await createGoal.execute("create", { objective: "ship it", token_budget: 500_000 },
+      undefined, undefined, runner.createContext());
+    await session.prompt("Complete the goal");
+
+    const entries = session.sessionManager.getBranch();
+    const goal = reconstructGoal(entries).goal;
+    assert.equal(goal?.status, "complete");
+    assert.equal(goal?.usage.tokensUsed, 510_000);
+    const result = entries.find((entry) =>
+      entry.type === "message" && entry.message.role === "toolResult" && entry.message.toolName === "update_goal");
+    assert.match(JSON.stringify(result), /tokens used: 510,000 of 500,000/);
+    assert.equal(requests, 3);
+  } finally {
+    session.dispose();
+  }
+});
 
 function goalIdFromToolResult(result: unknown): string {
   assert.ok(result && typeof result === "object");

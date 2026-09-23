@@ -1,4 +1,4 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 
 import { budgetLimitPrompt } from "./prompts.js";
 import { applyUsage } from "./state.js";
@@ -6,6 +6,8 @@ import { CUSTOM_ENTRY_TYPE, type ThreadGoal } from "./types.js";
 
 export interface AccountingState {
   activeGoalId: string | null;
+  /** Response owner stays fixed through pause/resume and replacements; cleared once turn_end accounts it. */
+  turnGoalId: string | null;
   lastAccountedAt: number | null;
   budgetWarningSentFor: string | null;
 }
@@ -24,6 +26,7 @@ export interface AssistantTurnMessage {
 export function createAccountingState(): AccountingState {
   return {
     activeGoalId: null,
+    turnGoalId: null,
     lastAccountedAt: null,
     budgetWarningSentFor: null,
   };
@@ -43,6 +46,20 @@ export function assistantTurnTokens(message: AssistantTurnMessage): number {
   return usageChannelTokens(message.usage.input) + usageChannelTokens(message.usage.output);
 }
 
+/** The current response is persisted before its tools execute, but counted at turn_end. */
+export function assistantTurnTokensForToolCall(entries: SessionEntry[], toolCallId: string): number {
+  for (let i = entries.length - 1; i >= 0; i -= 1) {
+    const entry = entries[i];
+    if (entry?.type !== "message" || entry.message.role !== "assistant") {
+      continue;
+    }
+    return entry.message.content.some((part) => part.type === "toolCall" && part.id === toolCallId)
+      ? assistantTurnTokens(entry.message)
+      : 0;
+  }
+  return 0;
+}
+
 export function isAbortedAssistantMessage(message: AssistantTurnMessage): boolean {
   return message.role === "assistant" && message.stopReason === "aborted";
 }
@@ -59,15 +76,12 @@ interface GoalAccountingDeps {
 }
 
 export function createGoalAccounting(deps: GoalAccountingDeps) {
-  const clearActiveAccounting = (): void => {
-    const accounting = deps.getAccounting();
-    accounting.activeGoalId = null;
-    accounting.lastAccountedAt = null;
-  };
-
-  const beginAccounting = (): void => {
+  const beginAccounting = (newTurn = true): void => {
     const goal = deps.getGoal();
     const accounting = deps.getAccounting();
+    if (newTurn) {
+      accounting.turnGoalId = goal?.status === "active" ? goal.goalId : null;
+    }
     if (!goal || goal.status !== "active") {
       accounting.activeGoalId = null;
       accounting.lastAccountedAt = null;
@@ -87,16 +101,24 @@ export function createGoalAccounting(deps: GoalAccountingDeps) {
     const goal = deps.getGoal();
     const accounting = deps.getAccounting();
     const canAccount = goal?.status === "active" || (accountBudgetLimited && goal?.status === "budgetLimited");
-    if (!goal || accounting.activeGoalId !== goal.goalId || !canAccount) {
-      beginAccounting();
+    if (!goal || !canAccount) {
+      beginAccounting(false);
       return;
+    }
+    if (accounting.activeGoalId !== goal.goalId) {
+      // Re-arm elapsed time after resume/replacement without changing the response's owner.
+      beginAccounting(false);
+      if (accounting.activeGoalId !== goal.goalId) {
+        return;
+      }
     }
 
     const now = Date.now();
     const elapsed = accounting.lastAccountedAt === null ? 0 : Math.floor((now - accounting.lastAccountedAt) / 1000);
     accounting.lastAccountedAt = now;
 
-    const result = applyUsage(goal, completedTurnTokens, elapsed, {
+    const tokens = accounting.turnGoalId === goal.goalId ? completedTurnTokens : 0;
+    const result = applyUsage(goal, tokens, elapsed, {
       expectedGoalId: accounting.activeGoalId,
       accountBudgetLimited,
     });
@@ -121,7 +143,6 @@ export function createGoalAccounting(deps: GoalAccountingDeps) {
   };
 
   return {
-    clearActiveAccounting,
     beginAccounting,
     accountProgress,
   };

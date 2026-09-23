@@ -121,6 +121,7 @@ export interface GoalRuntimeInputContextHandlerContext extends StaleQueuedWorkEf
 export interface GoalRuntimeTurnHandlerContext extends StaleQueuedWorkEffectContext {
   runtimeState: Pick<
     GoalRuntimeState,
+    | "accounting"
     | "agentRunFromContinuation"
     | "agentRunToolNames"
     | "currentTurnIndex"

@@ -36,7 +36,7 @@ const UpdateGoalParams = Type.Object({
 export interface ToolHost {
   getGoal(): ThreadGoal | null;
   setGoal(goal: ThreadGoal, source: GoalEntrySource, ctx: ExtensionContext): void;
-  completeGoal(source: GoalEntrySource, ctx: ExtensionContext): GoalResult;
+  completeGoal(source: GoalEntrySource, ctx: ExtensionContext, toolCallId: string): GoalResult;
 }
 
 function textResult(
@@ -100,8 +100,8 @@ export function registerGoalTools(pi: ExtensionAPI, host: ToolHost): void {
     promptGuidelines: TOOL_PROMPT_GUIDELINES,
     parameters: UpdateGoalParams,
     executionMode: "sequential",
-    async execute(_toolCallId, _params, _signal, _onUpdate, ctx) {
-      const result = host.completeGoal("tool", ctx);
+    async execute(toolCallId, _params, _signal, _onUpdate, ctx) {
+      const result = host.completeGoal("tool", ctx, toolCallId);
       if (!result.ok || !result.goal) {
         throwToolError(result.message);
       }
