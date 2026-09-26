@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.1 - 2026-09-26
 
 - Ship the TypeScript extension source in the npm artifact instead of a precompiled `dist/`, matching Git installs. Pi's bundled loader starts it as fast as the compiled output, so the build step, `tsconfig.build.json`, and the JavaScript entry are removed. Runtime behavior is unchanged from 0.4.0.
 
