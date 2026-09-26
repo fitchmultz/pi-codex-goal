@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 - 2026-09-26
 
 - Require Node.js 24 and qualify against official Pi 0.87.1 and the maintained fork; the development toolchain moves to TypeScript 7, `@types/node` 24, typebox 1.3.34, and npm 12.
 - Run tests with Node's native type stripping instead of `tsx`; the published `dist/` is still precompiled for faster Pi startup, now without declaration files or source maps.
