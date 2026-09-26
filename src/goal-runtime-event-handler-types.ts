@@ -18,11 +18,11 @@ import type {
   TurnStartEvent,
 } from "@earendil-works/pi-coding-agent";
 
-import type { GoalRuntimeState } from "./goal-runtime-state.js";
-import type { StatusContext } from "./goal-runtime-status.js";
-import type { GoalStateController } from "./goal-state-controller.js";
-import type { AssistantErrorMessage } from "./recovery.js";
-import type { GoalEntrySource, GoalResult } from "./types.js";
+import type { GoalRuntimeState } from "./goal-runtime-state.ts";
+import type { StatusContext } from "./goal-runtime-status.ts";
+import type { GoalStateController } from "./goal-state-controller.ts";
+import type { AssistantErrorMessage } from "./recovery.ts";
+import type { GoalEntrySource, GoalResult } from "./types.ts";
 
 export type ContextEventResult = { messages?: ContextEvent["messages"] };
 export type MessageStartEvent = Extract<ExtensionEvent, { type: "message_start" }>;

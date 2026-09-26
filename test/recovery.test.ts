@@ -18,7 +18,7 @@ import {
   reasonFromRecoveryPendingAttention,
   recoveryAttentionMessage,
   recoveryPendingAttentionMessage,
-} from "../src/recovery.js";
+} from "../src/recovery.ts";
 import {
   applyHostOverflowUserResetPersistence,
   beginHostOverflowRecovery,
@@ -33,7 +33,7 @@ import {
   recoveryPhaseNeedsUserStartTurn,
   resetRecoveryMachine,
   setRecoveryPendingAttention,
-} from "../src/recovery-machine.js";
+} from "../src/recovery-machine.ts";
 
 test("detects context overflow error messages with host overflow classifier", () => {
   assert.equal(isContextOverflowError("context_length_exceeded: prompt too large"), true);

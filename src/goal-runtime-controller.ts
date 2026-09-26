@@ -1,30 +1,30 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-import { registerGoalCommand } from "./commands.js";
-import { createContinuationScheduler } from "./continuation-scheduler.js";
-import { assistantTurnTokensForToolCall, createGoalAccounting } from "./goal-accounting.js";
-import { createGoalPersistence } from "./goal-persistence.js";
+import { registerGoalCommand } from "./commands.ts";
+import { createContinuationScheduler } from "./continuation-scheduler.ts";
+import { assistantTurnTokensForToolCall, createGoalAccounting } from "./goal-accounting.ts";
+import { createGoalPersistence } from "./goal-persistence.ts";
 import {
   createGoalRuntimeEventHandlers,
   type GoalRuntimeEventHandlers,
-} from "./goal-runtime-event-handlers.js";
-import { registerGoalRuntimeEvents } from "./goal-runtime-events.js";
-import { createGoalRuntimeState } from "./goal-runtime-state.js";
-import { createGoalRuntimeStatus, type StatusContext } from "./goal-runtime-status.js";
-import { createGoalStateController } from "./goal-state-controller.js";
-import { createProviderLimitAutoResumeScheduler } from "./provider-limit-auto-resume.js";
-import { compactContinuationPrompt } from "./prompts.js";
-import { createGoalRecoveryRuntime } from "./recovery-runtime.js";
+} from "./goal-runtime-event-handlers.ts";
+import { registerGoalRuntimeEvents } from "./goal-runtime-events.ts";
+import { createGoalRuntimeState } from "./goal-runtime-state.ts";
+import { createGoalRuntimeStatus, type StatusContext } from "./goal-runtime-status.ts";
+import { createGoalStateController } from "./goal-state-controller.ts";
+import { createProviderLimitAutoResumeScheduler } from "./provider-limit-auto-resume.ts";
+import { compactContinuationPrompt } from "./prompts.ts";
+import { createGoalRecoveryRuntime } from "./recovery-runtime.ts";
 import {
   clearActiveHostOverflowRecovery,
   goalStartTurnStrategy,
   resetRecoveryMachine,
   setRecoveryPausedAttention,
   type GoalStartTurnStrategy,
-} from "./recovery-machine.js";
-import { goalWithLiveUsage, updateGoalStatus } from "./state.js";
-import { registerGoalTools } from "./tools.js";
-import type { GoalEntrySource, GoalResult, ThreadGoal } from "./types.js";
+} from "./recovery-machine.ts";
+import { goalWithLiveUsage, updateGoalStatus } from "./state.ts";
+import { registerGoalTools } from "./tools.ts";
+import type { GoalEntrySource, GoalResult, ThreadGoal } from "./types.ts";
 
 export interface GoalRuntimeController extends GoalRuntimeEventHandlers {
   getGoalForDisplay(): ThreadGoal | null;

@@ -12,7 +12,7 @@ Goal state is stored in pi session custom entries, so it follows session history
 
 ## Install
 
-Requires Pi 0.84.0 or later.
+Requires Pi 0.86.1 or later (official releases and the maintained fork) and Node.js 24 or later.
 
 Install from npm:
 
@@ -41,17 +41,17 @@ pi install https://github.com/fitchmultz/pi-codex-goal@v<version>
 For local development from this repository, install the checkout only in one Pi config scope at a time:
 
 ```sh
-npm install
+npm install --ignore-scripts
 pi install .
 ```
 
 On this maintainer machine, the active install is a global/user package that already points at this checkout; do not also leave a project-local install under this repository's `.pi/` settings. Duplicate local and global installs both try to register `get_goal`, `create_goal`, and `update_goal`, which causes tool-registration conflicts. For install-path release checks, use an isolated temp project/config directory or remove the project-local entry immediately after the check.
 
-Compatibility note: this package supports Pi 0.84.0 or later on Node 24. The latest published npm artifact remains the reproducible source of truth for its own published version's metadata. Pi-bundled runtime packages remain optional wildcard peers as required by Pi package loading; the advertised support floor remains 0.84.0, while the current source qualification baseline is official Pi 0.86.1. Current-baseline checks alone do not requalify every older Pi release.
+Compatibility note: the extension uses only the extension API shared by official Pi and the maintained fork. Pi-bundled runtime packages are optional wildcard peers as required by Pi package loading. CI qualifies official Pi 0.87.1 and the maintained fork, currently based on 0.86.1.
 
 Release note: npm installs and pinned GitHub tags are the reproducible release artifacts. Installing from the repository default branch can include unreleased changes that will ship in a future package release, even when `package.json` still identifies the latest published version.
 
-Published packages load the precompiled `dist/index.js` extension; `npm pack` and `npm publish` rebuild it from TypeScript before creating the artifact. Git and local directory installs load `src/index.ts` without a build or production TypeScript dependency. Pi selects the single index entry in `extensions/`: `index.ts` in a checkout (even after a build), or `index.js` in the npm artifact, which omits the source entry.
+Published packages load the precompiled `dist/index.js` extension, which starts faster than transpiling the TypeScript module graph; `npm pack` and `npm publish` rebuild it before creating the artifact. Git and local directory installs load `src/index.ts` without a build or production TypeScript dependency. Pi selects the single index entry in `extensions/`: `index.ts` in a checkout (even after a build), or `index.js` in the npm artifact, which omits the source entry.
 
 ## Best way to create goals
 
@@ -68,35 +68,24 @@ The template follows the Codex goal-writing practices from:
 
 ## Development
 
-`npm run check:compat` runs the canonical build and `verify`, including native source/packed loading, runtime-only source installation, tool persistence, and SDK compaction/continuation tests. Use `npm ci --ignore-scripts` first and run with an empty HOME/agent profile. The selected host must be installed in this checkout's dependency graph; changing only a CLI on PATH does not select its SDK types. No live model is called. This does not replace the model-backed platform matrix or manual interactive checks below.
-
-Validate types and tests before committing or opening a PR:
+Use Node.js 24 (`.nvmrc`) and the npm version in `packageManager`.
 
 ```sh
-npm run verify
+npm ci --ignore-scripts
+npm run check
 ```
 
-Pull-request CI runs `check:compat` against the declared official Pi version and the reviewed maintained fork on Ubuntu/Node 24. It also checks clean Git and npm consumer installs through the native Pi CLI. Hosted CI does not call a model or run the local Crabbox release gate.
+`npm run check` type-checks with TypeScript 7 and runs the Node test suite with native type stripping, including source, Git-production, and packed-artifact loading, tool persistence, and SDK compaction/continuation tests. Run it with an empty HOME/agent profile. The selected host must be installed in this checkout's dependency graph; changing only a CLI on PATH does not select its SDK types. No live model is called.
 
-Cross-platform release-sensitive changes should also pass the local Crabbox platform smoke gate:
-
-```sh
-npm run check:platform-smoke
-npm run smoke:platform:all
-```
-
-`smoke:platform:all` runs the doctor before any target suite.
-
-That local gate runs `npm run verify`, packs the package, installs the packed package into a clean pi project, checks `pi list`, and runs a real model-backed goal-tool smoke on macOS, Ubuntu Linux, and native Windows. Pi 0.84.0-or-later project trust is handled explicitly with `--approve` inside the isolated smoke projects so project-local package settings and the packed extension load in non-interactive runs. The runtime smoke defaults to `zai/glm-5.2`; override it with `PLATFORM_SMOKE_MODEL` and configure forwarded auth env vars with `PLATFORM_SMOKE_AUTH_ENV`. Setup and artifact details: [docs/platform-smoke.md](docs/platform-smoke.md).
+Pull-request CI runs `check:compat` against the declared official Pi version and the reviewed maintained fork on Ubuntu/Node 24. It also checks clean Git and npm consumer installs through the native Pi CLI. Hosted CI does not call a model.
 
 Project agent notes and module map: [AGENTS.md](AGENTS.md).
-Historical 0.1.33 structural audit and remediation record: [docs/CODEBASE_AUDIT.md](docs/CODEBASE_AUDIT.md).
 
 ## Interactive smoke tests
 
 These smoke tests exercise the interactive `/goal` command, hidden continuation, bridged goal tools, filesystem verification, and final `update_goal` completion.
 
-Release-sensitive changes that touch slash-command parsing, TUI submission, goal command behavior, hidden continuation, or post-tool completion must record manual interactive `/goal` evidence before release. The model-backed platform smoke covers goal tools through non-interactive `pi -p`; it intentionally does not prove the real TUI slash-command submit path. Required evidence is: command used, model, session directory, final assistant evidence, and confirmation that the session JSONL contains the `/goal` command path, file verification, and `update_goal` completion.
+Release-sensitive changes that touch slash-command parsing, TUI submission, goal command behavior, hidden continuation, or post-tool completion must record manual interactive `/goal` evidence before release. Required evidence is: command used, model, session directory, final assistant evidence, and confirmation that the session JSONL contains the `/goal` command path, file verification, and `update_goal` completion.
 
 Prerequisites:
 
@@ -113,7 +102,7 @@ pi --model <model-id> \
 
 ### Fast manual smoke
 
-Paste this first when you want the shortest interactive confidence check. This intentionally uses shell `cat`; use the full smoke or platform smoke when you need built-in `read` tool coverage:
+Paste this first when you want the shortest interactive confidence check. This intentionally uses shell `cat`; use the full smoke when you need built-in `read` tool coverage:
 
 ```text
 /goal Create /tmp/pi-codex-goal-fast.txt containing PI_GOAL_FAST_OK; verify with cat; mark complete; report final status.
@@ -152,7 +141,7 @@ tmux send-keys -t "$TMUX_SESSION" -l '/goal Create /tmp/pi-codex-goal-fast.txt c
 tmux send-keys -t "$TMUX_SESSION" -l $'\033[13u'
 ```
 
-If an interactive run appears stuck on `Working...` after a built-in `read` tool result, capture the session JSONL and TUI pane before retrying. A healthy read-verification path includes a `toolName: "read"` tool result, an `update_goal` tool result with `status: "complete"`, and a final assistant message. The package's model-backed platform smoke now asserts that the built-in `read` tool was used; if only the TUI path stalls, treat it as a Pi host/tool-resume repro rather than changing goal continuation logic without more evidence.
+If an interactive run appears stuck on `Working...` after a built-in `read` tool result, capture the session JSONL and TUI pane before retrying. A healthy read-verification path includes a `toolName: "read"` tool result, an `update_goal` tool result with `status: "complete"`, and a final assistant message. If only the TUI path stalls, treat it as a Pi host/tool-resume repro rather than changing goal continuation logic without more evidence.
 
 ## User Commands
 

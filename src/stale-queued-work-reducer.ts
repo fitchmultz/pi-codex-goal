@@ -4,7 +4,7 @@ import {
   IDLE_EVENT_DEFAULTS,
   OBSERVING_TURN_EVENT_DEFAULTS,
   type LifecycleEventDefaults,
-} from "./stale-queued-work-reducer-defaults.js";
+} from "./stale-queued-work-reducer-defaults.ts";
 import {
   consumeAbortingAgentEnd,
   consumePendingStaleAgentEnd,
@@ -12,7 +12,7 @@ import {
   markAllObligationsOlder,
   obligationsForStaleAbort,
   setAnonymousMatching,
-} from "./stale-queued-work-obligations.js";
+} from "./stale-queued-work-obligations.ts";
 import {
   awaitingFromCleanup,
   cloneTerminalCleanup,
@@ -20,7 +20,7 @@ import {
   noteTerminalEvents,
   resolveLifecycleAfterTerminalCleanup,
   terminalCleanupHasPending,
-} from "./stale-queued-work-terminal-cleanup.js";
+} from "./stale-queued-work-terminal-cleanup.ts";
 import type {
   AgentEndMessage,
   StaleQueuedWorkEvent,
@@ -29,7 +29,7 @@ import type {
   StaleQueuedWorkState,
   StaleQueuedWorkTransitionResult,
   TerminalCleanup,
-} from "./stale-queued-work-types.js";
+} from "./stale-queued-work-types.ts";
 
 export type {
   AgentEndMessage,
@@ -39,7 +39,7 @@ export type {
   StaleQueuedWorkPlan,
   StaleQueuedWorkState,
   StaleQueuedWorkTransitionResult,
-} from "./stale-queued-work-types.js";
+} from "./stale-queued-work-types.ts";
 
 function emptyPlan(): StaleQueuedWorkPlan {
   return { skip: false, effects: [] };

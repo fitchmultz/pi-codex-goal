@@ -16,9 +16,10 @@ import {
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
 
-import goalExtension, { __testHooks } from "../src/index.js";
-import { reconstructGoal } from "../src/state.js";
-import { CUSTOM_ENTRY_TYPE } from "../src/types.js";
+import goalExtension from "../src/index.ts";
+import { CONTINUATION_RETRY_MS } from "../src/runtime-config.ts";
+import { reconstructGoal } from "../src/state.ts";
+import { CUSTOM_ENTRY_TYPE } from "../src/types.ts";
 
 function assistantResponse(
   model: Parameters<StreamFunction>[0],
@@ -276,7 +277,7 @@ test("SDK runtime emits a continuation after willRetry compaction when no retry 
       reason: "manual",
       willRetry: true,
     });
-    await new Promise((resolve) => setTimeout(resolve, __testHooks.continuationRetryMs + 25));
+    await new Promise((resolve) => setTimeout(resolve, CONTINUATION_RETRY_MS + 25));
 
     const continuationMessages = session.sessionManager.getEntries().filter((entry) => {
       return (

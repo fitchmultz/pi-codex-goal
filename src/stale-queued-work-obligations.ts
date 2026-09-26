@@ -1,14 +1,14 @@
 import {
   agentEndMessagesIncludeQueuedGoalWork,
   pendingStaleQueuedGoalWorkIdsFromMessages,
-} from "./queued-goal-work.js";
+} from "./queued-goal-work.ts";
 import type {
   AbortingTurnState,
   AgentEndMessage,
   AgentEndObligation,
   TerminalCleanup,
   TerminalObligationPhase,
-} from "./stale-queued-work-types.js";
+} from "./stale-queued-work-types.ts";
 
 export function obligationsForStaleAbort(
   staleGoalIds: ReadonlySet<string>,

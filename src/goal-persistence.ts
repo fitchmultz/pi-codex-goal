@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-import { RUNTIME_PERSIST_INTERVAL_MS } from "./runtime-config.js";
+import { RUNTIME_PERSIST_INTERVAL_MS } from "./runtime-config.ts";
 import {
   clearEntry,
   cloneGoal,
@@ -8,8 +8,8 @@ import {
   isRuntimeUsageGoalStatus,
   runtimeUsageEntry,
   setEntry,
-} from "./state.js";
-import { CUSTOM_ENTRY_TYPE, type GoalEntrySource, type ThreadGoal } from "./types.js";
+} from "./state.ts";
+import { CUSTOM_ENTRY_TYPE, type GoalEntrySource, type ThreadGoal } from "./types.ts";
 
 interface GoalPersistenceDeps {
   pi: Pick<ExtensionAPI, "appendEntry">;

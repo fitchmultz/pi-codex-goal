@@ -3,9 +3,9 @@ import { mock, test } from "node:test";
 
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 
-import { formatFooterStatus } from "../src/format.js";
-import { isGoalCustomEntry, setEntry } from "../src/state.js";
-import { CUSTOM_ENTRY_TYPE } from "../src/types.js";
+import { formatFooterStatus } from "../src/format.ts";
+import { isGoalCustomEntry, setEntry } from "../src/state.ts";
+import { CUSTOM_ENTRY_TYPE } from "../src/types.ts";
 import {
   assistantMessage,
   createRuntimeHarness,
@@ -17,7 +17,7 @@ import {
   queuedCustomMessage,
   sessionCompactEvent,
   sessionShutdownEvent,
-} from "./support/runtime-harness.js";
+} from "./support/runtime-harness.ts";
 
 function assistantToolUseMessage(
   input: number,

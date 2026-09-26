@@ -7,11 +7,11 @@ import {
   type CommandHost,
   type GoalCommandContext,
   type GoalCommandPi,
-} from "../src/commands.js";
-import type { GoalStartTurnStrategy } from "../src/recovery-machine.js";
-import { compactContinuationPrompt } from "../src/prompts.js";
-import { applyUsage, updateGoalStatus } from "../src/state.js";
-import { CUSTOM_ENTRY_TYPE, type GoalEntrySource, type ThreadGoal } from "../src/types.js";
+} from "../src/commands.ts";
+import type { GoalStartTurnStrategy } from "../src/recovery-machine.ts";
+import { compactContinuationPrompt } from "../src/prompts.ts";
+import { applyUsage, updateGoalStatus } from "../src/state.ts";
+import { CUSTOM_ENTRY_TYPE, type GoalEntrySource, type ThreadGoal } from "../src/types.ts";
 
 type SendMessage = GoalCommandPi["sendMessage"];
 

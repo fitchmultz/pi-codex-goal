@@ -7,9 +7,9 @@ import {
   reloadGoalRuntimeEffects,
   type GoalTransitionEffect,
   type GoalTransitionPlan,
-} from "../src/goal-transition.js";
-import { cloneGoal, createThreadGoal } from "../src/state.js";
-import type { GoalStatus, ThreadGoal } from "../src/types.js";
+} from "../src/goal-transition.ts";
+import { cloneGoal, createThreadGoal } from "../src/state.ts";
+import type { GoalStatus, ThreadGoal } from "../src/types.ts";
 
 function effectTypes(effects: readonly GoalTransitionEffect[]): string[] {
   return effects.map((effect) => effect.type);

@@ -1,9 +1,9 @@
-import { markAllObligationsOlder } from "./stale-queued-work-obligations.js";
+import { markAllObligationsOlder } from "./stale-queued-work-obligations.ts";
 import type {
   ObservingTurnState,
   StaleQueuedWorkState,
   TerminalCleanup,
-} from "./stale-queued-work-types.js";
+} from "./stale-queued-work-types.ts";
 
 export function terminalCleanupHasPending(cleanup: TerminalCleanup): boolean {
   return cleanup.pendingTurnEndIndexes.size > 0 || cleanup.pendingAgentEndObligations.length > 0;

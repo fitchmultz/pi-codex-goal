@@ -1,14 +1,20 @@
 name: Pi compatibility
 
 on:
+  push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: pi-compatibility-${{ github.ref }}
+  group: pi-compatibility-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
+env:
+  PI_AUTOMATION_REF: fe049ea97a8c91d1a4c3a0958a85b37c7759dcc6 # v1.0.0
 
 jobs:
   compatibility:
@@ -20,13 +26,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          path: extension
+          repository: fitchmultz/.github
+          ref: ${{ env.PI_AUTOMATION_REF }}
+          path: automation
           persist-credentials: false
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: fitchmultz/.github
-          ref: fe049ea97a8c91d1a4c3a0958a85b37c7759dcc6 # v1.0.0
-          path: automation
+          path: extension
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
@@ -34,38 +40,38 @@ jobs:
           package-manager-cache: false
       - name: Use the reviewed npm version
         run: npm install --global "$(node -p 'require("./automation/package.json").packageManager')"
-      - id: targets
-        run: |
-          echo "official=$(node -p 'require("./extension/package.json").devDependencies["@earendil-works/pi-coding-agent"]')" >> "$GITHUB_OUTPUT"
-          echo "fork=$(node -p 'require("./automation/host-targets.json").forkRef')" >> "$GITHUB_OUTPUT"
-      - name: Qualify official Pi
-        run: >
-          node automation/scripts/qualify.mjs --repo pi-codex-goal
-          --source "$GITHUB_WORKSPACE/extension"
-          --host official --target "${{ steps.targets.outputs.official }}"
-          --output "$RUNNER_TEMP/qualification-official"
+      - name: Select pinned fork
+        id: fork
+        run: echo "ref=$(node -p 'require("./automation/host-targets.json").forkRef')" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: fitchmultz/pi
-          ref: ${{ steps.targets.outputs.fork }}
+          ref: ${{ steps.fork.outputs.ref }}
           path: fork
           persist-credentials: false
-      - name: Build the reviewed fork package
+      - name: Build fork once
         working-directory: fork
         env:
+          FORK_REF: ${{ steps.fork.outputs.ref }}
           PI_OFFLINE: '1'
           PI_TELEMETRY: '0'
         run: |
           npm ci --ignore-scripts --no-audit --no-fund
           npm run hydrate:model-data
-          npm run build:offline
-          node ../automation/scripts/pack-fork.mjs . "$RUNNER_TEMP/fork-package" "${{ steps.targets.outputs.fork }}"
           git diff --exit-code
-      - name: Qualify maintained fork
+          npm run build:offline
+          node ../automation/scripts/pack-fork.mjs . "$RUNNER_TEMP/fork-package" "$FORK_REF"
+          git diff --exit-code
+      - name: Use the extension npm version
+        run: npm install --global "$(node -p 'require("./extension/package.json").packageManager')"
+      - name: Qualify official Pi
+        run: |
+          version=$(node -p 'require("./extension/package.json").devDependencies["@earendil-works/pi-coding-agent"]')
+          node automation/scripts/qualify.mjs --repo pi-codex-goal --source "$GITHUB_WORKSPACE/extension" \
+            --host official --target "$version" --output "$RUNNER_TEMP/official-evidence"
+      - name: Qualify fork Pi
         env:
-          PI_COMPAT_FORK_REF: ${{ steps.targets.outputs.fork }}
-        run: >
-          node automation/scripts/qualify.mjs --repo pi-codex-goal
-          --source "$GITHUB_WORKSPACE/extension"
-          --host fork --target "$RUNNER_TEMP/fork-package"
-          --output "$RUNNER_TEMP/qualification-fork"
+          PI_COMPAT_FORK_REF: ${{ steps.fork.outputs.ref }}
+        run: |
+          node automation/scripts/qualify.mjs --repo pi-codex-goal --source "$GITHUB_WORKSPACE/extension" \
+            --host fork --target "$RUNNER_TEMP/fork-package" --output "$RUNNER_TEMP/fork-evidence"

@@ -6,15 +6,15 @@ import type {
   QueuedGoalWorkMessage,
   QueuedGoalWorkMessageIdResolver,
   StaleQueuedWorkEffectContext,
-} from "./goal-runtime-event-handler-types.js";
-import { extensionQueuedGoalWorkMessageIdForRuntime } from "./queued-goal-work.js";
+} from "./goal-runtime-event-handler-types.ts";
+import { extensionQueuedGoalWorkMessageIdForRuntime } from "./queued-goal-work.ts";
 import {
   isAssistantContextOverflow,
   isContextOverflowError,
   isErrorAssistantMessage,
   type AssistantErrorMessage,
-} from "./recovery.js";
-import type { StaleQueuedWorkEffect, StaleQueuedWorkPlan } from "./stale-queued-work-guard.js";
+} from "./recovery.ts";
+import type { StaleQueuedWorkEffect, StaleQueuedWorkPlan } from "./stale-queued-work-guard.ts";
 
 export function applyStaleQueuedWorkEffects(
   effects: readonly StaleQueuedWorkEffect[],

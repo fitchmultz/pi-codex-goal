@@ -6,7 +6,7 @@ import {
   flushContinuationScheduler,
   sessionCompactEvent,
   type RuntimeHarness,
-} from "./support/runtime-harness.js";
+} from "./support/runtime-harness.ts";
 
 async function startQueuedContinuation(harness: RuntimeHarness): Promise<void> {
   await harness.runCommand("ship it");

@@ -6,19 +6,19 @@ import type {
   InputEventResult,
 } from "@earendil-works/pi-coding-agent";
 
-import { continuationGoalIdFromPrompt } from "./prompts.js";
-import { applyQueuedGoalProviderContextRewrites, extensionQueuedGoalWorkMessageId } from "./queued-goal-work.js";
+import { continuationGoalIdFromPrompt } from "./prompts.ts";
+import { applyQueuedGoalProviderContextRewrites, extensionQueuedGoalWorkMessageId } from "./queued-goal-work.ts";
 import {
   isActiveGoalQueuedDetails,
   isCommandResumeQueuedGoalMessage,
-} from "./queued-goal-messages.js";
-import { applyStaleQueuedWorkEffects } from "./goal-runtime-event-utils.js";
+} from "./queued-goal-messages.ts";
+import { applyStaleQueuedWorkEffects } from "./goal-runtime-event-utils.ts";
 import type {
   ContextEventResult,
   GoalRuntimeInputContextHandlerContext,
   MessageStartEvent,
   QueuedGoalWorkMessageIdResolver,
-} from "./goal-runtime-event-handler-types.js";
+} from "./goal-runtime-event-handler-types.ts";
 
 export function createInputContextEventHandlers(
   deps: GoalRuntimeInputContextHandlerContext,

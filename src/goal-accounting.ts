@@ -1,8 +1,8 @@
 import type { ExtensionAPI, ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 
-import { budgetLimitPrompt } from "./prompts.js";
-import { applyUsage } from "./state.js";
-import { CUSTOM_ENTRY_TYPE, type ThreadGoal } from "./types.js";
+import { budgetLimitPrompt } from "./prompts.ts";
+import { applyUsage } from "./state.ts";
+import { CUSTOM_ENTRY_TYPE, type ThreadGoal } from "./types.ts";
 
 export interface AccountingState {
   activeGoalId: string | null;

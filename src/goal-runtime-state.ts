@@ -1,9 +1,9 @@
-import { createAccountingState, type AccountingState } from "./goal-accounting.js";
-import { createGoalRecoveryMachine, type GoalRecoveryMachineState } from "./recovery-machine.js";
+import { createAccountingState, type AccountingState } from "./goal-accounting.ts";
+import { createGoalRecoveryMachine, type GoalRecoveryMachineState } from "./recovery-machine.ts";
 import {
   createStaleQueuedWorkGuard,
   type StaleQueuedWorkGuard,
-} from "./stale-queued-work-guard.js";
+} from "./stale-queued-work-guard.ts";
 
 export interface GoalRuntimeState {
   accounting: AccountingState;

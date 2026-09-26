@@ -8,7 +8,7 @@ import {
   sessionBeforeCompactEvent,
   sessionCompactEvent,
   type RuntimeHarness,
-} from "./support/runtime-harness.js";
+} from "./support/runtime-harness.ts";
 
 function contextUsage(tokens: number) {
   return {

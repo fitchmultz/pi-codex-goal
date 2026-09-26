@@ -1,14 +1,14 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-import { compactContinuationPrompt, continuationGoalIdFromPrompt } from "./prompts.js";
+import { compactContinuationPrompt, continuationGoalIdFromPrompt } from "./prompts.ts";
 import {
   recoveryPhaseBlocksContinuation,
   type GoalRecoveryMachineState,
-} from "./recovery-machine.js";
-import { isRecoveryPendingAttention } from "./recovery.js";
-import { CONTINUATION_RETRY_MS } from "./runtime-config.js";
-import type { StaleQueuedWorkGuard } from "./stale-queued-work-guard.js";
-import { CUSTOM_ENTRY_TYPE, type ThreadGoal } from "./types.js";
+} from "./recovery-machine.ts";
+import { isRecoveryPendingAttention } from "./recovery.ts";
+import { CONTINUATION_RETRY_MS } from "./runtime-config.ts";
+import type { StaleQueuedWorkGuard } from "./stale-queued-work-guard.ts";
+import { CUSTOM_ENTRY_TYPE, type ThreadGoal } from "./types.ts";
 
 interface ContinuationSchedulerDeps {
   pi: Pick<ExtensionAPI, "sendMessage">;

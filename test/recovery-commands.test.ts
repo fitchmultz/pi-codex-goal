@@ -4,18 +4,18 @@ import { test } from "node:test";
 import {
   continuationGoalIdFromPrompt,
   continuationPrompt,
-} from "../src/prompts.js";
-import { isGoalCustomEntry } from "../src/state.js";
-import { CUSTOM_ENTRY_TYPE } from "../src/types.js";
+} from "../src/prompts.ts";
+import { isGoalCustomEntry } from "../src/state.ts";
+import { CUSTOM_ENTRY_TYPE } from "../src/types.ts";
 import {
   createRuntimeHarness,
   emitPersistentAssistantError,
   sessionShutdownEvent,
-} from "./support/runtime-harness.js";
+} from "./support/runtime-harness.ts";
 import {
   givenOverflowPausedGoal,
   replaceGoalAfterOverflowPause,
-} from "./support/scenarios.js";
+} from "./support/scenarios.ts";
 
 test("/goal resume after non-retryable pause resets recovery counters", async () => {
   const harness = createRuntimeHarness();

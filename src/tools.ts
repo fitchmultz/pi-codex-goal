@@ -2,10 +2,10 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 
-import { goalToolResponse, toToolText, type GoalToolResponse } from "./format.js";
-import { createGoal, MIN_TOKEN_BUDGET, replaceGoal } from "./state.js";
-import { TOOL_PROMPT_GUIDELINES } from "./prompts.js";
-import type { GoalEntrySource, GoalResult, ThreadGoal } from "./types.js";
+import { goalToolResponse, toToolText, type GoalToolResponse } from "./format.ts";
+import { createGoal, MIN_TOKEN_BUDGET, replaceGoal } from "./state.ts";
+import { TOOL_PROMPT_GUIDELINES } from "./prompts.ts";
+import type { GoalEntrySource, GoalResult, ThreadGoal } from "./types.ts";
 
 const EmptyParams = Type.Object({});
 

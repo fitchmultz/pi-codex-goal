@@ -1,4 +1,4 @@
-import { continuationGoalIdFromPrompt, supersededContinuationMessage } from "./prompts.js";
+import { continuationGoalIdFromPrompt, supersededContinuationMessage } from "./prompts.ts";
 import {
   isActiveGoalQueuedDetails,
   type QueuedGoalContextCarrier,
@@ -10,8 +10,8 @@ import {
   toQueuedGoalContextCarrier,
   toQueuedGoalWorkSource,
   userContentFromUnknown,
-} from "./queued-goal-messages.js";
-import { CUSTOM_ENTRY_TYPE, type GoalStatus, type ThreadGoal } from "./types.js";
+} from "./queued-goal-messages.ts";
+import { CUSTOM_ENTRY_TYPE, type GoalStatus, type ThreadGoal } from "./types.ts";
 
 interface SupersededContinuationDetails {
   kind: "superseded_continuation";

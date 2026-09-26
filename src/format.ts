@@ -1,5 +1,5 @@
-import { formatRecoveryAttention, type RecoveryAttention } from "./recovery.js";
-import type { GoalStatus, ThreadGoal } from "./types.js";
+import { formatRecoveryAttention, type RecoveryAttention } from "./recovery.ts";
+import type { GoalStatus, ThreadGoal } from "./types.ts";
 
 const COMPACT_TOKEN_UNITS = [
   { suffix: "T", value: 1_000_000_000_000 },

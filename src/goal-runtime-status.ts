@@ -1,8 +1,8 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-import { formatFooterStatus } from "./format.js";
-import type { GoalRecoveryMachineState } from "./recovery-machine.js";
-import type { ThreadGoal } from "./types.js";
+import { formatFooterStatus } from "./format.ts";
+import type { GoalRecoveryMachineState } from "./recovery-machine.ts";
+import type { ThreadGoal } from "./types.ts";
 
 export interface StatusContext {
   ui: Pick<ExtensionContext["ui"], "setStatus">;

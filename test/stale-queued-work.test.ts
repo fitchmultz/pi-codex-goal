@@ -12,7 +12,7 @@ import {
   queuedCustomMessage,
   requireProviderContextResult,
   sessionShutdownEvent,
-} from "./support/runtime-harness.js";
+} from "./support/runtime-harness.ts";
 
 test("stale prompt continuation input is handled before agent start", async () => {
   const harness = createRuntimeHarness();

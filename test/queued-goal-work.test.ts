@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { toQueuedGoalContextCarrier, toQueuedGoalWorkSource, userContentFromUnknown } from "../src/queued-goal-messages.js";
+import { toQueuedGoalContextCarrier, toQueuedGoalWorkSource, userContentFromUnknown } from "../src/queued-goal-messages.ts";
 import {
   applyQueuedGoalProviderContextRewrites,
   extensionQueuedGoalWorkMessageId,
   extensionQueuedGoalWorkMessageIdForRuntime,
-} from "../src/queued-goal-work.js";
-import { compactContinuationPrompt, continuationGoalIdFromPrompt, continuationPrompt } from "../src/prompts.js";
-import type { ThreadGoal } from "../src/types.js";
-import { goalCustomContextMessage, goalUserContextMessage } from "./support/runtime-harness.js";
+} from "../src/queued-goal-work.ts";
+import { compactContinuationPrompt, continuationGoalIdFromPrompt, continuationPrompt } from "../src/prompts.ts";
+import type { ThreadGoal } from "../src/types.ts";
+import { goalCustomContextMessage, goalUserContextMessage } from "./support/runtime-harness.ts";
 
 const activeGoal: ThreadGoal = {
   goalId: "goal-1",

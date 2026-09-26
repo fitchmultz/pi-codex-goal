@@ -1,11 +1,11 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 
-import { copyTextToClipboard, type ClipboardCopyResult } from "./clipboard.js";
-import { formatGoalSummary } from "./format.js";
-import type { GoalStartTurnStrategy } from "./recovery-machine.js";
-import { compactContinuationPrompt, continuationPrompt } from "./prompts.js";
-import { replaceGoal, updateGoalStatus } from "./state.js";
-import { CUSTOM_ENTRY_TYPE, type GoalEntrySource, type ThreadGoal } from "./types.js";
+import { copyTextToClipboard, type ClipboardCopyResult } from "./clipboard.ts";
+import { formatGoalSummary } from "./format.ts";
+import type { GoalStartTurnStrategy } from "./recovery-machine.ts";
+import { compactContinuationPrompt, continuationPrompt } from "./prompts.ts";
+import { replaceGoal, updateGoalStatus } from "./state.ts";
+import { CUSTOM_ENTRY_TYPE, type GoalEntrySource, type ThreadGoal } from "./types.ts";
 
 export interface CommandHost {
   getGoal(): ThreadGoal | null;

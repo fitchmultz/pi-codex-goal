@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { isAbortedAssistantMessage } from "../src/goal-accounting.js";
-import { createStaleQueuedWorkGuard } from "../src/stale-queued-work-guard.js";
-import { CUSTOM_ENTRY_TYPE } from "../src/types.js";
+import { isAbortedAssistantMessage } from "../src/goal-accounting.ts";
+import { createStaleQueuedWorkGuard } from "../src/stale-queued-work-guard.ts";
+import { CUSTOM_ENTRY_TYPE } from "../src/types.ts";
 
 const abortedAssistant = { role: "assistant" as const, stopReason: "aborted" as const };
 const stoppedAssistant = { role: "assistant" as const, stopReason: "stop" as const };

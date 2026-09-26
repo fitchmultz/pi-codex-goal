@@ -3,14 +3,14 @@ import test from "node:test";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-import { createGoalPersistence } from "../src/goal-persistence.js";
-import { createGoalStateController } from "../src/goal-state-controller.js";
+import { createGoalPersistence } from "../src/goal-persistence.ts";
+import { createGoalStateController } from "../src/goal-state-controller.ts";
 import {
   createGoalRecoveryMachine,
   recoveryPhaseNeedsUserStartTurn,
-} from "../src/recovery-machine.js";
-import type { StatusContext } from "../src/goal-runtime-status.js";
-import type { ThreadGoal } from "../src/types.js";
+} from "../src/recovery-machine.ts";
+import type { StatusContext } from "../src/goal-runtime-status.ts";
+import type { ThreadGoal } from "../src/types.ts";
 
 const activeGoal: ThreadGoal = {
   goalId: "goal-a",

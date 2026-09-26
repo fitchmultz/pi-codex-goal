@@ -1,4 +1,4 @@
-import { CONTINUATION_RETRY_MS, PROVIDER_LIMIT_AUTO_RESUME_MS } from "./runtime-config.js";
+import { CONTINUATION_RETRY_MS, PROVIDER_LIMIT_AUTO_RESUME_MS } from "./runtime-config.ts";
 
 interface ProviderLimitAutoResumeDeps {
   onTimer: (goalId: string) => boolean;
