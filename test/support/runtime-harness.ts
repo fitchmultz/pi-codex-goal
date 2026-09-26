@@ -139,6 +139,9 @@ export function createRuntimeHarness(options: {
       registerBashCwdHook() {
         unsupportedHarnessMethod("pi.registerBashCwdHook");
       },
+      registerContextWindowHook() {
+        unsupportedHarnessMethod("pi.registerContextWindowHook");
+      },
       registerToolSearch() {
         unsupportedHarnessMethod("pi.registerToolSearch");
       },
