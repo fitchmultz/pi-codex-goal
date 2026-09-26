@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Ship the TypeScript extension source in the npm artifact instead of a precompiled `dist/`, matching Git installs. Pi's bundled loader starts it as fast as the compiled output, so the build step, `tsconfig.build.json`, and the JavaScript entry are removed. Runtime behavior is unchanged from 0.4.0.
+
 ## 0.4.0 - 2026-09-26
 
 - Require Node.js 24 and qualify against official Pi 0.87.1 and the maintained fork; the development toolchain moves to TypeScript 7, `@types/node` 24, typebox 1.3.34, and npm 12.

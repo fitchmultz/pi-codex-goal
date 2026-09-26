@@ -25,7 +25,7 @@ Those write duplicate package entries under `.pi/` for the current project, caus
 npm run check
 ```
 
-Runs `tsc` and the full Node test suite (`test/*.test.ts`, via Node's native type stripping). Relative imports use `.ts`; `tsc -p tsconfig.build.json` rewrites them to `.js` in `dist/` for the npm artifact.
+Runs the full Node test suite (`test/*.test.ts`, via Node's native type stripping), `tsc`, and an `npm pack` dry run. Relative imports use `.ts`; there is no build step, and the npm artifact ships `extensions/` and `src/` as TypeScript.
 
 ## Layout
 

@@ -51,7 +51,7 @@ Compatibility note: the extension uses only the extension API shared by official
 
 Release note: npm installs and pinned GitHub tags are the reproducible release artifacts. Installing from the repository default branch can include unreleased changes that will ship in a future package release, even when `package.json` still identifies the latest published version.
 
-Published packages load the precompiled `dist/index.js` extension, which starts faster than transpiling the TypeScript module graph; `npm pack` and `npm publish` rebuild it before creating the artifact. Git and local directory installs load `src/index.ts` without a build or production TypeScript dependency. Pi selects the single index entry in `extensions/`: `index.ts` in a checkout (even after a build), or `index.js` in the npm artifact, which omits the source entry.
+npm, Git, and local directory installs all load the TypeScript source (`extensions/index.ts` and `src/`) through Pi's extension loader, with no build step or production TypeScript dependency.
 
 ## Best way to create goals
 
