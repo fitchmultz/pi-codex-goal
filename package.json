@@ -1,13 +1,13 @@
 {
   "name": "pi-codex-goal",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Codex-style goal tracking and continuation for pi.",
   "type": "module",
   "author": "Mitch Fultz (https://github.com/fitchmultz)",
   "license": "MIT",
   "files": [
-    "dist",
-    "extensions/index.js",
+    "extensions",
+    "src",
     "prompts",
     "README.md",
     "CHANGELOG.md",
@@ -38,12 +38,11 @@
     ]
   },
   "scripts": {
-    "build": "node --input-type=module --eval \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true });\" && tsc -p tsconfig.build.json",
-    "prepack": "npm run build",
     "test": "node --test test/*.test.ts",
     "typecheck": "tsc",
-    "check": "npm run typecheck && npm test",
-    "check:compat": "npm run check"
+    "check": "npm test && npm run typecheck && npm pack --dry-run",
+    "check:compat": "npm run check",
+    "prepublishOnly": "npm run check"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",

@@ -40,7 +40,7 @@ function copySource(root: string): string {
   return packageRoot;
 }
 
-async function checkPackage(root: string, packageRoot: string, extension: ".ts" | ".js"): Promise<void> {
+async function checkPackage(root: string, packageRoot: string): Promise<void> {
   const cwd = join(root, "project");
   const agentDir = join(root, "agent");
   mkdirSync(cwd);
@@ -59,7 +59,7 @@ async function checkPackage(root: string, packageRoot: string, extension: ".ts" 
   const loaded = loader.getExtensions();
   assert.deepEqual(loaded.errors, []);
   assert.equal(loaded.extensions.length, 1, "package must discover exactly one extension");
-  assert.ok(loaded.extensions[0]?.resolvedPath.endsWith(extension));
+  assert.ok(loaded.extensions[0]?.resolvedPath.endsWith(join("extensions", "index.ts")));
   assert.deepEqual(loader.getPrompts().prompts.map((prompt) => prompt.name), ["create-goal"]);
   assert.ok(loaded.extensions[0]?.commands.has("goal"));
 
@@ -176,7 +176,7 @@ async function checkPackage(root: string, packageRoot: string, extension: ".ts" 
 
 test("clean local source discovers and executes one goal extension without a build", async (t) => {
   const root = tempRoot(t);
-  await checkPackage(root, copySource(root), ".ts");
+  await checkPackage(root, copySource(root));
 });
 
 test("Pi Git production install discovers and executes one goal extension without tsc", async (t) => {
@@ -186,18 +186,10 @@ test("Pi Git production install discovers and executes one goal extension withou
   run("npm", ["install", "--omit=dev", "--offline", "--no-audit", "--no-fund", "--cache", join(root, "npm-cache")], packageRoot);
   assert.equal(existsSync(join(packageRoot, "node_modules", "typescript")), false);
   assert.equal(existsSync(join(packageRoot, "dist")), false);
-  await checkPackage(root, packageRoot, ".ts");
+  await checkPackage(root, packageRoot);
 });
 
-test("local source stays authoritative when build output is present", async (t) => {
-  const root = tempRoot(t);
-  const packageRoot = copySource(root);
-  mkdirSync(join(packageRoot, "dist"));
-  writeFileSync(join(packageRoot, "dist", "index.js"), 'throw new Error("stale build must not load");\n');
-  await checkPackage(root, packageRoot, ".ts");
-});
-
-test("npm artifact discovers and executes one compiled goal extension without source or local peers", async (t) => {
+test("npm artifact discovers and executes one TypeScript goal extension without local peers", async (t) => {
   const root = tempRoot(t);
   // npm 11 prints an array; npm 12 prints an object keyed by package name.
   const packs = Object.values(JSON.parse(run("npm", ["pack", "--json", "--pack-destination", root], process.cwd())) as Record<string, { filename: string }>);
@@ -205,7 +197,8 @@ test("npm artifact discovers and executes one compiled goal extension without so
   // A Windows drive colon in the archive argument means a remote host to GNU tar.
   run("tar", ["-xzf", packs[0].filename], root);
   const packageRoot = join(root, "package");
-  assert.equal(existsSync(join(packageRoot, "src")), false);
+  assert.equal(existsSync(join(packageRoot, "src", "index.ts")), true);
+  assert.equal(existsSync(join(packageRoot, "test")), false);
   assert.equal(existsSync(join(packageRoot, "node_modules")), false);
-  await checkPackage(root, packageRoot, ".js");
+  await checkPackage(root, packageRoot);
 });

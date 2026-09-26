@@ -22,18 +22,15 @@ function frontmatter(prompt: string): Record<string, string> {
   );
 }
 
-test("package exposes source and compiled runtime plus create-goal prompt entrypoints", () => {
+test("package ships the TypeScript extension source plus create-goal prompt entrypoints", () => {
   const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
     files?: string[];
     pi?: { extensions?: string[]; prompts?: string[] };
-    scripts?: { prepack?: string };
   };
 
   assert.deepEqual(packageJson.pi?.extensions, ["./extensions"]);
-  assert.ok(packageJson.files?.includes("dist"));
-  assert.ok(packageJson.files?.includes("extensions/index.js"));
-  assert.equal(packageJson.files?.includes("src"), false);
-  assert.equal(packageJson.scripts?.prepack, "npm run build");
+  assert.ok(packageJson.files?.includes("extensions"));
+  assert.ok(packageJson.files?.includes("src"));
   assert.ok(packageJson.files?.includes("prompts"));
   assert.ok(packageJson.pi?.prompts?.includes("./prompts"));
 });
