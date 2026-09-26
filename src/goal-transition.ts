@@ -2,15 +2,15 @@ import {
   appendGoalTransitionEffectOnce,
   mergeGoalTransitionEffects,
   type GoalTransitionEffect,
-} from "./goal-transition-effects.js";
-import { cloneGoal, goalsEquivalent, statusAfterBudgetLimit, unixSeconds } from "./state.js";
-import type { GoalEntrySource, GoalStatus, ThreadGoal } from "./types.js";
+} from "./goal-transition-effects.ts";
+import { cloneGoal, goalsEquivalent, statusAfterBudgetLimit, unixSeconds } from "./state.ts";
+import type { GoalEntrySource, GoalStatus, ThreadGoal } from "./types.ts";
 
 export {
   applyGoalTransitionEffects,
   type GoalTransitionEffect,
   type GoalTransitionEffectHandlers,
-} from "./goal-transition-effects.js";
+} from "./goal-transition-effects.ts";
 
 export type GoalTransitionRequest =
   | {

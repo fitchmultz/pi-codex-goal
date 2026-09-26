@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Require Node.js 24 and qualify against official Pi 0.87.1 and the maintained fork; the development toolchain moves to TypeScript 7, `@types/node` 24, typebox 1.3.34, and npm 12.
+- Run tests with Node's native type stripping instead of `tsx`; the published `dist/` is still precompiled for faster Pi startup, now without declaration files or source maps.
+- Remove the local Crabbox platform-smoke tooling, which hosted CI qualification replaces, and stop shipping release tooling and docs in the npm artifact.
 - Reject completion from an old response after `/goal` replaces its goal, leaving the replacement active for its own work.
 - Include the assistant response calling `update_goal` in the final token report, without charging a replacement goal for a response generated for its predecessor.
 

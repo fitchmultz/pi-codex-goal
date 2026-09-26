@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-import type { GoalRuntimeEventHandlers } from "./goal-runtime-event-handler-types.js";
+import type { GoalRuntimeEventHandlers } from "./goal-runtime-event-handler-types.ts";
 
 export function registerGoalRuntimeEvents(
   pi: ExtensionAPI,

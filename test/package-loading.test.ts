@@ -199,7 +199,8 @@ test("local source stays authoritative when build output is present", async (t) 
 
 test("npm artifact discovers and executes one compiled goal extension without source or local peers", async (t) => {
   const root = tempRoot(t);
-  const packs = JSON.parse(run("npm", ["pack", "--json", "--pack-destination", root], process.cwd())) as Array<{ filename: string }>;
+  // npm 11 prints an array; npm 12 prints an object keyed by package name.
+  const packs = Object.values(JSON.parse(run("npm", ["pack", "--json", "--pack-destination", root], process.cwd())) as Record<string, { filename: string }>);
   assert.ok(packs[0]);
   // A Windows drive colon in the archive argument means a remote host to GNU tar.
   run("tar", ["-xzf", packs[0].filename], root);

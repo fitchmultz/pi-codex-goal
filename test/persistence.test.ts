@@ -1,15 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { __testHooks } from "../src/index.js";
+import { RUNTIME_PERSIST_INTERVAL_MS } from "../src/runtime-config.ts";
 import {
   isGoalCustomEntry,
   reconstructGoal,
   createThreadGoal,
   runtimeUsageEntry,
   setEntry,
-} from "../src/state.js";
-import { CUSTOM_ENTRY_TYPE } from "../src/types.js";
+} from "../src/state.ts";
+import { CUSTOM_ENTRY_TYPE } from "../src/types.ts";
 import {
   assistantMessage,
   countGoalSetEntries,
@@ -19,7 +19,7 @@ import {
   sessionBeforeCompactEvent,
   sessionCompactEvent,
   sessionShutdownEvent,
-} from "./support/runtime-harness.js";
+} from "./support/runtime-harness.ts";
 
 test("duplicate update_goal complete appends only one complete entry", async () => {
   const harness = createRuntimeHarness();
@@ -189,7 +189,7 @@ test("runtime persistence interval flush appends one entry then coalesces until 
 
     await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
 
-    now += __testHooks.runtimePersistIntervalMs + 1_000;
+    now += RUNTIME_PERSIST_INTERVAL_MS + 1_000;
     await emitToolExecutionEnd(harness);
 
     assert.equal(countGoalSetEntries(harness.entries, goalId), initialSetEntries);
@@ -197,7 +197,7 @@ test("runtime persistence interval flush appends one entry then coalesces until 
     const afterIntervalFlush = harness.snapshot().goal;
     assert.equal(
       afterIntervalFlush?.usage.activeSeconds,
-      Math.floor((__testHooks.runtimePersistIntervalMs + 1_000) / 1_000),
+      Math.floor((RUNTIME_PERSIST_INTERVAL_MS + 1_000) / 1_000),
     );
 
     for (let index = 0; index < 3; index += 1) {
@@ -221,7 +221,7 @@ test("runtime persistence interval flush appends one entry then coalesces until 
     assert.equal(goal?.usage.tokensUsed, 12);
     assert.equal(
       goal?.usage.activeSeconds,
-      Math.floor((__testHooks.runtimePersistIntervalMs + 1_000 + 6_000) / 1_000),
+      Math.floor((RUNTIME_PERSIST_INTERVAL_MS + 1_000 + 6_000) / 1_000),
     );
   } finally {
     Date.now = originalNow;

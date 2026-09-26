@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { formatBudget, formatDuration, formatFooterStatus, formatGoalSummary, formatTokenValue } from "../src/format.js";
-import { budgetLimitPrompt, continuationPrompt, TOOL_PROMPT_GUIDELINES } from "../src/prompts.js";
+import { formatBudget, formatDuration, formatFooterStatus, formatGoalSummary, formatTokenValue } from "../src/format.ts";
+import { budgetLimitPrompt, continuationPrompt, TOOL_PROMPT_GUIDELINES } from "../src/prompts.ts";
 import {
   applyUsage,
   clearEntry,
@@ -17,8 +17,8 @@ import {
   runtimeUsageEntry,
   setEntry,
   updateGoalStatus,
-} from "../src/state.js";
-import { CUSTOM_ENTRY_TYPE } from "../src/types.js";
+} from "../src/state.ts";
+import { CUSTOM_ENTRY_TYPE } from "../src/types.ts";
 
 test("new goals require explicit integer token budgets of at least 500000", () => {
   assert.equal(createGoal(null, "   ").ok, false);

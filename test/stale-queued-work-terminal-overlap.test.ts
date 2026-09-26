@@ -12,8 +12,8 @@ import {
   requireProviderContextResult,
   sessionBeforeCompactEvent,
   sessionCompactEvent,
-} from "./support/runtime-harness.js";
-import { CUSTOM_ENTRY_TYPE } from "../src/types.js";
+} from "./support/runtime-harness.ts";
+import { CUSTOM_ENTRY_TYPE } from "../src/types.ts";
 
 test("older id-less agent_end during active abort does not finish newer abort", async () => {
   const originalNow = Date.now;

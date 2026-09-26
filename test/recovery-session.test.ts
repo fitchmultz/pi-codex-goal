@@ -1,23 +1,23 @@
 import assert from "node:assert/strict";
 import { mock, test } from "node:test";
 
-import { pendingRecoveryShutdownReason } from "../src/goal-runtime-session-handlers.js";
-import { createRecoveryPausedAttention, createRecoveryPendingAttention } from "../src/recovery.js";
-import { createThreadGoal } from "../src/state.js";
+import { pendingRecoveryShutdownReason } from "../src/goal-runtime-session-handlers.ts";
+import { createRecoveryPausedAttention, createRecoveryPendingAttention } from "../src/recovery.ts";
+import { createThreadGoal } from "../src/state.ts";
 import {
   createRuntimeHarness,
   emitPersistentAssistantError,
   sessionBeforeCompactEvent,
   sessionCompactEvent,
   sessionShutdownEvent,
-} from "./support/runtime-harness.js";
+} from "./support/runtime-harness.ts";
 import {
   emitPendingRecoveryShutdown,
   givenPendingOverflowRecovery,
   givenPendingRecoveryWithStaleQueuedAbort,
   givenPendingTransientRecovery,
   replaceHarnessBranchWithGoal,
-} from "./support/scenarios.js";
+} from "./support/scenarios.ts";
 
 test("pending overflow shutdown persists paused goal with valid resume guidance", async () => {
   const harness = await givenPendingOverflowRecovery();

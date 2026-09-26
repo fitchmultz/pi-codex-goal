@@ -1,16 +1,16 @@
 import type { ExtensionHandler, TurnEndEvent, TurnStartEvent } from "@earendil-works/pi-coding-agent";
 
-import { assistantTurnTokens, isAbortedAssistantMessage, isToolUseAssistantMessage } from "./goal-accounting.js";
-import { isAssistantContextOverflow, isErrorAssistantMessage } from "./recovery.js";
+import { assistantTurnTokens, isAbortedAssistantMessage, isToolUseAssistantMessage } from "./goal-accounting.ts";
+import { isAssistantContextOverflow, isErrorAssistantMessage } from "./recovery.ts";
 import {
   getContextWindow,
   runStaleQueuedWorkPlan,
   shouldPauseStatusInspectionOnlyContinuation,
-} from "./goal-runtime-event-utils.js";
+} from "./goal-runtime-event-utils.ts";
 import type {
   GoalRuntimeTurnHandlerContext,
   ToolExecutionEndEvent,
-} from "./goal-runtime-event-handler-types.js";
+} from "./goal-runtime-event-handler-types.ts";
 
 export function createTurnEventHandlers(deps: GoalRuntimeTurnHandlerContext) {
   const { runtimeState, stateController, continuation, goalAccounting, recoveryRuntime, status } = deps;

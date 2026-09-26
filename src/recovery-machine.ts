@@ -5,7 +5,7 @@ import {
   idleRecoveryPhase,
   recoveryPhaseNeedsUserStartTurn,
   type RecoveryPhase,
-} from "./recovery-phase.js";
+} from "./recovery-phase.ts";
 import {
   CONTEXT_OVERFLOW_SIGNATURE,
   countersForFailureSignature,
@@ -22,14 +22,14 @@ import {
   type AssistantErrorMessage,
   type ErrorRecoveryCounters,
   type RecoveryAttention,
-} from "./recovery.js";
+} from "./recovery.ts";
 
-export type { GoalStartTurnStrategy, RecoveryPhase } from "./recovery-phase.js";
+export type { GoalStartTurnStrategy, RecoveryPhase } from "./recovery-phase.ts";
 export {
   goalStartTurnStrategy,
   recoveryPhaseBlocksContinuation,
   recoveryPhaseNeedsUserStartTurn,
-} from "./recovery-phase.js";
+} from "./recovery-phase.ts";
 
 export type RecoveryAction =
   | { type: "noop" }

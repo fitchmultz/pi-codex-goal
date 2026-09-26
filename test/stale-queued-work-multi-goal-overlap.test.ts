@@ -6,8 +6,8 @@ import {
   createRuntimeHarness,
   emitQueuedTurnThroughContext,
   queuedCustomMessage,
-} from "./support/runtime-harness.js";
-import { CUSTOM_ENTRY_TYPE } from "../src/types.js";
+} from "./support/runtime-harness.ts";
+import { CUSTOM_ENTRY_TYPE } from "../src/types.ts";
 
 test("older multi-goal stale abort with active overlap keeps replacement active through both agent_end terminals", async () => {
   const originalNow = Date.now;

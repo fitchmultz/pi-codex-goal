@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 
-import { formatFooterStatus } from "../../src/format.js";
+import { formatFooterStatus } from "../../src/format.ts";
 import {
   createRecoveryPausedAttention,
   HOST_OVERFLOW_RECOVERY_REASON,
-} from "../../src/recovery.js";
-import { createThreadGoal, setEntry } from "../../src/state.js";
-import { CUSTOM_ENTRY_TYPE } from "../../src/types.js";
+} from "../../src/recovery.ts";
+import { createThreadGoal, setEntry } from "../../src/state.ts";
+import { CUSTOM_ENTRY_TYPE } from "../../src/types.ts";
 import {
   createRuntimeHarness,
   emitPersistentAssistantError,
@@ -15,7 +15,7 @@ import {
   type RuntimeHarness,
   sessionCompactEvent,
   sessionShutdownEvent,
-} from "./runtime-harness.js";
+} from "./runtime-harness.ts";
 
 export function replaceHarnessBranchWithGoal(
   harness: RuntimeHarness,

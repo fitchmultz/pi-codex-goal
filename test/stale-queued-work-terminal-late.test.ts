@@ -11,8 +11,8 @@ import {
   queuedCustomMessage,
   requireProviderContextResult,
   sessionShutdownEvent,
-} from "./support/runtime-harness.js";
-import { CUSTOM_ENTRY_TYPE } from "../src/types.js";
+} from "./support/runtime-harness.ts";
+import { CUSTOM_ENTRY_TYPE } from "../src/types.ts";
 
 test("late stale turn_end after the next current follow-up starts is ignored", async () => {
   const originalNow = Date.now;

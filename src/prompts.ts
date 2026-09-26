@@ -1,5 +1,5 @@
-import { formatDuration, formatTokenValue } from "./format.js";
-import type { ThreadGoal } from "./types.js";
+import { formatDuration, formatTokenValue } from "./format.ts";
+import type { ThreadGoal } from "./types.ts";
 
 const CONTINUATION_MARKER_PREFIX = "<pi_goal_continuation goal_id=\"";
 

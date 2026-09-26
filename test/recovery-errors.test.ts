@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { mock, test } from "node:test";
 
-import { formatFooterStatus } from "../src/format.js";
+import { formatFooterStatus } from "../src/format.ts";
 import {
   createRecoveryPausedAttention,
   createRecoveryPendingAttention,
   HOST_OVERFLOW_RECOVERY_REASON,
-} from "../src/recovery.js";
+} from "../src/recovery.ts";
 import {
   assistantMessage,
   createRuntimeHarness,
@@ -16,7 +16,7 @@ import {
   flushContinuationScheduler,
   sessionBeforeCompactEvent,
   sessionCompactEvent,
-} from "./support/runtime-harness.js";
+} from "./support/runtime-harness.ts";
 
 test("non-retryable provider errors pause active goals immediately", async () => {
   const harness = createRuntimeHarness();

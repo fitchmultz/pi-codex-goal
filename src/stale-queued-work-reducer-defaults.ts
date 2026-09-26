@@ -1,4 +1,4 @@
-import type { StaleQueuedWorkEvent } from "./stale-queued-work-types.js";
+import type { StaleQueuedWorkEvent } from "./stale-queued-work-types.ts";
 
 export type EventDefaultAction = "emptyPlan" | "noPlan" | "handled";
 export type LifecycleEventDefaults = Record<StaleQueuedWorkEvent["type"], EventDefaultAction>;

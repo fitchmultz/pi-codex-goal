@@ -8,14 +8,14 @@ import {
   type StaleQueuedWorkLifecycleKind,
   type StaleQueuedWorkPlan,
   type StaleQueuedWorkState,
-} from "./stale-queued-work-reducer.js";
+} from "./stale-queued-work-reducer.ts";
 
 export type {
   AgentEndMessage,
   StaleQueuedWorkEffect,
   StaleQueuedWorkLifecycleKind,
   StaleQueuedWorkPlan,
-} from "./stale-queued-work-reducer.js";
+} from "./stale-queued-work-reducer.ts";
 
 export interface StaleQueuedWorkGuard {
   lifecycleKind(): StaleQueuedWorkLifecycleKind;

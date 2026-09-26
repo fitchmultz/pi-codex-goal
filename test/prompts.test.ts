@@ -12,8 +12,8 @@ import {
   continuationPrompt,
   goalToolReference,
   supersededContinuationMessage,
-} from "../src/prompts.js";
-import { createThreadGoal } from "../src/state.js";
+} from "../src/prompts.ts";
+import { createThreadGoal } from "../src/state.ts";
 
 test("tool prompt guidelines include exposed and namespaced goal tool guidance", () => {
   assert.match(GOAL_TOOL_NAME_GUIDANCE, /available tool list/);

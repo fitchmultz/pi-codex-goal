@@ -9,17 +9,18 @@ import type {
   SessionMessageEntry,
 } from "@earendil-works/pi-coding-agent";
 
-import goalExtension, { __testHooks } from "../../src/index.js";
-import { isContextOverflowError } from "../../src/recovery.js";
-import { isGoalCustomEntry, reconstructGoal } from "../../src/state.js";
+import goalExtension from "../../src/index.ts";
+import { CONTINUATION_RETRY_MS, PROVIDER_LIMIT_AUTO_RESUME_MS } from "../../src/runtime-config.ts";
+import { isContextOverflowError } from "../../src/recovery.ts";
+import { isGoalCustomEntry, reconstructGoal } from "../../src/state.ts";
 import {
   toQueuedGoalContextCarrier,
   type ActiveGoalQueuedDetails,
   type QueuedGoalContextCarrier,
   type QueuedGoalContextInput,
   type QueuedGoalUserContent,
-} from "../../src/queued-goal-messages.js";
-import { CUSTOM_ENTRY_TYPE } from "../../src/types.js";
+} from "../../src/queued-goal-messages.ts";
+import { CUSTOM_ENTRY_TYPE } from "../../src/types.ts";
 
 type EventHandler = (event: object, ctx: ExtensionContext) => unknown | Promise<unknown>;
 
@@ -472,11 +473,11 @@ export interface TestAssistantUsage {
 }
 
 export function flushContinuationScheduler(): void {
-  mock.timers.tick(__testHooks.continuationRetryMs);
+  mock.timers.tick(CONTINUATION_RETRY_MS);
 }
 
 export function fireProviderLimitAutoResume(): void {
-  mock.timers.tick(__testHooks.providerLimitAutoResumeMs);
+  mock.timers.tick(PROVIDER_LIMIT_AUTO_RESUME_MS);
 }
 
 export function countGoalSetEntries(

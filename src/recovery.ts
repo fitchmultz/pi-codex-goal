@@ -1,6 +1,6 @@
 import { isContextOverflow } from "@earendil-works/pi-ai";
 
-import { assistantMessageForOverflowCheck } from "./recovery-adapters.js";
+import { assistantMessageForOverflowCheck } from "./recovery-adapters.ts";
 
 export const CONTEXT_OVERFLOW_SIGNATURE = "context_overflow";
 

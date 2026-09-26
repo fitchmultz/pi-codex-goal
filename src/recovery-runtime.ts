@@ -7,9 +7,9 @@ import {
   setRecoveryPendingAttention,
   type GoalRecoveryMachineState,
   type RecoveryAction,
-} from "./recovery-machine.js";
-import { isProviderLimitError, type AssistantErrorMessage } from "./recovery.js";
-import type { ThreadGoal } from "./types.js";
+} from "./recovery-machine.ts";
+import { isProviderLimitError, type AssistantErrorMessage } from "./recovery.ts";
+import type { ThreadGoal } from "./types.ts";
 
 interface RecoveryRuntimeDeps<TContext> {
   getGoal: () => ThreadGoal | null;

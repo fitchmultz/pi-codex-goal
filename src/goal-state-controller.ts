@@ -1,29 +1,29 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-import type { GoalPersistence } from "./goal-persistence.js";
-import type { StatusContext } from "./goal-runtime-status.js";
+import type { GoalPersistence } from "./goal-persistence.ts";
+import type { StatusContext } from "./goal-runtime-status.ts";
 import {
   applyGoalTransitionEffects,
   planGoalTransition,
   reloadGoalRuntimeEffects,
   type GoalTransitionEffectHandlers,
   type GoalTransitionRequest,
-} from "./goal-transition.js";
+} from "./goal-transition.ts";
 import {
   applyHostOverflowUserResetPersistence,
   beginHostOverflowRecovery,
   requireHostOverflowUserReset,
   syncHostOverflowUserResetFromSession,
   type GoalRecoveryMachineState,
-} from "./recovery-machine.js";
+} from "./recovery-machine.ts";
 import {
   goalsEquivalent,
   hostOverflowCapResetEntry,
   reconstructGoal,
   reconstructHostOverflowCapNeedsUserReset,
   updateGoalStatus,
-} from "./state.js";
-import { CUSTOM_ENTRY_TYPE, type GoalEntrySource, type GoalResult, type ThreadGoal } from "./types.js";
+} from "./state.ts";
+import { CUSTOM_ENTRY_TYPE, type GoalEntrySource, type GoalResult, type ThreadGoal } from "./types.ts";
 
 interface GoalStateControllerDeps {
   pi: Pick<ExtensionAPI, "appendEntry">;

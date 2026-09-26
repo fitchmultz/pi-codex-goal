@@ -12,7 +12,7 @@ import {
   type RuntimeUsageGoalStatus,
   type SessionEntryLike,
   type ThreadGoal,
-} from "./types.js";
+} from "./types.ts";
 
 export const MIN_TOKEN_BUDGET = 500_000;
 

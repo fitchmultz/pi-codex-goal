@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { createStaleQueuedWorkGuard } from "../src/stale-queued-work-guard.js";
+import { createStaleQueuedWorkGuard } from "../src/stale-queued-work-guard.ts";
 
 function effectTypes(plan: { effects: Array<{ type: string }> }): string[] {
   return plan.effects.map((effect) => effect.type);
