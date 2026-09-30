@@ -109,7 +109,7 @@ test("SDK completion report includes its calling response exactly once", async (
     const createGoal = runner.getToolDefinition("create_goal");
     assert.ok(createGoal);
     await createGoal.execute("create", { objective: "ship it", token_budget: 500_000 },
-      undefined, undefined, runner.createContext());
+      undefined, undefined, runner.createToolContext("create", undefined));
     await session.prompt("Complete the goal");
 
     const entries = session.sessionManager.getBranch();
@@ -258,7 +258,7 @@ test("SDK runtime emits a continuation after willRetry compaction when no retry 
       { objective: "ship it" },
       undefined,
       undefined,
-      runner.createContext(),
+      runner.createToolContext("tool-call", undefined),
     );
     const goalId = goalIdFromToolResult(result);
 

@@ -47,7 +47,7 @@ pi install .
 
 On this maintainer machine, the active install is a global/user package that already points at this checkout; do not also leave a project-local install under this repository's `.pi/` settings. Duplicate local and global installs both try to register `get_goal`, `create_goal`, and `update_goal`, which causes tool-registration conflicts. For install-path release checks, use an isolated temp project/config directory or remove the project-local entry immediately after the check.
 
-Compatibility note: the extension uses only the extension API shared by official Pi and the maintained fork. Pi-bundled runtime packages are optional wildcard peers as required by Pi package loading. CI qualifies official Pi 0.87.1 and the maintained fork, currently based on 0.86.1.
+Compatibility note: the extension uses the shared public extension API. Pi-bundled runtime packages remain optional wildcard peers. The development baseline is official Pi 0.99.1; compatibility is also checked against the maintained fork at `18acca18fbc5d38e6fcf52da01bea8be2b4f3818`. The older Pi 0.86.1 minimum is unchanged, not a claim that this pass reran that older SDK.
 
 Release note: npm installs and pinned GitHub tags are the reproducible release artifacts. Installing from the repository default branch can include unreleased changes that will ship in a future package release, even when `package.json` still identifies the latest published version.
 
@@ -75,11 +75,15 @@ npm ci --ignore-scripts
 npm run check
 ```
 
-`npm run check` type-checks with TypeScript 7 and runs the Node test suite with native type stripping, including source, Git-production, and packed-artifact loading, tool persistence, and SDK compaction/continuation tests. Run it with an empty HOME/agent profile. The selected host must be installed in this checkout's dependency graph; changing only a CLI on PATH does not select its SDK types. No live model is called.
+`npm run check` type-checks with TypeScript 7 and runs the Node test suite with native type stripping, including source, Git-production, and packed-artifact loading, tool persistence, and SDK compaction/continuation tests. Run it with an empty HOME/agent profile and a short TMPDIR outside your real home ancestry, with no project markers in its ancestors. The selected host must be installed in this checkout's dependency graph; changing only a CLI on PATH does not select its SDK types. No live model is called.
 
 Pull-request CI runs `check:compat` against the declared official Pi version and the reviewed maintained fork on Ubuntu/Node 24. It also checks clean Git and npm consumer installs through the native Pi CLI. Hosted CI does not call a model.
 
 Project agent notes and module map: [AGENTS.md](AGENTS.md).
+
+## Working-session checkpoints
+
+The fork's checkpoint artifact can preserve native goal entries, branch selection and accepted queues. It does not serialize this extension's timers or JavaScript callbacks. The extension has a shutdown handler but no live checkpoint barrier, so native capture conservatively reports `sleepReady: false`; do not stop compute based on that artifact alone. Restoring a paused goal stays paused in headless mode until explicit `/goal resume`; loading a checkpoint must not replay provider or tool work. Deliberate clean exit uses ordinary shutdown persistence. Official Pi does not expose the fork's working-session checkpoint API.
 
 ## Interactive smoke tests
 

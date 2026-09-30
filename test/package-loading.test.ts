@@ -89,7 +89,7 @@ async function checkPackage(root: string, packageRoot: string): Promise<void> {
     const call = async (name: string, params: Record<string, unknown>) => {
       const tool = runner.getToolDefinition(name);
       assert.ok(tool);
-      return tool.execute(name, params, undefined, undefined, runner.createContext());
+      return tool.execute(name, params, undefined, undefined, runner.createToolContext(name, undefined));
     };
     const createGoal = runner.getToolDefinition("create_goal");
     assert.ok(createGoal);
@@ -157,7 +157,12 @@ async function checkPackage(root: string, packageRoot: string): Promise<void> {
       },
       remainingTokens: 73,
     });
-    assert.equal(readFileSync(sessionFile, "utf8"), persisted);
+    const afterReload = readFileSync(sessionFile, "utf8");
+    assert.ok(afterReload.startsWith(persisted), "reload must preserve every existing journal byte");
+    const goalEntries = (journal: string) => journal.split("\n").filter(Boolean)
+      .map((line) => JSON.parse(line) as { customType?: string })
+      .filter((entry) => entry.customType === "pi-codex-goal");
+    assert.deepEqual(goalEntries(afterReload), goalEntries(persisted), "reload must not migrate or rewrite saved goals");
     await rejectBudget({ objective: "Too small replacement", token_budget: 499_999, replace_existing: true });
 
     const replacement = { ...minimum, replace_existing: true };
