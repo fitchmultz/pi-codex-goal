@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Pin the development Pi cohort to 0.99.1 and host TypeBox 1.3.27; preserve runtime peers, Node/Pi minimums, goal formats and production lifecycle behavior.
+- Migrate native tool-context fixtures and verify real compaction/retry settlement, cancellation, headless reload and explicit resume without provider credentials.
+- Preserve existing journal bytes and unchanged goal entries while allowing native startup metadata on reload. Document the fork's conservative live-checkpoint sleep limitation.
+
 ## 0.4.1 - 2026-09-26
 
 - Ship the TypeScript extension source in the npm artifact instead of a precompiled `dist/`, matching Git installs. Pi's bundled loader starts it as fast as the compiled output, so the build step, `tsconfig.build.json`, and the JavaScript entry are removed. Runtime behavior is unchanged from 0.4.0.

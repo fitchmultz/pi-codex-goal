@@ -6,6 +6,7 @@ import type {
   ExtensionAPI,
   ExtensionCommandContext,
   ExtensionContext,
+  ExtensionToolContext,
   SessionMessageEntry,
 } from "@earendil-works/pi-coding-agent";
 
@@ -117,7 +118,7 @@ export function createRuntimeHarness(options: {
     hostOverflowRecoveryAttempted: false,
   };
   let commandHandler: ((args: string, ctx: ExtensionCommandContext) => void | Promise<void>) | null = null;
-  let ctx: ExtensionCommandContext;
+  let ctx: ExtensionCommandContext & ExtensionToolContext;
   let entryIndex = 0;
 
   const on = ((event: string, handler: EventHandler) => {
@@ -139,9 +140,6 @@ export function createRuntimeHarness(options: {
       registerBashCwdHook() {
         unsupportedHarnessMethod("pi.registerBashCwdHook");
       },
-      registerContextWindowHook() {
-        unsupportedHarnessMethod("pi.registerContextWindowHook");
-      },
       registerToolSearch() {
         unsupportedHarnessMethod("pi.registerToolSearch");
       },
@@ -155,6 +153,12 @@ export function createRuntimeHarness(options: {
         unsupportedHarnessMethod("pi.setActiveToolReferences");
       },
     },
+    getSettings() { return unsupportedHarnessMethod("pi.getSettings"); },
+    registerMcpServer() { unsupportedHarnessMethod("pi.registerMcpServer"); },
+    unregisterMcpServer() { unsupportedHarnessMethod("pi.unregisterMcpServer"); },
+    getMcpServers() { return unsupportedHarnessMethod("pi.getMcpServers"); },
+    registerVirtualModel() { unsupportedHarnessMethod("pi.registerVirtualModel"); },
+    unregisterVirtualModel() { unsupportedHarnessMethod("pi.unregisterVirtualModel"); },
     appendEntry(customType: string, data: unknown) {
       entries.push({
         type: "custom",
@@ -307,16 +311,12 @@ export function createRuntimeHarness(options: {
       getPendingInputCount() {
         return unsupportedHarnessMethod("ctx.getPendingInputCount");
       },
-      getPendingToolCalls() {
-        return unsupportedHarnessMethod("ctx.getPendingToolCalls");
-      },
       getCompactionSettings() {
         return unsupportedHarnessMethod("ctx.getCompactionSettings");
       },
-      newContext() {
-        unsupportedHarnessMethod("ctx.newContext");
-      },
     },
+    tools: [],
+    executeTool() { return unsupportedHarnessMethod("ctx.executeTool"); },
     abort() {
       runtime.abortCount += 1;
     },
@@ -369,7 +369,7 @@ export function createRuntimeHarness(options: {
     switchSession: async () => ({ cancelled: false }),
     ui,
     waitForIdle: async () => {},
-  } satisfies ExtensionCommandContext;
+  } satisfies ExtensionCommandContext & ExtensionToolContext;
 
   if (options.contextWindow !== undefined) {
     ctx.model = {
