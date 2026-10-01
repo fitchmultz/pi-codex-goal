@@ -47,7 +47,7 @@ pi install .
 
 On this maintainer machine, the active install is a global/user package that already points at this checkout; do not also leave a project-local install under this repository's `.pi/` settings. Duplicate local and global installs both try to register `get_goal`, `create_goal`, and `update_goal`, which causes tool-registration conflicts. For install-path release checks, use an isolated temp project/config directory or remove the project-local entry immediately after the check.
 
-Compatibility note: the extension uses the shared public extension API. Pi-bundled runtime packages remain optional wildcard peers. The development baseline is official Pi 0.99.1; compatibility is also checked against the maintained fork at `18acca18fbc5d38e6fcf52da01bea8be2b4f3818`. The older Pi 0.86.1 minimum is unchanged, not a claim that this pass reran that older SDK.
+Compatibility note: the extension uses the shared public extension API. Pi-bundled runtime packages remain optional wildcard peers. The development baseline is official Pi 0.99.1; this release is also checked against latest official Pi 0.99.2 and the maintained fork at `0c2722b72d2e71c2c5b98d81bc3fc5da57992300` (0.99.1). The older Pi 0.86.1 minimum is unchanged, not a claim that this pass reran that older SDK.
 
 Release note: npm installs and pinned GitHub tags are the reproducible release artifacts. Installing from the repository default branch can include unreleased changes that will ship in a future package release, even when `package.json` still identifies the latest published version.
 
