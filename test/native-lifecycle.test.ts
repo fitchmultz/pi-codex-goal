@@ -4,11 +4,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { createAssistantMessageEventStream, fauxProvider, fauxAssistantMessage, fauxToolCall, InMemoryCredentialStore } from "@earendil-works/pi-ai";
-import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
+import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager, type ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import goalExtension from "../src/index.ts";
 import { reconstructGoal } from "../src/state.ts";
 
-async function fixture(t: TestContext, recover = false) {
+async function fixture(t: TestContext, recover = false, extraFactories: ExtensionFactory[] = []) {
   const root = mkdtempSync(join(tmpdir(), "goal-native-"));
   const cwd = join(root, "project"), agentDir = join(root, "agent");
   mkdirSync(cwd); mkdirSync(agentDir);
@@ -24,7 +24,7 @@ async function fixture(t: TestContext, recover = false) {
         assert.ok(leaf);
         return { compaction: { summary: "Continue the active goal", firstKeptEntryId: leaf, tokensBefore: event.preparation.tokensBefore } };
       });
-    }],
+    }, ...extraFactories],
   });
   await loader.reload(); assert.deepEqual(loader.getExtensions().errors, []);
   const { session } = await createAgentSession({ cwd, agentDir, resourceLoader: loader, modelRuntime, model: faux.getModel(), settingsManager, sessionManager: SessionManager.create(cwd, join(root, "sessions")), noTools: "builtin" });
@@ -160,4 +160,58 @@ test("headless cancellation persists a paused goal through native reload and exp
   assert.equal(h.goal()?.status, "complete");
   assert.equal(h.goal()?.goalId, saved?.goalId);
   assert.equal(h.faux.state.callCount, 3);
+});
+
+test("native repeated call IDs account the current response once across deferred boundary drafts", async (t) => {
+  let ended = 0;
+  const h = await fixture(t, false, [(pi) => {
+    pi.on("message_end", (event, ctx) => {
+      if (event.message.role !== "assistant") return;
+      const assistants = ctx.sessionManager.getBranch().filter((entry) => entry.type === "message" && entry.message.role === "assistant");
+      assert.equal(assistants.length, ended++, "message_end precedes appending the current response");
+    });
+    pi.on("turn_end", (event, ctx) => {
+      const drafts = ctx.sessionManager.getBranch().filter((entry) => entry.type === "custom" && entry.customType === "native-draft");
+      assert.equal(drafts.length, event.turnIndex, "boundary drafts commit only after handlers return");
+      return { entries: [...event.entries, { type: "custom", customType: "native-draft", data: { turn: event.turnIndex } }] };
+    });
+  }]);
+  const response = (name: string, input: number, output: number) => {
+    const message = fauxAssistantMessage(fauxToolCall(name, name === "update_goal" ? { status: "complete" } : {}), { stopReason: "toolUse" });
+    const call = message.content.find((part) => part.type === "toolCall");
+    assert.ok(call);
+    call.id = "reused-call";
+    message.usage = { ...message.usage, input, output, totalTokens: input + output };
+    return message;
+  };
+  const responses = [
+    response("get_goal", 10, 2),
+    response("get_goal", 20, 3),
+    response("update_goal", 30, 4),
+    fauxAssistantMessage("Goal complete; this receipt is not goal work."),
+  ];
+  let requests = 0;
+  h.session.agent.streamFunction = () => {
+    const message = responses[requests++];
+    assert.ok(message, "no duplicate goal continuation after completion");
+    const stream = createAssistantMessageEventStream();
+    queueMicrotask(() => {
+      stream.push({ type: "done", reason: message.stopReason === "toolUse" ? "toolUse" : "stop", message });
+      stream.end();
+    });
+    return stream;
+  };
+  const settled: string[] = [];
+  h.session.subscribe((event) => { if (event.type === "agent_settled") settled.push(h.goal()?.status ?? "none"); });
+  await h.session.prompt("Complete the goal with repeated provider call IDs.");
+  await h.session.waitForIdle();
+  assert.equal(h.goal()?.status, "complete");
+  assert.equal(h.goal()?.usage.tokensUsed, 69, "12 + 23 + 34 tokens, not old call IDs or completion receipt");
+  assert.deepEqual(settled, ["complete"]);
+  assert.equal(requests, 4);
+  const entries = h.session.sessionManager.getEntries();
+  assert.equal(entries.filter((entry) => entry.type === "custom" && entry.customType === "native-draft").length, 4);
+  const receipt = entries.find((entry) => entry.type === "message" && entry.message.role === "toolResult" && entry.message.toolName === "update_goal");
+  assert.ok(receipt?.type === "message" && receipt.message.role === "toolResult");
+  assert.partialDeepStrictEqual(receipt.message.details, { goal: { status: "complete", tokensUsed: 69 } });
 });
