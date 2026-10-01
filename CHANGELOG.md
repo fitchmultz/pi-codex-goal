@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add model-declared blocked goals with dependency reasons, durable state, cancellation of automatic goal work, and enforced explicit `/goal resume` before completion (#62). Preserve status-changing response accounting and budget limits.
 - Pin the development Pi cohort to 0.99.1 and host TypeBox 1.3.27; preserve runtime peers, Node/Pi minimums, goal formats and production lifecycle behavior.
 - Migrate native tool-context fixtures and verify real compaction/retry settlement, cancellation, headless reload and explicit resume without provider credentials.
 - Preserve existing journal bytes and unchanged goal entries while allowing native startup metadata on reload. Document the fork's conservative live-checkpoint sleep limitation.

@@ -31,7 +31,7 @@ export interface GoalRuntimeController extends GoalRuntimeEventHandlers {
   getGoalStartTurnStrategy(): GoalStartTurnStrategy;
   setGoal(goal: ThreadGoal, source: GoalEntrySource, ctx: ExtensionContext): void;
   clearGoal(source: GoalEntrySource, ctx: ExtensionContext): void;
-  completeGoal(source: GoalEntrySource, ctx: ExtensionContext, toolCallId: string): GoalResult;
+  updateGoal(source: GoalEntrySource, ctx: ExtensionContext, toolCallId: string, status: "complete" | "blocked", reason?: string): GoalResult;
   cancelProviderLimitAutoResume(goalId: string, ctx: StatusContext): void;
   resumeGoalWithContinuation(goalId: string, source: GoalEntrySource, ctx: StatusContext): GoalResult;
 }
@@ -134,15 +134,23 @@ export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeContro
 
   const resumeGoalWithContinuation = (
     goalId: string,
-    _source: GoalEntrySource,
+    source: GoalEntrySource,
     ctx: StatusContext,
   ): GoalResult => {
-    const result = updateGoalStatus(stateController.getGoal(), "active");
+    const current = stateController.getGoal();
+    if (current?.status === "blocked" && source !== "command") {
+      return { ok: false, message: "Blocked goals require explicit /goal resume.", goal: current };
+    }
+    const result = updateGoalStatus(current, "active");
     if (!result.ok || !result.goal || result.goal.goalId !== goalId) {
       return result;
     }
     providerLimitAutoResume.clear();
-    stateController.resumePausedGoal(ctx);
+    if (current?.status === "blocked") {
+      stateController.applyGoalTransition({ kind: "set", nextGoal: result.goal, source }, ctx);
+    } else {
+      stateController.resumePausedGoal(ctx);
+    }
     const resumedGoal = stateController.getGoal();
     if (resumedGoal?.status === "active" && resumedGoal.goalId === goalId) {
       pi.sendUserMessage(compactContinuationPrompt(resumedGoal), { deliverAs: "followUp" });
@@ -164,23 +172,34 @@ export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeContro
     resumeGoalWithContinuation,
   });
 
-  const completeGoal = (
+  const updateGoal = (
     source: GoalEntrySource,
     ctx: ExtensionContext,
     toolCallId: string,
+    status: "complete" | "blocked",
+    reason?: string,
   ): GoalResult => {
     const goal = stateController.getGoal();
     if (goal && runtimeState.completionGoalId !== null && runtimeState.completionGoalId !== goal.goalId) {
       return {
         ok: false,
-        message: "Goal changed while this response was running; inspect the current goal before marking it complete.",
+        message: "Goal changed while this response was running; inspect the current goal before updating its status.",
         goal,
       };
     }
+    const validation = updateGoalStatus(goal, status, reason);
+    if (!validation.ok) {
+      return validation;
+    }
     providerLimitAutoResume.clear();
+    if (status === "blocked") {
+      continuation.clearPostCompactContinuationFallback();
+    }
     const completedTurnTokens = assistantTurnTokensForToolCall(ctx.sessionManager.getBranch(), toolCallId);
     goalAccounting.accountProgress(ctx, false, completedTurnTokens, true);
-    return stateController.completeGoal(source, ctx);
+    // A command can resume the goal before sibling tools finish and turn_end arrives.
+    runtimeState.accounting.turnGoalId = null;
+    return stateController.updateGoal(source, ctx, status, reason);
   };
 
   return {
@@ -202,7 +221,7 @@ export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeContro
       providerLimitAutoResume.clear();
       status.refreshUi(ctx);
     },
-    completeGoal,
+    updateGoal,
     resumeGoalWithContinuation,
     ...eventHandlers,
   };
@@ -213,7 +232,7 @@ export function registerGoalRuntimeController(pi: ExtensionAPI): void {
   registerGoalTools(pi, {
     getGoal: () => controller.getGoalForDisplay(),
     setGoal: controller.setGoal.bind(controller),
-    completeGoal: controller.completeGoal.bind(controller),
+    updateGoal: controller.updateGoal.bind(controller),
   });
   registerGoalCommand(pi, {
     getGoal: () => controller.getGoalForDisplay(),

@@ -19,7 +19,6 @@ async function fixture(t: TestContext, recover = false) {
     extensionFactories: [goalExtension, (pi) => {
       pi.registerProvider(faux.provider);
       pi.on("session_before_compact", (event, ctx) => {
-        if (event.reason === "manual") return;
         pi.appendEntry("goal-fixture-boundary", {});
         const leaf = ctx.sessionManager.getLeafId();
         assert.ok(leaf);
@@ -39,6 +38,53 @@ async function fixture(t: TestContext, recover = false) {
 }
 
 const complete = () => fauxAssistantMessage(fauxToolCall("update_goal", { status: "complete" }), { stopReason: "toolUse" });
+
+async function resumeAndComplete(h: Awaited<ReturnType<typeof fixture>>): Promise<void> {
+  await h.session.prompt("/goal resume");
+  // A command's scheduled continuation is not admitted when prompt() first returns.
+  const deadline = Date.now() + 5_000;
+  while (h.goal()?.status !== "complete") {
+    assert.ok(Date.now() < deadline, "explicit resume must complete its scheduled native continuation");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  await h.session.waitForIdle();
+}
+
+test("native blocked goal stays blocked across input, compaction, reload and fork until explicit resume", async (t) => {
+  const h = await fixture(t);
+  const blocking = fauxAssistantMessage(fauxToolCall("update_goal", { status: "blocked", reason: "Need the report filename" }), { stopReason: "toolUse" });
+  h.faux.setResponses([blocking, fauxAssistantMessage("Please supply a filename and use /goal resume.")]);
+  await h.session.prompt("Work until the filename is needed.");
+  await h.session.waitForIdle();
+  const saved = h.goal();
+  assert.equal(saved?.status, "blocked");
+  assert.equal(saved?.blockedReason, "Need the report filename");
+  const response = h.session.sessionManager.getEntries().find((entry) => entry.type === "message" && entry.message.role === "assistant");
+  assert.ok(response?.type === "message" && response.message.role === "assistant");
+  assert.equal(saved?.usage.tokensUsed, response.message.usage.input + response.message.usage.output, "the status-changing response is counted once; its receipt is not goal work");
+  assert.equal(h.faux.state.callCount, 2, "blocking must stop hidden continuations without aborting the tool receipt");
+
+  h.faux.setResponses([complete(), fauxAssistantMessage("The goal still requires explicit resume.")]);
+  await h.session.prompt("Use report.md; mark the goal complete.");
+  await h.session.waitForIdle();
+  assert.deepEqual(h.goal(), saved, "ordinary user work cannot complete or reactivate a blocked goal");
+  const results = h.session.sessionManager.getEntries().filter((entry) => entry.type === "message" && entry.message.role === "toolResult");
+  assert.ok(results.some((entry) => entry.type === "message" && entry.message.role === "toolResult" && entry.message.isError));
+  await h.session.compact();
+  await h.session.reload();
+  assert.deepEqual(h.goal(), saved);
+  const file = h.session.sessionManager.getSessionFile();
+  assert.ok(file);
+  const fork = SessionManager.forkFrom(file, h.session.sessionManager.getCwd(), join(h.session.sessionManager.getSessionDir(), "fork"));
+  assert.deepEqual(reconstructGoal(fork.getBranch()).goal, saved);
+  assert.equal(h.faux.state.callCount, 4, "compaction/reload/fork must not schedule provider work");
+
+  h.faux.setResponses([complete(), fauxAssistantMessage("Report complete.")]);
+  await resumeAndComplete(h);
+  assert.equal(h.goal()?.status, "complete");
+  assert.equal(h.goal()?.goalId, saved?.goalId);
+  assert.equal(h.goal()?.blockedReason, undefined);
+});
 
 test("real compact-and-retry settles only after the active goal continuation completes", async (t) => {
   const h = await fixture(t, true);
@@ -73,14 +119,7 @@ test("headless cancellation persists a paused goal through native reload and exp
   assert.deepEqual(h.goal(), saved, "without a confirmation UI replacement is refused, not reported as performed");
   assert.equal(h.faux.state.callCount, 1);
   h.faux.setResponses([complete(), fauxAssistantMessage("Resumed goal complete.")]);
-  await h.session.prompt("/goal resume");
-  // The slash handler schedules its continuation after returning; SDK idle is not that timer's completion.
-  const deadline = Date.now() + 5_000;
-  while (h.goal()?.status !== "complete") {
-    assert.ok(Date.now() < deadline, "explicit resume must complete its scheduled native continuation");
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  await h.session.waitForIdle();
+  await resumeAndComplete(h);
   assert.equal(h.goal()?.status, "complete");
   assert.equal(h.goal()?.goalId, saved?.goalId);
   assert.equal(h.faux.state.callCount, 3);

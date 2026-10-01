@@ -137,6 +137,9 @@ export function createRuntimeHarness(options: {
     // Fork-only members are structurally checked when that SDK is selected.
     // Keep unused capabilities fail-fast, not simulated host-feature coverage.
     ...{
+      unregisterCommand() {
+        return unsupportedHarnessMethod("pi.unregisterCommand");
+      },
       registerBashCwdHook() {
         unsupportedHarnessMethod("pi.registerBashCwdHook");
       },
@@ -239,6 +242,12 @@ export function createRuntimeHarness(options: {
 
   const sessionManager: ExtensionCommandContext["sessionManager"] = {
     ...{
+      getEntryMetadata() {
+        return unsupportedHarnessMethod("sessionManager.getEntryMetadata");
+      },
+      iterateEntryMetadata() {
+        return unsupportedHarnessMethod("sessionManager.iterateEntryMetadata");
+      },
       buildSessionProjection() {
         return unsupportedHarnessMethod("sessionManager.buildSessionProjection");
       },

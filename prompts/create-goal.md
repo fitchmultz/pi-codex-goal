@@ -42,7 +42,8 @@ The goal must require:
    - Phrases like "for the scope this is complete", "good enough", "out of scope", or "remaining tech debt" are not valid completion evidence unless the original user task explicitly allowed that limitation.
 
 6. Blocked stop condition
-   - If completion is impossible with current access, tools, budget, or missing decisions, stop without marking complete.
+   - If missing user input or external work prevents meaningful progress, call `update_goal` with status `blocked` and a reason describing the dependency, then explain what is needed. Wait for explicit `/goal resume`; ordinary input does not reactivate the goal.
+   - If completion is impossible with current access, tools, or budget, stop without marking complete.
    - Report attempted paths, evidence gathered, exact blockers, remaining unmet requirements, and what input would unblock progress.
 
 Use concise imperative language in the goal. If the task is blank or only whitespace, infer the goal based on the conversation context or ask the user to clarify.
