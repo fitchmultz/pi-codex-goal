@@ -77,7 +77,7 @@ npm run check
 
 `npm run check` type-checks with TypeScript 7 and runs the Node test suite with native type stripping, including source, Git-production, and packed-artifact loading, tool persistence, and SDK compaction/continuation tests. Run it with an empty HOME/agent profile and a short TMPDIR outside your real home ancestry, with no project markers in its ancestors. The selected host must be installed in this checkout's dependency graph; changing only a CLI on PATH does not select its SDK types. No live model is called.
 
-Pull-request CI runs `check:compat` against the declared official Pi version and the reviewed maintained fork on Ubuntu/Node 24. It also checks clean Git and npm consumer installs through the native Pi CLI. Hosted CI does not call a model.
+Pull-request CI always runs `check:compat` against exact official Pi 1.0.0 on Ubuntu/Node 24. It builds and qualifies the maintained fork only when its source package meets the supported 1.0.0 floor; an older fork produces an explicit **UNATTEMPTED** receipt and job summary, not a future-fork pass. Supported-host qualification also checks clean Git and npm consumer installs through the native Pi CLI. Hosted CI does not call a model.
 
 Locally run the shared native Git/packed consumer qualification without invoking remote CI:
 

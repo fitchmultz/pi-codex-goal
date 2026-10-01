@@ -134,28 +134,6 @@ export function createRuntimeHarness(options: {
   };
 
   const pi: ExtensionAPI = {
-    // Fork-only members are structurally checked when that SDK is selected.
-    // Keep unused capabilities fail-fast, not simulated host-feature coverage.
-    ...{
-      unregisterCommand() {
-        return unsupportedHarnessMethod("pi.unregisterCommand");
-      },
-      registerBashCwdHook() {
-        unsupportedHarnessMethod("pi.registerBashCwdHook");
-      },
-      registerToolSearch() {
-        unsupportedHarnessMethod("pi.registerToolSearch");
-      },
-      recordUsage() {
-        unsupportedHarnessMethod("pi.recordUsage");
-      },
-      getActiveToolReferences() {
-        return unsupportedHarnessMethod("pi.getActiveToolReferences");
-      },
-      setActiveToolReferences() {
-        unsupportedHarnessMethod("pi.setActiveToolReferences");
-      },
-    },
     getSettings() { return unsupportedHarnessMethod("pi.getSettings"); },
     registerMcpServer() { unsupportedHarnessMethod("pi.registerMcpServer"); },
     unregisterMcpServer() { unsupportedHarnessMethod("pi.unregisterMcpServer"); },
@@ -241,19 +219,8 @@ export function createRuntimeHarness(options: {
   };
 
   const sessionManager: ExtensionCommandContext["sessionManager"] = {
-    ...{
-      getEntryMetadata() {
-        return unsupportedHarnessMethod("sessionManager.getEntryMetadata");
-      },
-      iterateEntryMetadata() {
-        return unsupportedHarnessMethod("sessionManager.iterateEntryMetadata");
-      },
-      buildSessionProjection() {
-        return unsupportedHarnessMethod("sessionManager.buildSessionProjection");
-      },
-      getEntriesRevision() {
-        return unsupportedHarnessMethod("sessionManager.getEntriesRevision");
-      },
+    buildSessionProjection() {
+      return unsupportedHarnessMethod("sessionManager.buildSessionProjection");
     },
     buildContextEntries: () => entries,
     getBranch: () => entries,

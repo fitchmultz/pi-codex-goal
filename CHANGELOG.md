@@ -4,6 +4,7 @@
 
 - Raise the documented supported floor and exact development Pi cohort to 1.0.0 with host TypeBox 1.3.27; preserve optional host-owned runtime peers.
 - Refresh shared qualification to immutable helper f2a480f00d45cdbd8595090b79aee107c4d88098; qualify ordinary standalone source and native SDK/Git/packed CLI lifecycle locally without model credentials.
+- Always qualify official Pi 1.0.0 in CI; record older maintained forks as unattempted rather than requiring obsolete fork-only APIs. Remove dropped-fork test stubs.
 - Preserve deliberate guarded per-loop continuation and native final settlement, cancellation, blocked/paused recovery, compact/retry and legacy journal semantics; do not introduce a new state engine or dropped fork APIs.
 - Add real native repeated-tool-call-ID and boundary-commit-order accounting coverage, proving current response usage and completion receipts remain exactly once.
 - Replace obsolete working-session checkpoint claims with the complete supported native durable-recovery/accounting contract; reserve a non-reused 0.6.0 release for the existing npm/GitHub channels.
