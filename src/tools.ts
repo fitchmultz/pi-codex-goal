@@ -3,29 +3,30 @@ import type { AgentToolResult, ExtensionAPI, ExtensionContext } from "@earendil-
 import { Type } from "typebox";
 
 import { goalToolResponse, toToolText, type GoalToolResponse } from "./format.ts";
-import { createGoal, MIN_TOKEN_BUDGET, replaceGoal } from "./state.ts";
+import { createGoal, parseTokenBudgetPolicy, replaceGoal, type TokenBudgetPolicy } from "./state.ts";
 import { TOOL_PROMPT_GUIDELINES } from "./prompts.ts";
 import type { GoalEntrySource, GoalResult, ThreadGoal } from "./types.ts";
 
 const EmptyParams = Type.Object({});
 
-const CreateGoalParams = Type.Object({
-  objective: Type.String({
-    description: "Concrete objective to pursue until completion.",
-  }),
-  token_budget: Type.Optional(
-    Type.Integer({
-      description: `Optional integer token budget of at least ${MIN_TOKEN_BUDGET}; omit for unlimited.`,
-      minimum: MIN_TOKEN_BUDGET,
+function createGoalParams(policy: TokenBudgetPolicy) {
+  return Type.Object({
+    objective: Type.String({
+      description: "Concrete objective to pursue until completion.",
     }),
-  ),
-  replace_existing: Type.Optional(
-    Type.Boolean({
+    ...(policy === "disabled" ? {} : {
+      token_budget: Type.Optional(Type.Integer({
+        description: `Optional integer token budget of at least ${policy}; omit for unlimited.`,
+        minimum: policy,
+        maximum: Number.MAX_SAFE_INTEGER,
+      })),
+    }),
+    replace_existing: Type.Optional(Type.Boolean({
       description:
         "Replace an existing non-complete goal. Use only when the user explicitly asks to set a new goal over the current one.",
-    }),
-  ),
-});
+    })),
+  }, policy === "disabled" ? { additionalProperties: false } : {});
+}
 
 const UpdateGoalParams = Type.Object({
   status: StringEnum(["complete", "blocked"] as const, {
@@ -56,6 +57,7 @@ function throwToolError(message: string): never {
 }
 
 export function registerGoalTools(pi: ExtensionAPI, host: ToolHost): void {
+  const policy = parseTokenBudgetPolicy(process.env.PI_CODEX_GOAL_TOKEN_BUDGET_POLICY);
   pi.registerTool({
     name: "get_goal",
     label: "Get Goal",
@@ -76,14 +78,21 @@ export function registerGoalTools(pi: ExtensionAPI, host: ToolHost): void {
     promptSnippet:
       "Create one goal with an objective and optional token budget (unlimited if omitted). Fails when a non-complete goal already exists unless replace_existing is true; replaces a completed goal.",
     promptGuidelines: TOOL_PROMPT_GUIDELINES,
-    parameters: CreateGoalParams,
+    parameters: createGoalParams(policy),
     executionMode: "sequential",
     async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
       const current = host.getGoal();
+      if (policy === "disabled" && params.token_budget !== undefined) {
+        throwToolError("Explicit token budgets are disabled; omit token_budget for unlimited.");
+      }
+      const tokenBudget = params.token_budget;
+      if (tokenBudget != null && typeof tokenBudget !== "number") {
+        throwToolError("Token budget must be a number.");
+      }
       const shouldReplaceExisting = params.replace_existing === true && current !== null && current.status !== "complete";
       const result = shouldReplaceExisting
-        ? replaceGoal(params.objective, params.token_budget ?? null)
-        : createGoal(current, params.objective, params.token_budget ?? null);
+        ? replaceGoal(params.objective, tokenBudget ?? null, policy)
+        : createGoal(current, params.objective, tokenBudget ?? null, policy);
       if (!result.ok || !result.goal) {
         throwToolError(result.message);
       }

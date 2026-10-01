@@ -15,6 +15,15 @@ import {
 } from "./types.ts";
 
 export const MIN_TOKEN_BUDGET = 500_000;
+export type TokenBudgetPolicy = number | "disabled";
+
+export function parseTokenBudgetPolicy(value: string | undefined): TokenBudgetPolicy {
+  if (value === undefined) return MIN_TOKEN_BUDGET;
+  if (value === "disabled") return value;
+  const minimum = Number(value);
+  if (/^[0-9]+$/.test(value) && Number.isSafeInteger(minimum) && minimum > 0) return minimum;
+  throw new Error("PI_CODEX_GOAL_TOKEN_BUDGET_POLICY must be a positive safe integer or disabled.");
+}
 
 export interface ApplyUsageOptions {
   expectedGoalId?: string | null;
@@ -61,13 +70,15 @@ export function validateObjective(objective: string): string | null {
   return null;
 }
 
-export function validateTokenBudget(tokenBudget: number | null | undefined): string | null {
+export function validateTokenBudget(tokenBudget: number | null | undefined, policy: TokenBudgetPolicy = MIN_TOKEN_BUDGET): string | null {
   if (tokenBudget === null || tokenBudget === undefined) {
     return null;
   }
-  if (!Number.isInteger(tokenBudget) || tokenBudget < MIN_TOKEN_BUDGET) {
-    return `Token budget must be an integer of at least ${MIN_TOKEN_BUDGET}.`;
+  if (policy === "disabled") return "Explicit token budgets are disabled; omit token_budget for unlimited.";
+  if (!Number.isInteger(tokenBudget) || tokenBudget < policy) {
+    return `Token budget must be an integer of at least ${policy}.`;
   }
+  if (!Number.isSafeInteger(tokenBudget)) return `Token budget must not exceed ${Number.MAX_SAFE_INTEGER}.`;
   return null;
 }
 
@@ -268,7 +279,7 @@ export function reconstructHostOverflowCapNeedsUserReset(entries: Iterable<Sessi
   return needsReset;
 }
 
-export function createGoal(current: ThreadGoal | null, objective: string, tokenBudget?: number | null): GoalResult {
+export function createGoal(current: ThreadGoal | null, objective: string, tokenBudget?: number | null, policy: TokenBudgetPolicy = MIN_TOKEN_BUDGET): GoalResult {
   if (current && current.status !== "complete") {
     return {
       ok: false,
@@ -283,7 +294,7 @@ export function createGoal(current: ThreadGoal | null, objective: string, tokenB
     return { ok: false, message: objectiveError, goal: null };
   }
 
-  const budgetError = validateTokenBudget(tokenBudget);
+  const budgetError = validateTokenBudget(tokenBudget, policy);
   if (budgetError) {
     return { ok: false, message: budgetError, goal: null };
   }
@@ -296,13 +307,13 @@ export function createGoal(current: ThreadGoal | null, objective: string, tokenB
   };
 }
 
-export function replaceGoal(objective: string, tokenBudget?: number | null): GoalResult {
+export function replaceGoal(objective: string, tokenBudget?: number | null, policy: TokenBudgetPolicy = MIN_TOKEN_BUDGET): GoalResult {
   const objectiveError = validateObjective(objective);
   if (objectiveError) {
     return { ok: false, message: objectiveError, goal: null };
   }
 
-  const budgetError = validateTokenBudget(tokenBudget);
+  const budgetError = validateTokenBudget(tokenBudget, policy);
   if (budgetError) {
     return { ok: false, message: budgetError, goal: null };
   }

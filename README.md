@@ -170,7 +170,16 @@ This intentionally matches Codex TUI behavior: token budgets are set through the
 
 `create_goal` starts a goal with an objective and an optional token budget. It fails if a non-complete goal already exists unless `replace_existing: true` is provided. After a goal is complete, `create_goal` replaces it with a new active goal.
 
-Omit `token_budget` for an unlimited goal. New explicit budgets must be integers of at least 500,000 tokens, including replacements; smaller budgets are rejected, never raised automatically. Existing saved goals keep their original budgets.
+Omit `token_budget` for an unlimited goal. By default, new explicit budgets must be safe integers of at least 500,000 tokens, including replacements; smaller budgets are rejected, never raised automatically. Existing saved goals keep their original budgets and usage.
+
+Set `PI_CODEX_GOAL_TOKEN_BUDGET_POLICY` before starting Pi to choose a different minimum or reject all explicit budgets:
+
+```sh
+PI_CODEX_GOAL_TOKEN_BUDGET_POLICY=100000000 pi
+PI_CODEX_GOAL_TOKEN_BUDGET_POLICY=disabled pi
+```
+
+A positive safe integer sets the minimum (including values below the default); `disabled` permits only omitted budgets. The exposed tool schema and execution boundary enforce the same policy, including replacement calls. Invalid or empty settings fail extension loading rather than silently weakening the policy. The setting is read at extension load; restart Pi or `/reload` after changing its environment. This policy does not change saved goals, and `/goal <objective>` still creates unlimited goals.
 
 `get_goal` returns the current goal state and usage.
 
