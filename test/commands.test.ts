@@ -280,7 +280,7 @@ test("/goal resume rejects completed and ordinarily active goals", async () => {
 
   await handleGoalCommand(harness.pi, harness.host, "resume", harness.ctx);
   assert.equal(harness.goal?.status, "active");
-  assert.match(harness.notifications.at(-1) ?? "", /Only paused goals can be resumed/);
+  assert.match(harness.notifications.at(-1) ?? "", /Only paused or blocked goals can be resumed/);
 });
 
 test("/goal resume restarts an active goal waiting for user-start overflow recovery", async () => {

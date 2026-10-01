@@ -120,7 +120,7 @@ export async function handleGoalCommand(
       return;
     }
 
-    if (trimmed === "resume" && current?.status === "paused") {
+    if (trimmed === "resume" && (current?.status === "paused" || current?.status === "blocked")) {
       const result = host.resumeGoalWithContinuation(current.goalId, "command", ctx);
       ctx.ui.notify(result.message, result.ok ? undefined : "warning");
       return;

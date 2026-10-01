@@ -77,7 +77,7 @@ function memoryEffectsFromGoalChange(
     appendGoalTransitionEffectOnce(effects, { type: "resetRecovery" });
     appendGoalTransitionEffectOnce(effects, { type: "clearBudgetWarning" });
   }
-  if (next.status === "complete") {
+  if (next.status === "complete" || next.status === "blocked") {
     appendGoalTransitionEffectOnce(effects, { type: "clearContinuation" });
     appendGoalTransitionEffectOnce(effects, { type: "clearActiveAccounting" });
     appendGoalTransitionEffectOnce(effects, { type: "resetRecovery" });

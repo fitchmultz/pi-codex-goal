@@ -28,15 +28,16 @@ const CreateGoalParams = Type.Object({
 });
 
 const UpdateGoalParams = Type.Object({
-  status: StringEnum(["complete"] as const, {
-    description: "Only complete is accepted. Do not call this until no required work remains.",
+  status: StringEnum(["complete", "blocked"] as const, {
+    description: "Complete only when no required work remains; blocked only when missing input or external work prevents meaningful progress.",
   }),
+  reason: Type.Optional(Type.String({ minLength: 1, description: "Required for blocked: explain the missing input or external dependency." })),
 });
 
 export interface ToolHost {
   getGoal(): ThreadGoal | null;
   setGoal(goal: ThreadGoal, source: GoalEntrySource, ctx: ExtensionContext): void;
-  completeGoal(source: GoalEntrySource, ctx: ExtensionContext, toolCallId: string): GoalResult;
+  updateGoal(source: GoalEntrySource, ctx: ExtensionContext, toolCallId: string, status: "complete" | "blocked", reason?: string): GoalResult;
 }
 
 function textResult(
@@ -95,17 +96,21 @@ export function registerGoalTools(pi: ExtensionAPI, host: ToolHost): void {
     name: "update_goal",
     label: "Update Goal",
     description:
-      "Mark the current Codex-style goal complete only after the objective is actually achieved and no required work remains. Do not use this tool just because work is stopping, budget is low, or partial progress looks sufficient.",
-    promptSnippet: "Mark the current goal complete only after an evidence-backed completion audit proves no required work remains.",
+      "Mark the goal complete only after the objective is achieved, or blocked with a reason when missing user input or external work prevents meaningful progress. Blocked goals stop automatic continuation and require explicit /goal resume before completion.",
+    promptSnippet: "Complete after an evidence-backed audit, or block on missing input/external work with a reason. Only /goal resume reactivates blocked goals.",
     promptGuidelines: TOOL_PROMPT_GUIDELINES,
     parameters: UpdateGoalParams,
     executionMode: "sequential",
-    async execute(toolCallId, _params, _signal, _onUpdate, ctx) {
-      const result = host.completeGoal("tool", ctx, toolCallId);
+    async execute(toolCallId, params, _signal, _onUpdate, ctx) {
+      if (params.status !== "complete" && params.status !== "blocked") {
+        throwToolError("Status must be complete or blocked.");
+      }
+      const result = host.updateGoal("tool", ctx, toolCallId, params.status, params.reason);
       if (!result.ok || !result.goal) {
         throwToolError(result.message);
       }
-      return textResult(toToolText(result.goal, true), result.goal, true);
+      const includeCompletionReport = result.goal.status === "complete";
+      return textResult(toToolText(result.goal, includeCompletionReport), result.goal, includeCompletionReport);
     },
   });
 }

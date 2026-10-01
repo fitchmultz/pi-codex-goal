@@ -39,7 +39,7 @@ export interface GoalStateController {
     ctx: StatusContext | null,
   ) => boolean;
   beginOverflowRecovery: (ctx: StatusContext) => void;
-  completeGoal: (source: GoalEntrySource, ctx: ExtensionContext) => GoalResult;
+  updateGoal: (source: GoalEntrySource, ctx: ExtensionContext, status: "complete" | "blocked", reason?: string) => GoalResult;
   flushGoalPersistence: GoalPersistence["flushGoalPersistence"];
   getGoal: () => ThreadGoal | null;
   isCurrentActiveGoalId: (goalId: string) => boolean;
@@ -173,9 +173,9 @@ export function createGoalStateController(deps: GoalStateControllerDeps) {
     applyGoalTransition({ kind: "resume_active" }, ctx);
   };
 
-  const completeGoal = (source: GoalEntrySource, ctx: ExtensionContext): GoalResult => {
+  const updateGoal = (source: GoalEntrySource, ctx: ExtensionContext, status: "complete" | "blocked", reason?: string): GoalResult => {
     const goal = getGoal();
-    const result = updateGoalStatus(goal, "complete");
+    const result = updateGoalStatus(goal, status, reason);
     if (!result.ok || !result.goal) {
       return result;
     }
@@ -189,7 +189,7 @@ export function createGoalStateController(deps: GoalStateControllerDeps) {
   const controller: GoalStateController = {
     applyGoalTransition,
     beginOverflowRecovery,
-    completeGoal,
+    updateGoal,
     flushGoalPersistence: deps.persistence.flushGoalPersistence,
     getGoal,
     isCurrentActiveGoalId,

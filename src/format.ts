@@ -12,6 +12,7 @@ export interface GoalToolRecord {
   goalId: string;
   objective: string;
   status: GoalStatus;
+  blockedReason?: string;
   tokenBudget: number | null;
   tokensUsed: number;
   timeUsedSeconds: number;
@@ -92,7 +93,7 @@ function commandHint(status: GoalStatus): string {
   if (status === "active") {
     return "/goal copy, /goal pause, /goal clear";
   }
-  if (status === "paused") {
+  if (status === "paused" || status === "blocked") {
     return "/goal copy, /goal resume, /goal clear";
   }
   if (status === "complete") {
@@ -115,6 +116,9 @@ export function formatGoalSummary(goal: ThreadGoal | null): string {
 
   if (goal.tokenBudget !== null) {
     lines.push(`Token budget: ${formatTokenValue(goal.tokenBudget)}`);
+  }
+  if (goal.status === "blocked") {
+    lines.push(`Blocked on: ${goal.blockedReason}`);
   }
 
   lines.push(`Hint: ${commandHint(goal.status)}`);
@@ -146,6 +150,10 @@ export function formatFooterStatus(
 
   if (goal.status === "paused" && providerLimitAutoResumeScheduled) {
     return "Goal paused because the provider usage limit was reached. Auto-resume will retry in about 5 minutes. Use /goal resume to resume now or /goal resume cancel to stop auto-resume.";
+  }
+
+  if (goal.status === "blocked") {
+    return "Goal blocked (/goal for reason; /goal resume)";
   }
 
   const recoveryAttentionMessage = formatRecoveryAttention(recoveryAttention);
@@ -181,6 +189,7 @@ export function toToolGoal(goal: ThreadGoal): GoalToolRecord {
     goalId: goal.goalId,
     objective: goal.objective,
     status: goal.status,
+    ...(goal.blockedReason !== undefined ? { blockedReason: goal.blockedReason } : {}),
     tokenBudget: goal.tokenBudget,
     tokensUsed: goal.usage.tokensUsed,
     timeUsedSeconds: goal.usage.activeSeconds,

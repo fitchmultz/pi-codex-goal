@@ -174,7 +174,9 @@ Omit `token_budget` for an unlimited goal. New explicit budgets must be integers
 
 `get_goal` returns the current goal state and usage.
 
-`update_goal` only accepts `status: "complete"`, matching Codex's model-side contract. Calling it on an already-complete goal is idempotent and does not append duplicate session entries. The extension reports final token and elapsed-time usage before marking the goal complete.
+`update_goal` accepts `status: "complete"` after verified completion, or `status: "blocked"` with a non-empty `reason` when missing user input or external work prevents meaningful progress. Blocking preserves the unfinished objective, reason, and usage through reload, fork, and compaction, cancels automatic continuations and provider auto-resume, and does not interrupt an already-running tool. Use `/goal` to inspect the dependency and explicit `/goal resume` to reactivate the goal; ordinary input or reopening the session cannot resume it, and completion is rejected while blocked. Reaching the token budget still stops the goal rather than allowing blocking to bypass the limit.
+
+Calling `update_goal` on an already-complete goal is idempotent and does not append duplicate session entries. The extension accounts the assistant response calling either status change before persisting it; completion reports final token and elapsed-time usage.
 
 Completed goals are terminal for automatic transitions: pause, resume, and hidden continuations do not reopen them. To recover from premature completion, use `/goal <objective>` to replace the goal, call `create_goal` with `replace_existing: true`, or `/goal clear` before starting again.
 
