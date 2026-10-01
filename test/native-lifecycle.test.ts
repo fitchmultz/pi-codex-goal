@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { createAssistantMessageEventStream, fauxProvider, fauxAssistantMessage, fauxToolCall, InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager, type ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import { Type } from "typebox";
 import goalExtension from "../src/index.ts";
 import { reconstructGoal } from "../src/state.ts";
 
@@ -162,9 +163,24 @@ test("headless cancellation persists a paused goal through native reload and exp
   assert.equal(h.faux.state.callCount, 3);
 });
 
-test("native repeated call IDs account the current response once across deferred boundary drafts", async (t) => {
+for (const route of ["direct", "nested"] as const) {
+test(`native ${route} repeated call IDs account the current response once across deferred boundary drafts`, async (t) => {
   let ended = 0;
   const h = await fixture(t, false, [(pi) => {
+    if (route === "nested") {
+      pi.registerTool({
+        name: "goal_wrapper", label: "Goal wrapper", description: "Run goal tools through native nesting",
+        parameters: Type.Object({ name: Type.String() }),
+        async execute(_id, params, _signal, _onUpdate, ctx) {
+          const args = params.name === "update_goal" ? { status: "complete" } : {};
+          const first = await ctx.executeTool(params.name, args);
+          const second = await ctx.executeTool(params.name, args);
+          assert.equal(first.isError, false);
+          assert.equal(second.isError, false);
+          return second.result;
+        },
+      });
+    }
     pi.on("message_end", (event, ctx) => {
       if (event.message.role !== "assistant") return;
       const assistants = ctx.sessionManager.getBranch().filter((entry) => entry.type === "message" && entry.message.role === "assistant");
@@ -177,10 +193,13 @@ test("native repeated call IDs account the current response once across deferred
     });
   }]);
   const response = (name: string, input: number, output: number) => {
-    const message = fauxAssistantMessage(fauxToolCall(name, name === "update_goal" ? { status: "complete" } : {}), { stopReason: "toolUse" });
+    const message = fauxAssistantMessage(fauxToolCall(
+      route === "nested" ? "goal_wrapper" : name,
+      route === "nested" ? { name } : name === "update_goal" ? { status: "complete" } : {},
+    ), { stopReason: "toolUse" });
     const call = message.content.find((part) => part.type === "toolCall");
     assert.ok(call);
-    call.id = "reused-call";
+    call.id = "reused/call";
     message.usage = { ...message.usage, input, output, totalTokens: input + output };
     return message;
   };
@@ -211,7 +230,17 @@ test("native repeated call IDs account the current response once across deferred
   assert.equal(requests, 4);
   const entries = h.session.sessionManager.getEntries();
   assert.equal(entries.filter((entry) => entry.type === "custom" && entry.customType === "native-draft").length, 4);
-  const receipt = entries.find((entry) => entry.type === "message" && entry.message.role === "toolResult" && entry.message.toolName === "update_goal");
+  const receipt = entries.filter((entry) => entry.type === "message" && entry.message.role === "toolResult").at(-1);
   assert.ok(receipt?.type === "message" && receipt.message.role === "toolResult");
   assert.partialDeepStrictEqual(receipt.message.details, { goal: { status: "complete", tokensUsed: 69 } });
+  if (route === "nested") {
+    assert.partialDeepStrictEqual(receipt.message.nestedCalls, {
+      complete: true,
+      calls: [
+        { id: "reused/call/1", name: "update_goal", status: "ok" },
+        { id: "reused/call/2", name: "update_goal", status: "ok" },
+      ],
+    });
+  }
 });
+}

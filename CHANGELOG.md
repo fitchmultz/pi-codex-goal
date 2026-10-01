@@ -7,6 +7,7 @@
 - Always qualify official Pi 1.0.0 in CI; record older maintained forks as unattempted rather than requiring obsolete fork-only APIs. Remove dropped-fork test stubs.
 - Preserve deliberate guarded per-loop continuation and native final settlement, cancellation, blocked/paused recovery, compact/retry and legacy journal semantics; do not introduce a new state engine or dropped fork APIs.
 - Add real native repeated-tool-call-ID and boundary-commit-order accounting coverage, proving current response usage and completion receipts remain exactly once.
+- Attribute native nested goal-tool status changes to their calling assistant response, including repeated IDs and multiple children without double-counting completion.
 - Replace obsolete working-session checkpoint claims with the complete supported native durable-recovery/accounting contract; reserve a non-reused 0.6.0 release for the existing npm/GitHub channels.
 
 ## 0.5.0 - 2026-10-01

@@ -96,7 +96,7 @@ Project agent notes and module map: [AGENTS.md](AGENTS.md).
 
 Native custom entries remain the source of truth across resume, tree/fork, reload and compaction. Existing goal formats and historical saved budgets are retained without migration or journal rewriting. Paused headless goals require explicit `/goal resume`; blocked goals remain blocked until explicitly resumed. Shutdown persists pending recovery before disposal. Neither supported 1.0 target provides the old fork checkpoint/accounting APIs; legacy session goal entries still recover normally.
 
-Turn accounting consumes the current native response once, including a status-changing tool's calling response; repeated tool-call IDs are correlated to the latest response, not older entries. The completion receipt is not goal work. Accounting uses persisted `turn_end` messages rather than reading the not-yet-appended `message_end`, and does not assume boundary drafts are committed inside handlers.
+Turn accounting consumes the current native response once, including a status-changing tool's calling response. Native `ctx.executeTool()` child calls are correlated to their calling response, and repeated tool-call IDs are correlated to the latest response, not older entries. Multiple children do not charge that response again; the completion receipt is not goal work. Accounting uses persisted `turn_end` messages rather than reading the not-yet-appended `message_end`, and does not assume boundary drafts are committed inside handlers.
 
 ## Interactive smoke tests
 
