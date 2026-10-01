@@ -40,7 +40,10 @@ function copySource(root: string): string {
   return packageRoot;
 }
 
-async function checkPackage(root: string, packageRoot: string): Promise<void> {
+async function checkPackage(root: string, packageRoot: string, policy?: string, invalidPolicy = false): Promise<void> {
+  const minimumBudget = policy === undefined || policy === "disabled" ? 500_000 : Number(policy);
+  const disabled = policy === "disabled";
+  const budgetError = disabled ? /Explicit token budgets are disabled/ : new RegExp(`integer of at least ${minimumBudget}`);
   const cwd = join(root, "project");
   const agentDir = join(root, "agent");
   mkdirSync(cwd);
@@ -55,8 +58,22 @@ async function checkPackage(root: string, packageRoot: string): Promise<void> {
     noThemes: true,
     additionalExtensionPaths: [packageRoot],
   });
-  await loader.reload();
+  const previousPolicy = process.env.PI_CODEX_GOAL_TOKEN_BUDGET_POLICY;
+  try {
+    if (policy === undefined) delete process.env.PI_CODEX_GOAL_TOKEN_BUDGET_POLICY;
+    else process.env.PI_CODEX_GOAL_TOKEN_BUDGET_POLICY = policy;
+    await loader.reload();
+  } finally {
+    if (previousPolicy === undefined) delete process.env.PI_CODEX_GOAL_TOKEN_BUDGET_POLICY;
+    else process.env.PI_CODEX_GOAL_TOKEN_BUDGET_POLICY = previousPolicy;
+  }
   const loaded = loader.getExtensions();
+  if (invalidPolicy) {
+    assert.equal(loaded.extensions.length, 0);
+    assert.equal(loaded.errors.length, 1);
+    assert.match(loaded.errors[0]!.error, /PI_CODEX_GOAL_TOKEN_BUDGET_POLICY must be a positive safe integer or disabled/);
+    return;
+  }
   assert.deepEqual(loaded.errors, []);
   assert.equal(loaded.extensions.length, 1, "package must discover exactly one extension");
   assert.ok(loaded.extensions[0]?.resolvedPath.endsWith(join("extensions", "index.ts")));
@@ -102,16 +119,16 @@ async function checkPackage(root: string, packageRoot: string): Promise<void> {
       const persisted = readFileSync(sessionFile, "utf8");
       assert.throws(() => validateCreate(args), /token_budget/);
       // Direct execution bypasses Pi's schema validation (as tool_call mutations can).
-      await assert.rejects(() => call("create_goal", args), /integer of at least 500000/);
+      await assert.rejects(() => call("create_goal", args), budgetError);
       assert.deepEqual(await call("get_goal", {}), before);
       assert.deepEqual(sessionManager.getEntries(), entries);
       assert.equal(readFileSync(sessionFile, "utf8"), persisted);
     };
-    await rejectBudget({ objective: "Too small", token_budget: 499_999 });
-    await rejectBudget({ objective: "Too small after native conversion", token_budget: 499_999.5 });
-    assert.partialDeepStrictEqual(createGoal.parameters, {
-      properties: { token_budget: { type: "integer", minimum: 500_000 } },
-      required: ["objective"],
+    await rejectBudget({ objective: "Too small", token_budget: minimumBudget - 1 });
+    await rejectBudget({ objective: "Too small after native conversion", token_budget: minimumBudget - 0.5 });
+    assert.partialDeepStrictEqual(createGoal.parameters, { required: ["objective"] });
+    if (!disabled) assert.partialDeepStrictEqual(createGoal.parameters, {
+      properties: { token_budget: { type: "integer", minimum: minimumBudget } },
     });
 
     const unlimited = { objective: "Verify the installed package" };
@@ -123,17 +140,23 @@ async function checkPackage(root: string, packageRoot: string): Promise<void> {
     assert.partialDeepStrictEqual((await call("get_goal", {})).details, { goal: { status: "active" } });
     assert.partialDeepStrictEqual((await call("update_goal", { status: "complete" })).details, { goal: { status: "complete" } });
     assert.partialDeepStrictEqual((await call("get_goal", {})).details, { goal: { status: "complete" } });
-    await rejectBudget({ objective: "Too small after completion", token_budget: 499_999 });
+    await rejectBudget({ objective: "Too small after completion", token_budget: minimumBudget - 1 });
 
-    const minimum = { objective: "Exact minimum", token_budget: 500_000 };
-    assert.deepEqual(validateCreate(minimum), minimum);
-    // Pi truncates numeric fractions before validation; raw execution still requires an integer.
-    const fractional = { ...minimum, token_budget: 500_000.5 };
-    assert.deepEqual(validateCreate(fractional), minimum);
-    await assert.rejects(() => call("create_goal", fractional), /integer of at least 500000/);
-    assert.partialDeepStrictEqual((await call("create_goal", minimum)).details, {
-      goal: { objective: minimum.objective, status: "active", tokenBudget: 500_000 }, remainingTokens: 500_000,
-    });
+    const minimum = { objective: "Exact minimum", token_budget: minimumBudget };
+    if (disabled) {
+      for (const value of [1, 500_000, Number.MAX_SAFE_INTEGER, null]) {
+        await rejectBudget({ objective: "Disabled explicit budget", token_budget: value });
+      }
+    } else {
+      assert.deepEqual(validateCreate(minimum), minimum);
+      // Pi truncates numeric fractions before validation; raw execution still requires an integer.
+      const fractional = { ...minimum, token_budget: minimumBudget + 0.5 };
+      assert.deepEqual(validateCreate(fractional), minimum);
+      await assert.rejects(() => call("create_goal", fractional), budgetError);
+      assert.partialDeepStrictEqual((await call("create_goal", minimum)).details, {
+        goal: { objective: minimum.objective, status: "active", tokenBudget: minimumBudget }, remainingTokens: minimumBudget,
+      });
+    }
 
     const legacyGoal = {
       goalId: "saved-small-budget",
@@ -163,13 +186,15 @@ async function checkPackage(root: string, packageRoot: string): Promise<void> {
       .map((line) => JSON.parse(line) as { customType?: string })
       .filter((entry) => entry.customType === "pi-codex-goal");
     assert.deepEqual(goalEntries(afterReload), goalEntries(persisted), "reload must not migrate or rewrite saved goals");
-    await rejectBudget({ objective: "Too small replacement", token_budget: 499_999, replace_existing: true });
+    await rejectBudget({ objective: "Too small replacement", token_budget: minimumBudget - 1, replace_existing: true });
 
-    const replacement = { ...minimum, replace_existing: true };
-    assert.deepEqual(validateCreate(replacement), replacement);
-    assert.partialDeepStrictEqual((await call("create_goal", replacement)).details, {
-      goal: { objective: minimum.objective, status: "active", tokenBudget: 500_000 }, remainingTokens: 500_000,
-    });
+    if (!disabled) {
+      const replacement = { ...minimum, replace_existing: true };
+      assert.deepEqual(validateCreate(replacement), replacement);
+      assert.partialDeepStrictEqual((await call("create_goal", replacement)).details, {
+        goal: { objective: minimum.objective, status: "active", tokenBudget: minimumBudget }, remainingTokens: minimumBudget,
+      });
+    }
     assert.partialDeepStrictEqual((await call("create_goal", { ...unlimited, replace_existing: true })).details, {
       goal: { objective: unlimited.objective, status: "active", tokenBudget: null }, remainingTokens: null,
     });
@@ -182,6 +207,20 @@ async function checkPackage(root: string, packageRoot: string): Promise<void> {
 test("clean local source discovers and executes one goal extension without a build", async (t) => {
   const root = tempRoot(t);
   await checkPackage(root, copySource(root));
+});
+
+test("configured budget policies enforce native schema and execution without changing saved goals", async (t) => {
+  for (const policy of ["100000000", "200", "disabled"]) {
+    const root = tempRoot(t);
+    await checkPackage(root, copySource(root), policy);
+  }
+});
+
+test("invalid budget policies fail extension loading instead of weakening the guard", async (t) => {
+  for (const policy of ["", "0", "-1", "1.5", "1e6", "unlimited", "9007199254740992"]) {
+    const root = tempRoot(t);
+    await checkPackage(root, copySource(root), policy, true);
+  }
 });
 
 test("Pi Git production install discovers and executes one goal extension without tsc", async (t) => {

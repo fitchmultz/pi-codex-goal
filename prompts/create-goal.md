@@ -10,7 +10,7 @@ Turn the user task into exactly one durable pi-codex-goal objective, then call t
 
 This prompt invocation is an explicit user request to set a new goal. When the goal creation tool exposes `replace_existing`, pass `replace_existing: true` so an existing active, paused, or budget-limited goal is replaced instead of requiring `/goal clear` first.
 
-Do not set a token budget limit unless the user explicitly provides a budget/limit in the task. If no explicit budget is provided, omit the token budget field entirely. Explicit budgets must be integers of at least 500,000 tokens. If the supplied budget is smaller, ask for a valid budget or no limit instead of raising it or silently dropping it.
+Do not set a token budget limit unless the user explicitly provides a budget/limit in the task. If no explicit budget is provided, omit the token budget field entirely. Follow the exposed creation tool's token-budget policy: when supported, explicit budgets must meet its configured minimum (500,000 tokens by default); when the field is absent, explicit budgets are disabled. If the supplied budget violates that policy, ask for a valid budget or no limit instead of raising it or silently dropping it.
 
 The goal must be a completion contract, not a task summary. Preserve the user's full intent. Do not weaken broad acceptance criteria such as "all", "any", "complete", "no tech debt", "do it right", "fully", or "hard acceptance criteria".
 
