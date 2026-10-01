@@ -1,10 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.5.0 - 2026-10-01
 
 - Add `PI_CODEX_GOAL_TOKEN_BUDGET_POLICY` to configure the minimum new explicit token budget or disable explicit budgets entirely. Enforce the policy in the tool schema and execution boundary without changing saved goals (#51).
 - Add model-declared blocked goals with dependency reasons, durable state, cancellation of automatic goal work, and enforced explicit `/goal resume` before completion (#62). Preserve status-changing response accounting and budget limits.
-- Pin the development Pi cohort to 0.99.1 and host TypeBox 1.3.27; preserve runtime peers, Node/Pi minimums, goal formats and production lifecycle behavior.
+- Pin the development Pi cohort to 0.99.1 and update development TypeBox to 1.3.34 without mixing Pi cohort versions; preserve runtime peers, Node/Pi minimums, goal formats and production lifecycle behavior.
+- Verify native goal continuation after successful-stop overflow compaction on current official and fork hosts without adding a settlement fallback (#53, #54).
+- Update the shared compatibility workflow to its immutable v1.0.1 pin (#82).
 - Migrate native tool-context fixtures and verify real compaction/retry settlement, cancellation, headless reload and explicit resume without provider credentials.
 - Preserve existing journal bytes and unchanged goal entries while allowing native startup metadata on reload. Document the fork's conservative live-checkpoint sleep limitation.
 
