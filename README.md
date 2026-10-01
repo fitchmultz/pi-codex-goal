@@ -12,7 +12,7 @@ Goal state is stored in pi session custom entries, so it follows session history
 
 ## Install
 
-Requires Pi 0.86.1 or later (official releases and the maintained fork) and Node.js 24 or later.
+Requires Pi 1.0.0 or later (official releases and the maintained fork) and Node.js 24 or later.
 
 Install from npm:
 
@@ -47,7 +47,7 @@ pi install .
 
 On this maintainer machine, the active install is a global/user package that already points at this checkout; do not also leave a project-local install under this repository's `.pi/` settings. Duplicate local and global installs both try to register `get_goal`, `create_goal`, and `update_goal`, which causes tool-registration conflicts. For install-path release checks, use an isolated temp project/config directory or remove the project-local entry immediately after the check.
 
-Compatibility note: the extension uses the shared public extension API. Pi-bundled runtime packages remain optional wildcard peers. The development baseline is official Pi 0.99.1; this release is also checked against latest official Pi 0.99.2 and the maintained fork at `0c2722b72d2e71c2c5b98d81bc3fc5da57992300` (0.99.1). The older Pi 0.86.1 minimum is unchanged, not a claim that this pass reran that older SDK.
+Compatibility note: the extension uses the shared public 1.0 extension API. Pi-bundled runtime packages remain optional wildcard peers, supplied by the host; the exact development/qualification cohort is official Pi 1.0.0 with TypeBox 1.3.27. Per-loop `agent_end` drives guarded goal continuation deliberately: it is not final completion. Native `waitForIdle`/`agent_settled` includes queued goal work, tool receipts and host compaction/retry. No checkpoint, recordUsage, metadata/revision or extra fork RPC/TUI API is required. The final maintained-fork 1.0 artifact must be rerun through the same host-sensitive checks when available; historical 0.99.1 coverage does not certify it.
 
 Release note: npm installs and pinned GitHub tags are the reproducible release artifacts. Installing from the repository default branch can include unreleased changes that will ship in a future package release, even when `package.json` still identifies the latest published version.
 
@@ -77,13 +77,26 @@ npm run check
 
 `npm run check` type-checks with TypeScript 7 and runs the Node test suite with native type stripping, including source, Git-production, and packed-artifact loading, tool persistence, and SDK compaction/continuation tests. Run it with an empty HOME/agent profile and a short TMPDIR outside your real home ancestry, with no project markers in its ancestors. The selected host must be installed in this checkout's dependency graph; changing only a CLI on PATH does not select its SDK types. No live model is called.
 
-Pull-request CI runs `check:compat` against the declared official Pi version and the reviewed maintained fork on Ubuntu/Node 24. It also checks clean Git and npm consumer installs through the native Pi CLI. Hosted CI does not call a model.
+Pull-request CI always runs `check:compat` against exact official Pi 1.0.0 on Ubuntu/Node 24. It builds and qualifies the maintained fork only when its source package meets the supported 1.0.0 floor; an older fork produces an explicit **UNATTEMPTED** receipt and job summary, not a future-fork pass. Supported-host qualification also checks clean Git and npm consumer installs through the native Pi CLI. Hosted CI does not call a model.
+
+Locally run the shared native Git/packed consumer qualification without invoking remote CI:
+
+```sh
+git clone https://github.com/fitchmultz/.github.git /tmp/pi-goal-automation
+git -C /tmp/pi-goal-automation checkout f2a480f00d45cdbd8595090b79aee107c4d88098
+node /tmp/pi-goal-automation/scripts/qualify.mjs --repo pi-codex-goal --source "$PWD" \
+  --host official --target 1.0.0 --output /tmp/pi-goal-evidence
+```
+
+The next proposed non-reused release is **0.6.0**, using the existing owned npm and GitHub channels. Qualification does not publish, install into live settings, restart active sessions, merge or tag. Parent review/release controls remain separate.
 
 Project agent notes and module map: [AGENTS.md](AGENTS.md).
 
-## Working-session checkpoints
+## Durable recovery and accounting
 
-The fork's checkpoint artifact can preserve native goal entries, branch selection and accepted queues. It does not serialize this extension's timers or JavaScript callbacks. The extension has a shutdown handler but no live checkpoint barrier, so native capture conservatively reports `sleepReady: false`; do not stop compute based on that artifact alone. Restoring a paused goal stays paused in headless mode until explicit `/goal resume`; loading a checkpoint must not replay provider or tool work. Deliberate clean exit uses ordinary shutdown persistence. Official Pi does not expose the fork's working-session checkpoint API.
+Native custom entries remain the source of truth across resume, tree/fork, reload and compaction. Existing goal formats and historical saved budgets are retained without migration or journal rewriting. Paused headless goals require explicit `/goal resume`; blocked goals remain blocked until explicitly resumed. Shutdown persists pending recovery before disposal. Neither supported 1.0 target provides the old fork checkpoint/accounting APIs; legacy session goal entries still recover normally.
+
+Turn accounting consumes the current native response once, including a status-changing tool's calling response. Native `ctx.executeTool()` child calls are correlated to their calling response, and repeated tool-call IDs are correlated to the latest response, not older entries. Multiple children do not charge that response again; the completion receipt is not goal work. Accounting uses persisted `turn_end` messages rather than reading the not-yet-appended `message_end`, and does not assume boundary drafts are committed inside handlers.
 
 ## Interactive smoke tests
 

@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PI_AUTOMATION_REF: a0fdc5780053237ac4ee24f49976ee5449e3aaab # v1.0.1
+  PI_AUTOMATION_REF: f2a480f00d45cdbd8595090b79aee107c4d88098
 
 jobs:
   compatibility:
@@ -47,7 +47,38 @@ jobs:
           ref: main
           path: fork
           persist-credentials: false
+      - name: Use the extension npm version
+        run: npm install --global "$(node -p 'require("./extension/package.json").packageManager')"
+      - name: Qualify official Pi
+        run: |
+          node automation/scripts/qualify.mjs --repo pi-codex-goal --source "$GITHUB_WORKSPACE/extension" \
+            --host official --target 1.0.0 --output "$RUNNER_TEMP/official-evidence"
+      - name: Check fork support floor
+        id: fork-support
+        env:
+          FORK_REF: ${{ steps.fork.outputs.commit }}
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from "node:assert/strict";
+          import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+          const version = JSON.parse(readFileSync("fork/packages/coding-agent/package.json")).version;
+          const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(version);
+          assert.ok(match, `Invalid fork version: ${version}`);
+          const supported = Number(match[1]) >= 1 && !(version.startsWith("1.0.0-"));
+          appendFileSync(process.env.GITHUB_OUTPUT, `supported=${supported}\n`);
+          if (!supported) {
+            const receipt = { result: "unattempted", host: "fork", ref: process.env.FORK_REF, version, floor: "1.0.0", reason: "Fork is older than the supported Pi floor; no build or qualification attempted." };
+            mkdirSync(`${process.env.RUNNER_TEMP}/fork-evidence`, { recursive: true });
+            writeFileSync(`${process.env.RUNNER_TEMP}/fork-evidence/qualification.json`, JSON.stringify(receipt, null, 2) + "\n");
+            appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### Fork qualification: UNATTEMPTED\n\nFork \`${receipt.ref}\` is Pi ${version}, below the supported 1.0.0 floor. This is not a future-fork pass. Rerun qualification when the maintained fork reaches the floor.\n`);
+            console.log(JSON.stringify(receipt));
+          }
+          NODE
+      - name: Use the reviewed npm version for the fork build
+        if: steps.fork-support.outputs.supported == 'true'
+        run: npm install --global "$(node -p 'require("./automation/package.json").packageManager')"
       - name: Build fork once
+        if: steps.fork-support.outputs.supported == 'true'
         working-directory: fork
         env:
           FORK_REF: ${{ steps.fork.outputs.commit }}
@@ -61,13 +92,10 @@ jobs:
           node ../automation/scripts/pack-fork.mjs . "$RUNNER_TEMP/fork-package" "$FORK_REF"
           git diff --exit-code
       - name: Use the extension npm version
+        if: steps.fork-support.outputs.supported == 'true'
         run: npm install --global "$(node -p 'require("./extension/package.json").packageManager')"
-      - name: Qualify official Pi
-        run: |
-          version=$(node -p 'require("./extension/package.json").devDependencies["@earendil-works/pi-coding-agent"]')
-          node automation/scripts/qualify.mjs --repo pi-codex-goal --source "$GITHUB_WORKSPACE/extension" \
-            --host official --target "$version" --output "$RUNNER_TEMP/official-evidence"
       - name: Qualify fork Pi
+        if: steps.fork-support.outputs.supported == 'true'
         env:
           PI_COMPAT_FORK_REF: ${{ steps.fork.outputs.commit }}
         run: |

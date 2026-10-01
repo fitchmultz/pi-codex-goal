@@ -48,14 +48,15 @@ export function assistantTurnTokens(message: AssistantTurnMessage): number {
   return usageChannelTokens(message.usage.input) + usageChannelTokens(message.usage.output);
 }
 
-/** The current response is persisted before its tools execute, but counted at turn_end. */
+/** Native child IDs extend the calling ID with /n; their usage belongs to its response. */
 export function assistantTurnTokensForToolCall(entries: SessionEntry[], toolCallId: string): number {
   for (let i = entries.length - 1; i >= 0; i -= 1) {
     const entry = entries[i];
     if (entry?.type !== "message" || entry.message.role !== "assistant") {
       continue;
     }
-    return entry.message.content.some((part) => part.type === "toolCall" && part.id === toolCallId)
+    return entry.message.content.some((part) => part.type === "toolCall" &&
+      (part.id === toolCallId || toolCallId.startsWith(`${part.id}/`)))
       ? assistantTurnTokens(entry.message)
       : 0;
   }
