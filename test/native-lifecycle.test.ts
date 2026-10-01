@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
-import { fauxProvider, fauxAssistantMessage, fauxToolCall, InMemoryCredentialStore } from "@earendil-works/pi-ai";
+import { createAssistantMessageEventStream, fauxProvider, fauxAssistantMessage, fauxToolCall, InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager } from "@earendil-works/pi-coding-agent";
 import goalExtension from "../src/index.ts";
 import { reconstructGoal } from "../src/state.ts";
@@ -39,15 +39,19 @@ async function fixture(t: TestContext, recover = false) {
 
 const complete = () => fauxAssistantMessage(fauxToolCall("update_goal", { status: "complete" }), { stopReason: "toolUse" });
 
-async function resumeAndComplete(h: Awaited<ReturnType<typeof fixture>>): Promise<void> {
-  await h.session.prompt("/goal resume");
-  // A command's scheduled continuation is not admitted when prompt() first returns.
+async function waitForGoalCompletion(h: Awaited<ReturnType<typeof fixture>>): Promise<void> {
+  // A scheduled continuation is not necessarily admitted when prompt() first returns.
   const deadline = Date.now() + 5_000;
   while (h.goal()?.status !== "complete") {
-    assert.ok(Date.now() < deadline, "explicit resume must complete its scheduled native continuation");
+    assert.ok(Date.now() < deadline, "the goal must complete its scheduled native continuation");
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   await h.session.waitForIdle();
+}
+
+async function resumeAndComplete(h: Awaited<ReturnType<typeof fixture>>): Promise<void> {
+  await h.session.prompt("/goal resume");
+  await waitForGoalCompletion(h);
 }
 
 test("native blocked goal stays blocked across input, compaction, reload and fork until explicit resume", async (t) => {
@@ -103,6 +107,39 @@ test("real compact-and-retry settles only after the active goal continuation com
   const entries = h.session.sessionManager.getEntries();
   assert.equal(entries.filter((entry) => entry.type === "compaction").length, 1);
   assert.equal(entries.filter((entry) => entry.type === "message" && entry.message.role === "toolResult" && entry.message.toolName === "update_goal").length, 1);
+});
+
+test("successful stop overflow compaction without a host retry automatically continues exactly once", async (t) => {
+  const h = await fixture(t, true);
+  const events: Array<{ type: string; reason?: string; willRetry?: boolean }> = [];
+  h.session.subscribe((event) => {
+    if (event.type === "agent_start" || event.type === "agent_end" || event.type === "agent_settled" || event.type === "compaction_end") {
+      events.push({ type: event.type, ...("reason" in event ? { reason: event.reason } : {}), ...("willRetry" in event ? { willRetry: event.willRetry } : {}) });
+    }
+  });
+  const responses = [fauxAssistantMessage("Work finished for this turn, but the goal remains unfinished."), complete(), fauxAssistantMessage("Goal complete.")];
+  let requests = 0;
+  // Silent-overflow providers can report more input than Pi estimated before admission.
+  h.session.agent.streamFunction = (model) => {
+    const response = responses[requests++];
+    assert.ok(response, "no duplicate continuation request");
+    const input = requests === 1 ? 110_000 : 100;
+    const message = { ...response, api: model.api, provider: model.provider, model: model.id, timestamp: Date.now(), usage: { ...response.usage, input, totalTokens: input } };
+    const stream = createAssistantMessageEventStream();
+    queueMicrotask(() => {
+      stream.push({ type: "start", partial: message });
+      stream.push({ type: "done", reason: message.stopReason === "toolUse" ? "toolUse" : "stop", message });
+      stream.end();
+    });
+    return stream;
+  };
+  await h.session.prompt("Perform the goal work.");
+  await waitForGoalCompletion(h);
+  assert.equal(requests, 3, "one successful stop, one automatic goal continuation and its tool receipt; no retry or duplicate");
+  assert.partialDeepStrictEqual(events.find((event) => event.type === "compaction_end"), { reason: "overflow", willRetry: false });
+  const starts = events.filter((event) => event.type === "agent_start").length;
+  assert.equal(starts, events.filter((event) => event.type === "agent_end").length, "no synthetic missing-agent_end sequence");
+  assert.equal(h.session.sessionManager.getEntries().filter((entry) => entry.type === "compaction").length, 1);
 });
 
 test("headless cancellation persists a paused goal through native reload and explicit resume", async (t) => {
