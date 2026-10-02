@@ -5,7 +5,7 @@ import {
   createRecoveryPausedAttention,
   HOST_OVERFLOW_RECOVERY_REASON,
 } from "../../src/recovery.ts";
-import { createThreadGoal, setEntry } from "../../src/state.ts";
+import { createThreadGoal, reconstructHostOverflowCapNeedsUserReset, setEntry } from "../../src/state.ts";
 import { CUSTOM_ENTRY_TYPE } from "../../src/types.ts";
 import {
   createRuntimeHarness,
@@ -54,7 +54,7 @@ export async function givenOverflowPausedGoal(
   const goal = harness.snapshot().goal;
   assert.ok(goal);
   assert.equal(goal.status, "paused");
-  assert.equal(harness.hostOverflowRecoveryAttempted, true);
+  assert.equal(reconstructHostOverflowCapNeedsUserReset(harness.entries), true);
   return { harness, goal };
 }
 

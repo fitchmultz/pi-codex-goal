@@ -34,11 +34,11 @@ function renderUpdateGoalTemplate(template: string): string {
   return template.replaceAll(UPDATE_GOAL_REF_PLACEHOLDER, goalToolReference("update_goal"));
 }
 
-export function completionAuditToolGuidelines(): string[] {
+function completionAuditToolGuidelines(): string[] {
   return COMPLETION_AUDIT_TOOL_GUIDELINE_TEMPLATES.map(renderUpdateGoalTemplate);
 }
 
-export function completionAuditContinuationPromptSection(): string[] {
+function completionAuditContinuationPromptSection(): string[] {
   return [
     "Before deciding that the goal is achieved, perform a completion audit against the actual current state:",
     ...COMPLETION_AUDIT_CHECKLIST_LINES,

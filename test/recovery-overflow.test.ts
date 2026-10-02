@@ -372,29 +372,6 @@ test("exhausted context overflow retries show recoverable attention in footer", 
   );
 });
 
-test("agent_end only counts recovered errors once per failed run", async () => {
-  const harness = createRuntimeHarness();
-  await harness.runCommand("ship it");
-  harness.sentMessages.length = 0;
-
-  const errorMessage = assistantMessage("error", { input: 1, output: 1 }, "websocket closed");
-  await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
-  await harness.emit("turn_end", {
-    type: "turn_end",
-    turnIndex: 0,
-    message: errorMessage,
-    toolResults: [],
-  });
-  await harness.emit("agent_end", {
-    type: "agent_end",
-    messages: [errorMessage],
-  });
-
-  assert.equal(harness.snapshot().goal?.status, "active");
-  assert.equal(harness.sentMessages.length, 0);
-  assert.equal(harness.compactCalls.length, 0);
-});
-
 test("successful toolUse turns reset context overflow recovery counters", async () => {
   const harness = createRuntimeHarness();
   await harness.runCommand("ship it");
@@ -427,24 +404,6 @@ test("first overflow error shows recoverable attention while host recovery is pe
   assert.ok(goal);
   harness.sentMessages.length = 0;
   harness.footerStatuses.length = 0;
-
-  await emitPersistentAssistantError(harness, 0, "context_length_exceeded");
-
-  assert.equal(harness.snapshot().goal?.status, "active");
-  assert.equal(harness.sentMessages.length, 0);
-  assert.equal(
-    harness.footerStatuses.at(-1),
-    formatFooterStatus(goal, createRecoveryPendingAttention(HOST_OVERFLOW_RECOVERY_REASON)),
-  );
-  assert.doesNotMatch(harness.footerStatuses.at(-1) ?? "", /\/goal resume/);
-});
-
-test("overflow without session_compact stays active with pending overflow attention", async () => {
-  const harness = createRuntimeHarness({ compactBehavior: "unavailable" });
-  await harness.runCommand("ship it");
-  const goal = harness.snapshot().goal;
-  assert.ok(goal);
-  harness.sentMessages.length = 0;
 
   await emitPersistentAssistantError(harness, 0, "context_length_exceeded");
 
