@@ -6,8 +6,6 @@ import {
   TOOL_PROMPT_GUIDELINES,
   budgetLimitPrompt,
   compactContinuationPrompt,
-  completionAuditContinuationPromptSection,
-  completionAuditToolGuidelines,
   continuationGoalIdFromPrompt,
   continuationPrompt,
   goalToolReference,
@@ -28,9 +26,9 @@ test("tool prompt guidelines include exposed and namespaced goal tool guidance",
   assert.match(combined, /get_goal \(or the exposed namespaced equivalent, such as pi__get_goal\)/);
   assert.match(combined, /create_goal \(or the exposed namespaced equivalent, such as pi__create_goal\)/);
   assert.match(combined, /update_goal \(or the exposed namespaced equivalent, such as pi__update_goal\)/);
-  for (const guideline of completionAuditToolGuidelines()) {
-    assert.ok(TOOL_PROMPT_GUIDELINES.includes(guideline));
-  }
+  assert.match(combined, /status complete only after a completion audit proves the objective is actually achieved/);
+  assert.match(combined, /map every explicit requirement in the goal to concrete evidence.*uncertainty means the goal is not complete/);
+  assert.match(combined, /Do not use .*merely because work is stopping.*token budget is nearly exhausted/);
 });
 
 test("continuation prompt uses the canonical completion-audit contract", () => {
@@ -41,7 +39,6 @@ test("continuation prompt uses the canonical completion-audit contract", () => {
   assert.match(continuation, /prompt-to-artifact checklist/);
   assert.match(continuation, /Do not accept proxy signals as completion by themselves/);
   assert.match(continuation, /Do not mark a goal complete merely because the budget is nearly exhausted/);
-  assert.ok(continuation.includes(completionAuditContinuationPromptSection().join("\n")));
 });
 
 test("compact continuation keeps marker detection without repeating the full objective", () => {

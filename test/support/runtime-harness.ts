@@ -12,7 +12,6 @@ import type {
 
 import goalExtension from "../../src/index.ts";
 import { CONTINUATION_RETRY_MS, PROVIDER_LIMIT_AUTO_RESUME_MS } from "../../src/runtime-config.ts";
-import { isContextOverflowError } from "../../src/recovery.ts";
 import { isGoalCustomEntry, reconstructGoal } from "../../src/state.ts";
 import {
   toQueuedGoalContextCarrier,
@@ -115,7 +114,6 @@ export function createRuntimeHarness(options: {
     compactBehavior: options.compactBehavior ?? "success",
     compactCompletion: options.compactCompletion ?? "immediate",
     contextUsage: options.contextUsage,
-    hostOverflowRecoveryAttempted: false,
   };
   let commandHandler: ((args: string, ctx: ExtensionCommandContext) => void | Promise<void>) | null = null;
   let ctx: ExtensionCommandContext & ExtensionToolContext;
@@ -373,12 +371,6 @@ export function createRuntimeHarness(options: {
   }
 
   async function emit(event: string, payload: object): Promise<unknown[]> {
-    if (event === "message_start") {
-      const message = (payload as { message?: { role?: string } }).message;
-      if (message?.role === "user") {
-        runtime.hostOverflowRecoveryAttempted = false;
-      }
-    }
     const results: unknown[] = [];
     for (const handler of handlers.get(event) ?? []) {
       results.push(await handler(payload, ctx));
@@ -429,12 +421,6 @@ export function createRuntimeHarness(options: {
         provider: "test",
         contextWindow,
       } as ExtensionCommandContext["model"];
-    },
-    get hostOverflowRecoveryAttempted() {
-      return runtime.hostOverflowRecoveryAttempted;
-    },
-    setHostOverflowRecoveryAttempted(value: boolean) {
-      runtime.hostOverflowRecoveryAttempted = value;
     },
     get abortCount() {
       return runtime.abortCount;
@@ -655,9 +641,6 @@ export async function emitPersistentAssistantError(
     type: "agent_end",
     messages: [message],
   });
-  if (isContextOverflowError(errorMessage)) {
-    harness.setHostOverflowRecoveryAttempted(true);
-  }
 }
 
 export async function emitHostSessionCompact(
@@ -685,5 +668,4 @@ export async function emitSilentContextOverflow(
     type: "agent_end",
     messages: [message],
   });
-  harness.setHostOverflowRecoveryAttempted(true);
 }

@@ -264,8 +264,8 @@ test("goalWithLiveUsage adds in-progress active time for display", () => {
 });
 
 test("maximum goal objective length remains 8000 Unicode scalars in this package", () => {
-  assert.equal(createGoal(null, "x".repeat(8_000)).ok, true);
-  assert.equal(createGoal(null, "x".repeat(8_001)).ok, false);
+  assert.equal(createGoal(null, "😀".repeat(8_000)).ok, true);
+  assert.equal(createGoal(null, "😀".repeat(8_001)).ok, false);
 });
 
 test("updateGoalStatus rejects pause and resume on completed goals", () => {

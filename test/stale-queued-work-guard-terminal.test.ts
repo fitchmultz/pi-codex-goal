@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { isAbortedAssistantMessage } from "../src/goal-accounting.ts";
 import { createStaleQueuedWorkGuard } from "../src/stale-queued-work-guard.ts";
 import { CUSTOM_ENTRY_TYPE } from "../src/types.ts";
 
@@ -29,18 +28,6 @@ test("abortingTurn -> awaitingTerminalCleanup when user clears abort", () => {
 });
 
 test("awaitingTerminalCleanup: late aborted turn_end is skipped", () => {
-  const guard = createStaleQueuedWorkGuard();
-  guard.noteStaleWorkStarted("goal-1");
-  guard.planContextAbort(1);
-  guard.planUserInputClearAbort();
-
-  const turnEndPlan = guard.planTurnEnd(1);
-  assert.equal(turnEndPlan.skip, true);
-  assert.deepEqual(effectTypes(turnEndPlan), ["refreshUi"]);
-  assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
-});
-
-test("awaitingTerminalCleanup: late stale turn_end with stop is skipped", () => {
   const guard = createStaleQueuedWorkGuard();
   guard.noteStaleWorkStarted("goal-1");
   guard.planContextAbort(1);
@@ -217,20 +204,6 @@ test("observingTurn with pending cleanup: late stale turn_end is skipped", () =>
   assert.equal(guard.lifecycleKind(), "observingTurn");
 });
 
-test("observingTurn with pending cleanup: late stale turn_end with stop is skipped", () => {
-  const guard = createStaleQueuedWorkGuard();
-  guard.noteStaleWorkStarted("goal-1");
-  guard.planContextAbort(0);
-  guard.planUserInputClearAbort();
-  guard.noteRunnableWorkStarted();
-  assert.equal(guard.lifecycleKind(), "observingTurn");
-
-  const turnEndPlan = guard.planTurnEnd(0);
-  assert.equal(turnEndPlan.skip, true);
-  assert.deepEqual(effectTypes(turnEndPlan), ["refreshUi"]);
-  assert.equal(guard.lifecycleKind(), "observingTurn");
-});
-
 test("observingTurn with pending cleanup: late stale agent_end is skipped", () => {
   const guard = createStaleQueuedWorkGuard();
   guard.noteStaleWorkStarted("goal-1");
@@ -394,9 +367,4 @@ test("observingTurn with pending cleanup: turn_end without pending index is not 
   const plan = guard.planTurnEnd(2);
   assert.deepEqual(plan, { skip: false, effects: [] });
   assert.equal(guard.lifecycleKind(), "observingTurn");
-});
-
-test("isAbortedAssistantMessage matches aborted assistant turns", () => {
-  assert.equal(isAbortedAssistantMessage(abortedAssistant), true);
-  assert.equal(isAbortedAssistantMessage(stoppedAssistant), false);
 });

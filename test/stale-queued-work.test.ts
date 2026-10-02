@@ -141,6 +141,7 @@ test("stale custom goal work messages are replaced before provider context", asy
 
   const result = requireProviderContextResult(results);
   const replacedMessage = providerContextMessageAt(result, 0);
+  assert.equal(replacedMessage.display, false);
   assert.equal(typeof replacedMessage?.content, "string");
   assert.match(String(replacedMessage?.content), /queued hidden goal continuation was stale and has been cancelled/);
   assert.deepEqual(replacedMessage?.details, {

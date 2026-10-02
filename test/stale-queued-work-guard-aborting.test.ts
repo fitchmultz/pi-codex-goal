@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { isAbortedAssistantMessage } from "../src/goal-accounting.ts";
 import { createStaleQueuedWorkGuard } from "../src/stale-queued-work-guard.ts";
 import { CUSTOM_ENTRY_TYPE } from "../src/types.ts";
 
@@ -28,17 +27,6 @@ test("abortingTurn: active stale turn_end clears accounting and skips", () => {
   assert.equal(guard.lifecycleKind(), "abortingTurn");
 });
 
-test("abortingTurn: active stale turn_end with stop clears accounting and skips", () => {
-  const guard = createStaleQueuedWorkGuard();
-  guard.noteStaleWorkStarted("goal-1");
-  guard.planContextAbort(3);
-
-  const turnEndPlan = guard.planTurnEnd(3);
-  assert.equal(turnEndPlan.skip, true);
-  assert.deepEqual(effectTypes(turnEndPlan), ["clearAccounting", "refreshUi"]);
-  assert.equal(guard.lifecycleKind(), "abortingTurn");
-});
-
 test("abortingTurn: active stale agent_end with stop finishes aborting lifecycle", () => {
   const guard = createStaleQueuedWorkGuard();
   guard.noteStaleWorkStarted("goal-1");
@@ -49,21 +37,6 @@ test("abortingTurn: active stale agent_end with stop finishes aborting lifecycle
   assert.deepEqual(effectTypes(agentEndPlan), ["clearAccounting", "refreshUi"]);
   assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
   assert.equal(guard.isBlockingContinuation(), false);
-});
-
-test("abortingTurn: late stale turn_end with stop during active abort is skipped", () => {
-  const guard = createStaleQueuedWorkGuard();
-  guard.noteStaleWorkStarted("goal-0");
-  guard.planContextAbort(0);
-  guard.planTurnStart();
-
-  guard.noteStaleWorkStarted("goal-1");
-  guard.planContextAbort(1);
-
-  const turnEndPlan = guard.planTurnEnd(0);
-  assert.equal(turnEndPlan.skip, true);
-  assert.deepEqual(effectTypes(turnEndPlan), ["refreshUi"]);
-  assert.equal(guard.lifecycleKind(), "abortingTurn");
 });
 
 test("abortingTurn: late stale turn 0 turn_end during turn 1 abort is skipped", () => {

@@ -5,7 +5,7 @@ import {
   continuationGoalIdFromPrompt,
   continuationPrompt,
 } from "../src/prompts.ts";
-import { isGoalCustomEntry } from "../src/state.ts";
+import { isGoalCustomEntry, reconstructHostOverflowCapNeedsUserReset } from "../src/state.ts";
 import { CUSTOM_ENTRY_TYPE } from "../src/types.ts";
 import {
   createRuntimeHarness,
@@ -60,7 +60,7 @@ test("/goal resume after overflow pause resets recovery counters", async () => {
     type: "message_start",
     message: { role: "user", content },
   });
-  assert.equal(harness.hostOverflowRecoveryAttempted, false);
+  assert.equal(reconstructHostOverflowCapNeedsUserReset(harness.entries), false);
 
   const contextResults = await harness.emit("context", {
     type: "context",
@@ -98,7 +98,7 @@ test("/goal resume after overflow pause and session shutdown sends user turn and
     type: "message_start",
     message: { role: "user", content: resumeMessage.content },
   });
-  assert.equal(harness.hostOverflowRecoveryAttempted, false);
+  assert.equal(reconstructHostOverflowCapNeedsUserReset(harness.entries), false);
 
   await emitPersistentAssistantError(harness, 2, "context_length_exceeded");
   assert.equal(harness.snapshot().goal?.status, "active");
@@ -117,7 +117,7 @@ test("custom command_resume turn after host overflow exhaustion does not reset h
       details: { kind: "command_resume", goalId: goal.goalId },
     },
   });
-  assert.equal(harness.hostOverflowRecoveryAttempted, true);
+  assert.equal(reconstructHostOverflowCapNeedsUserReset(harness.entries), true);
 });
 
 test("custom command_start turn after host overflow exhaustion does not reset host recovery cap", async () => {
@@ -133,7 +133,7 @@ test("custom command_start turn after host overflow exhaustion does not reset ho
       details: { kind: "command_start", goalId: goal.goalId },
     },
   });
-  assert.equal(harness.hostOverflowRecoveryAttempted, true);
+  assert.equal(reconstructHostOverflowCapNeedsUserReset(harness.entries), true);
 });
 
 test("/goal new objective after overflow pause sends user turn and resets host overflow cap", async () => {
@@ -158,7 +158,7 @@ test("/goal new objective after overflow pause sends user turn and resets host o
     type: "message_start",
     message: { role: "user", content },
   });
-  assert.equal(harness.hostOverflowRecoveryAttempted, false);
+  assert.equal(reconstructHostOverflowCapNeedsUserReset(harness.entries), false);
 
   await emitPersistentAssistantError(harness, 2, "context_length_exceeded");
   assert.equal(harness.snapshot().goal?.status, "active");
@@ -190,7 +190,7 @@ test("/goal clear then start after overflow pause sends user turn and resets hos
     type: "message_start",
     message: { role: "user", content },
   });
-  assert.equal(harness.hostOverflowRecoveryAttempted, false);
+  assert.equal(reconstructHostOverflowCapNeedsUserReset(harness.entries), false);
 
   await emitPersistentAssistantError(harness, 2, "context_length_exceeded");
   assert.equal(harness.snapshot().goal?.status, "active");
@@ -201,7 +201,7 @@ test("/goal new objective after overflow pause survives extension reload and res
 
   await harness.reloadSession();
   assert.equal(harness.snapshot().goal?.status, "paused");
-  assert.equal(harness.hostOverflowRecoveryAttempted, true);
+  assert.equal(reconstructHostOverflowCapNeedsUserReset(harness.entries), true);
 
   harness.sentMessages.length = 0;
   harness.sentUserMessages.length = 0;
@@ -227,7 +227,7 @@ test("/goal new objective after overflow pause survives extension reload and res
     type: "message_start",
     message: { role: "user", content },
   });
-  assert.equal(harness.hostOverflowRecoveryAttempted, false);
+  assert.equal(reconstructHostOverflowCapNeedsUserReset(harness.entries), false);
 
   await emitPersistentAssistantError(harness, 2, "context_length_exceeded");
   assert.equal(harness.snapshot().goal?.status, "active");
@@ -238,7 +238,7 @@ test("/goal clear then start after overflow pause survives extension reload and 
 
   await harness.reloadSession();
   assert.equal(harness.snapshot().goal?.status, "paused");
-  assert.equal(harness.hostOverflowRecoveryAttempted, true);
+  assert.equal(reconstructHostOverflowCapNeedsUserReset(harness.entries), true);
 
   await harness.runCommand("clear");
   assert.equal(harness.snapshot().goal, null);
@@ -264,7 +264,7 @@ test("/goal clear then start after overflow pause survives extension reload and 
     type: "message_start",
     message: { role: "user", content },
   });
-  assert.equal(harness.hostOverflowRecoveryAttempted, false);
+  assert.equal(reconstructHostOverflowCapNeedsUserReset(harness.entries), false);
 
   await emitPersistentAssistantError(harness, 2, "context_length_exceeded");
   assert.equal(harness.snapshot().goal?.status, "active");
@@ -275,7 +275,7 @@ test("context overflow before any active goal sends user /goal start and persist
   assert.equal(harness.snapshot().goal, null);
 
   await emitPersistentAssistantError(harness, 0, "context_length_exceeded");
-  assert.equal(harness.hostOverflowRecoveryAttempted, true);
+  assert.equal(reconstructHostOverflowCapNeedsUserReset(harness.entries), true);
   assert.equal(
     harness.entries.some(
       (entry) =>
@@ -313,7 +313,7 @@ test("context overflow before any active goal sends user /goal start and persist
     type: "message_start",
     message: { role: "user", content },
   });
-  assert.equal(harness.hostOverflowRecoveryAttempted, false);
+  assert.equal(reconstructHostOverflowCapNeedsUserReset(harness.entries), false);
 });
 
 test("context overflow while goal is paused sends user turn on replacement start", async () => {
@@ -324,7 +324,7 @@ test("context overflow while goal is paused sends user turn on replacement start
 
   await emitPersistentAssistantError(harness, 1, "context_length_exceeded");
   assert.equal(harness.snapshot().goal?.status, "paused");
-  assert.equal(harness.hostOverflowRecoveryAttempted, true);
+  assert.equal(reconstructHostOverflowCapNeedsUserReset(harness.entries), true);
 
   const { goal, previousGoalId } = await replaceGoalAfterOverflowPause(harness, "ship the replacement");
   assert.notEqual(goal.goalId, previousGoalId);
@@ -343,5 +343,5 @@ test("context overflow while goal is paused sends user turn on replacement start
     type: "message_start",
     message: { role: "user", content },
   });
-  assert.equal(harness.hostOverflowRecoveryAttempted, false);
+  assert.equal(reconstructHostOverflowCapNeedsUserReset(harness.entries), false);
 });
