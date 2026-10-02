@@ -70,5 +70,5 @@
   "engines": {
     "node": ">=24.0.0"
   },
-  "packageManager": "npm@12.1.0"
+  "packageManager": "npm@12.2.0"
 }
