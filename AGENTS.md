@@ -29,7 +29,7 @@ Runs the full Node test suite (`test/*.test.ts`, via Node's native type strippin
 
 ## Pi 1.0 contracts
 
-Official Pi 1.0.0 and TypeBox 1.3.27 are the exact development baseline and intended floor. Preserve native custom-entry recovery, per-loop guarded continuation and final settlement; do not replace `agent_end` with notification-only `agent_settled`. Use native finalized events/tool correlation for exact-once usage and never assume `message_end` or boundary drafts have already appended. No removed fork checkpoint, recordUsage or metadata/revision API is a supported requirement. Rerun host-sensitive native suites/packed CLI qualification against the final fork 1.0 artifact when available.
+Official Pi 1.0.0 is the exact development baseline and intended floor. Development TypeBox is 1.3.34; the Pi 1.0.0 host still supplies TypeBox 1.3.27. Check both graphs rather than inferring runtime compatibility from a development bump. Preserve native custom-entry recovery, per-loop guarded continuation and final settlement; do not replace `agent_end` with notification-only `agent_settled`. Use native finalized events/tool correlation for exact-once usage and never assume `message_end` or boundary drafts have already appended. No removed fork checkpoint, recordUsage or metadata/revision API is a supported requirement. Rerun host-sensitive native suites/packed CLI qualification against the final fork 1.0 artifact when available.
 
 Historical release channels are owned npm `pi-codex-goal` plus GitHub releases; proposed new version 0.6.0. Parent controls independent review/merge/release; no live activation.
 
