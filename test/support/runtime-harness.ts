@@ -132,6 +132,17 @@ export function createRuntimeHarness(options: {
   };
 
   const pi: ExtensionAPI = {
+    ...{
+      refreshTools() {
+        unsupportedHarnessMethod("pi.refreshTools");
+      },
+      registerProviderAuthFallback() {
+        return unsupportedHarnessMethod("pi.registerProviderAuthFallback");
+      },
+      registerToolRenderer() {
+        unsupportedHarnessMethod("pi.registerToolRenderer");
+      },
+    },
     getSettings() { return unsupportedHarnessMethod("pi.getSettings"); },
     registerMcpServer() { unsupportedHarnessMethod("pi.registerMcpServer"); },
     unregisterMcpServer() { unsupportedHarnessMethod("pi.unregisterMcpServer"); },

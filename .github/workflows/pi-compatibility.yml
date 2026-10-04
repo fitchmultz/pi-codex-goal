@@ -5,6 +5,16 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      official-version:
+        description: Official stable version resolved for this run; blank resolves latest
+        type: string
+        default: ''
+      fork-ref:
+        description: Maintained fork commit resolved for this run; blank resolves main
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -14,16 +24,29 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PI_AUTOMATION_REF: f2a480f00d45cdbd8595090b79aee107c4d88098
+  PI_AUTOMATION_REF: 9ed8688158fce1f587ecc0b9a2e683a9b21550fa # main
 
 jobs:
+  resolve:
+    uses: fitchmultz/.github/.github/workflows/resolve-hosts.yml@9ed8688158fce1f587ecc0b9a2e683a9b21550fa # main
+    with:
+      automation-ref: 9ed8688158fce1f587ecc0b9a2e683a9b21550fa # main
+      official-version: ${{ inputs.official-version }}
+      fork-ref: ${{ inputs.fork-ref }}
+
   compatibility:
+    needs: resolve
+    if: ${{ !cancelled() }}
     name: compatibility / compatibility
     runs-on: ubuntu-latest
     timeout-minutes: 8
     env:
       npm_config_cache: ${{ github.workspace }}/.npm-cache
     steps:
+      - name: Require resolved latest hosts
+        env:
+          RESOLVE: ${{ needs.resolve.result }}
+        run: test "$RESOLVE" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: fitchmultz/.github
@@ -44,41 +67,20 @@ jobs:
         id: fork
         with:
           repository: fitchmultz/pi
-          ref: main
+          ref: ${{ needs.resolve.outputs.fork-ref }}
           path: fork
           persist-credentials: false
       - name: Use the extension npm version
         run: npm install --global "$(node -p 'require("./extension/package.json").packageManager')"
       - name: Qualify official Pi
+        env:
+          OFFICIAL_VERSION: ${{ needs.resolve.outputs.official-version }}
         run: |
           node automation/scripts/qualify.mjs --repo pi-codex-goal --source "$GITHUB_WORKSPACE/extension" \
-            --host official --target 1.0.0 --output "$RUNNER_TEMP/official-evidence"
-      - name: Check fork support floor
-        id: fork-support
-        env:
-          FORK_REF: ${{ steps.fork.outputs.commit }}
-        run: |
-          node --input-type=module <<'NODE'
-          import assert from "node:assert/strict";
-          import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-          const version = JSON.parse(readFileSync("fork/packages/coding-agent/package.json")).version;
-          const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/.exec(version);
-          assert.ok(match, `Invalid fork version: ${version}`);
-          const supported = Number(match[1]) >= 1 && !(version.startsWith("1.0.0-"));
-          appendFileSync(process.env.GITHUB_OUTPUT, `supported=${supported}\n`);
-          if (!supported) {
-            const receipt = { result: "unattempted", host: "fork", ref: process.env.FORK_REF, version, floor: "1.0.0", reason: "Fork is older than the supported Pi floor; no build or qualification attempted." };
-            mkdirSync(`${process.env.RUNNER_TEMP}/fork-evidence`, { recursive: true });
-            writeFileSync(`${process.env.RUNNER_TEMP}/fork-evidence/qualification.json`, JSON.stringify(receipt, null, 2) + "\n");
-            appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### Fork qualification: UNATTEMPTED\n\nFork \`${receipt.ref}\` is Pi ${version}, below the supported 1.0.0 floor. This is not a future-fork pass. Rerun qualification when the maintained fork reaches the floor.\n`);
-            console.log(JSON.stringify(receipt));
-          }
-          NODE
+            --host official --target "$OFFICIAL_VERSION" --output "$RUNNER_TEMP/official-evidence"
       - name: Use the reviewed npm version for the fork build
-        if: steps.fork-support.outputs.supported == 'true'
         run: npm install --global "$(node -p 'require("./automation/package.json").packageManager')"
       - name: Build fork once
-        if: steps.fork-support.outputs.supported == 'true'
         working-directory: fork
         env:
           FORK_REF: ${{ steps.fork.outputs.commit }}
@@ -92,12 +94,20 @@ jobs:
           node ../automation/scripts/pack-fork.mjs . "$RUNNER_TEMP/fork-package" "$FORK_REF"
           git diff --exit-code
       - name: Use the extension npm version
-        if: steps.fork-support.outputs.supported == 'true'
         run: npm install --global "$(node -p 'require("./extension/package.json").packageManager')"
       - name: Qualify fork Pi
-        if: steps.fork-support.outputs.supported == 'true'
         env:
           PI_COMPAT_FORK_REF: ${{ steps.fork.outputs.commit }}
         run: |
           node automation/scripts/qualify.mjs --repo pi-codex-goal --source "$GITHUB_WORKSPACE/extension" \
             --host fork --target "$RUNNER_TEMP/fork-package" --output "$RUNNER_TEMP/fork-evidence"
+      - name: Retain qualification evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: host-qualification
+          path: |
+            ${{ runner.temp }}/official-evidence
+            ${{ runner.temp }}/fork-evidence
+          if-no-files-found: error
+          retention-days: 3
