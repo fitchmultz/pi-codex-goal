@@ -139,6 +139,9 @@ export function createRuntimeHarness(options: {
       registerProviderAuthFallback() {
         return unsupportedHarnessMethod("pi.registerProviderAuthFallback");
       },
+      registerToolRenderer() {
+        unsupportedHarnessMethod("pi.registerToolRenderer");
+      },
     },
     getSettings() { return unsupportedHarnessMethod("pi.getSettings"); },
     registerMcpServer() { unsupportedHarnessMethod("pi.registerMcpServer"); },
@@ -175,9 +178,6 @@ export function createRuntimeHarness(options: {
     registerCommand,
     registerEntryRenderer() {
       unsupportedHarnessMethod("pi.registerEntryRenderer");
-    },
-    registerToolRenderer() {
-      unsupportedHarnessMethod("pi.registerToolRenderer");
     },
     registerFlag() {
       unsupportedHarnessMethod("pi.registerFlag");
