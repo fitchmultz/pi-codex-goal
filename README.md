@@ -89,7 +89,7 @@ Locally run the shared native Git/packed consumer qualification without invoking
 
 ```sh
 git clone https://github.com/fitchmultz/.github.git /tmp/pi-goal-automation
-git -C /tmp/pi-goal-automation checkout 3b7a5f72d9c2d67d6fb53ef7bd308b005c385af3
+git -C /tmp/pi-goal-automation checkout 9b08d65d70a01c74c4e01477ccf9473e86be33ee
 node /tmp/pi-goal-automation/scripts/qualify.mjs --repo pi-codex-goal --source "$PWD" \
   --host official --target latest --output /tmp/pi-goal-evidence
 ```
