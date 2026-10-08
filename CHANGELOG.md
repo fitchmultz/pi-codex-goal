@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Add model-declared `waiting` goals for named background work that delivers its own result, stopping hidden continuation loops and active time while waiting (#105). Reactivate on new user/steering/extension input or explicit `/goal resume`, preserve waiting reasons across sessions, and keep goal bookkeeping from waking a wait.
+- Stop rewriting messages in provider context. Rebuilding answered continuations from the current goal broke prompt caching on every automatic continuation and goal transition. Queued work delivered after its goal stops being active is now cancelled once, when it is delivered.
 
 ## 0.6.1 - 2026-10-12
 

@@ -566,25 +566,6 @@ function parseProviderContextHandlerResult(result: unknown): ProviderContextHand
   return { messages };
 }
 
-export function requireProviderContextResult(
-  results: ProviderContextHandlerResult[],
-): ProviderContextResult {
-  const result = results[0];
-  if (result === undefined) {
-    assert.fail("Expected provider context handler to return rewritten messages.");
-  }
-  return result;
-}
-
-export function providerContextMessageAt(
-  result: ProviderContextResult,
-  index: number,
-): QueuedGoalContextCarrier {
-  const message = result.messages[index];
-  assert.ok(message, `Expected provider context message at index ${index}.`);
-  return message;
-}
-
 export function goalUserContextMessage(text: string, timestamp = 1): QueuedGoalContextCarrier {
   const content: QueuedGoalUserContent = [{ type: "text", text }];
   return {
@@ -612,10 +593,27 @@ export async function emitQueuedTurnThroughContext(
   await harness.emit("turn_start", { type: "turn_start", turnIndex, timestamp: turnIndex + 1 });
   for (const message of messages) {
     await harness.emit("message_start", { type: "message_start", message });
-    await harness.emit("message_end", { type: "message_end", message });
+    await emitMessageEnd(harness, message);
   }
   const results = await harness.emit("context", { type: "context", messages });
   return results.map(parseProviderContextHandlerResult);
+}
+
+/** Emits `message_end` and, like Pi, replaces the delivered message in place with any handler replacement. */
+export async function emitMessageEnd(harness: RuntimeHarness, message: QueuedGoalContextCarrier): Promise<void> {
+  const results = await harness.emit("message_end", { type: "message_end", message });
+  for (const result of results) {
+    if (result === undefined) {
+      continue;
+    }
+    assert.ok(result && typeof result === "object" && "message" in result, "Expected a message_end replacement result.");
+    const replacement = result.message;
+    assert.ok(replacement && typeof replacement === "object", "Expected a replacement message.");
+    for (const key of Object.keys(message)) {
+      Reflect.deleteProperty(message, key);
+    }
+    Object.assign(message, replacement);
+  }
 }
 
 export function assistantMessage(

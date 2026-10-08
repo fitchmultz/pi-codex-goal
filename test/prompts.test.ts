@@ -9,7 +9,6 @@ import {
   continuationGoalIdFromPrompt,
   continuationPrompt,
   goalToolReference,
-  supersededContinuationMessage,
 } from "../src/prompts.ts";
 import { createThreadGoal } from "../src/state.ts";
 
@@ -52,14 +51,6 @@ test("compact continuation keeps marker detection without repeating the full obj
   assert.doesNotMatch(compact, /<untrusted_objective>/);
   assert.match(compact, /get_goal/);
   assert.ok(compact.length < full.length);
-});
-
-test("superseded continuation bookkeeping does not expose a runnable marker", () => {
-  const created = createThreadGoal("ship it", 10);
-
-  const superseded = supersededContinuationMessage(created.goalId);
-  assert.equal(continuationGoalIdFromPrompt(superseded), null);
-  assert.match(superseded, /Superseded hidden goal continuation bookkeeping/);
 });
 
 test("continuation and budget-limit prompts reference exposed goal-completion tool names", () => {

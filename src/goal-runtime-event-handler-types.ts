@@ -9,6 +9,7 @@ import type {
   ExtensionHandler,
   InputEvent,
   InputEventResult,
+  MessageEndEventResult,
   SessionBeforeCompactEvent,
   SessionCompactEvent,
   SessionShutdownEvent,
@@ -24,18 +25,20 @@ import type { GoalStateController } from "./goal-state-controller.ts";
 import type { AssistantErrorMessage } from "./recovery.ts";
 import type { GoalEntrySource, GoalResult } from "./types.ts";
 
-export type ContextEventResult = { messages?: ContextEvent["messages"] };
+export type { MessageEndEventResult };
 export type MessageStartEvent = Extract<ExtensionEvent, { type: "message_start" }>;
+export type MessageEndEvent = Extract<ExtensionEvent, { type: "message_end" }>;
 export type ToolExecutionEndEvent = Extract<ExtensionEvent, { type: "tool_execution_end" }>;
 
 export interface GoalRuntimeEventHandlers {
   onInput: ExtensionHandler<InputEvent, InputEventResult>;
-  onContext: ExtensionHandler<ContextEvent, ContextEventResult | undefined>;
+  onContext: ExtensionHandler<ContextEvent, undefined>;
   onSessionStart: ExtensionHandler<SessionStartEvent>;
   onSessionTree: ExtensionHandler<SessionTreeEvent>;
   onBeforeAgentStart: ExtensionHandler<BeforeAgentStartEvent, undefined>;
   onAgentStart: ExtensionHandler<AgentStartEvent>;
   onMessageStart: ExtensionHandler<MessageStartEvent>;
+  onMessageEnd: ExtensionHandler<MessageEndEvent, MessageEndEventResult | undefined>;
   onTurnStart: ExtensionHandler<TurnStartEvent>;
   onToolExecutionEnd: ExtensionHandler<ToolExecutionEndEvent>;
   onTurnEnd: ExtensionHandler<TurnEndEvent>;

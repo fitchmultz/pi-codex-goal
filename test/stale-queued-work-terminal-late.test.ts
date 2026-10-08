@@ -7,9 +7,7 @@ import {
   emitProviderContext,
   emitQueuedTurnThroughContext,
   goalUserContextMessage,
-  providerContextMessageAt,
   queuedCustomMessage,
-  requireProviderContextResult,
   sessionShutdownEvent,
 } from "./support/runtime-harness.ts";
 import { CUSTOM_ENTRY_TYPE } from "../src/types.ts";

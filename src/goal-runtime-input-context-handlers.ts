@@ -8,15 +8,16 @@ import type {
 
 import { continuationGoalIdFromPrompt } from "./prompts.ts";
 import { CUSTOM_ENTRY_TYPE } from "./types.ts";
-import { applyQueuedGoalProviderContextRewrites, extensionQueuedGoalWorkMessageId } from "./queued-goal-work.ts";
+import { cancelQueuedGoalWork } from "./queued-goal-work.ts";
 import {
   isActiveGoalQueuedDetails,
   isCommandResumeQueuedGoalMessage,
 } from "./queued-goal-messages.ts";
 import { applyStaleQueuedWorkEffects } from "./goal-runtime-event-utils.ts";
 import type {
-  ContextEventResult,
   GoalRuntimeInputContextHandlerContext,
+  MessageEndEvent,
+  MessageEndEventResult,
   MessageStartEvent,
   QueuedGoalWorkMessageIdResolver,
 } from "./goal-runtime-event-handler-types.ts";
@@ -66,13 +67,10 @@ export function createInputContextEventHandlers(
       return { action: "handled" } as const;
     }) satisfies ExtensionHandler<InputEvent, InputEventResult>,
 
-    onContext: (async (event, ctx) => {
-      const { messages, changed } = applyQueuedGoalProviderContextRewrites(event.messages, {
-        goal: stateController.getGoal(),
-        resolveStaleQueuedGoalWorkMessageId: queuedGoalWorkMessageIdForRuntime,
-        resolveActiveContinuationQueuedGoalWorkMessageId: extensionQueuedGoalWorkMessageId,
-      });
-
+    // Provider context is left exactly as the transcript has it. Prompt caches match the request
+    // prefix, so any message rewritten here from current goal state after the provider has seen it
+    // re-caches everything from that message on. Stale queued work is cancelled at delivery instead.
+    onContext: (async (_event, ctx) => {
       const contextAbortPlan = runtimeState.staleQueuedWorkGuard.planContextAbort(
         runtimeState.currentTurnIndex,
       );
@@ -80,8 +78,8 @@ export function createInputContextEventHandlers(
         applyStaleQueuedWorkEffects(contextAbortPlan.effects, ctx, deps);
       }
 
-      return changed ? { messages } : undefined;
-    }) satisfies ExtensionHandler<ContextEvent, ContextEventResult | undefined>,
+      return undefined;
+    }) satisfies ExtensionHandler<ContextEvent, undefined>,
 
     onBeforeAgentStart: (async (event, ctx) => {
       if (!("prompt" in event)) return undefined;
@@ -145,5 +143,25 @@ export function createInputContextEventHandlers(
 
       runtimeState.staleQueuedWorkGuard.noteStaleWorkStarted(queuedGoalId);
     }) satisfies ExtensionHandler<MessageStartEvent>,
+
+    onMessageEnd: (async (event, _ctx): Promise<MessageEndEventResult | undefined> => {
+      const { message } = event;
+      const queuedGoalId = queuedGoalWorkMessageIdForRuntime(message);
+      if (queuedGoalId === null || stateController.isCurrentActiveGoalId(queuedGoalId)) {
+        return undefined;
+      }
+
+      const cancellation = cancelQueuedGoalWork(message, queuedGoalId, stateController.getGoal());
+      if (cancellation === null) {
+        return undefined;
+      }
+      if (message.role === "custom") {
+        return { message: { ...message, content: cancellation.text, display: false, details: cancellation.details } };
+      }
+      if (message.role === "user") {
+        return { message: { ...message, content: [{ type: "text", text: cancellation.text }] } };
+      }
+      return undefined;
+    }) satisfies ExtensionHandler<MessageEndEvent, MessageEndEventResult | undefined>,
   };
 }

@@ -424,3 +424,35 @@ test("native idle notifications and goal bookkeeping cannot reactivate a waiting
   assert.deepEqual(h.goal(), saved);
   assert.equal(h.faux.state.callCount, calls, "a stale goal continuation is cancelled before the provider");
 });
+
+test("native goal continuations and completion resend every earlier provider message unchanged", async (t) => {
+  const h = await fixture(t);
+  const responses = [
+    fauxAssistantMessage("Step one done; the goal continues."),
+    fauxAssistantMessage("Step two done; the goal continues."),
+    fauxAssistantMessage("Step three done; the goal continues."),
+    complete(),
+    fauxAssistantMessage("Goal complete."),
+  ];
+  const requests: unknown[][] = [];
+  h.session.agent.streamFunction = (model, context) => {
+    // Prompt caches match this request prefix exactly, including the system prompt and tools it carries.
+    requests.push(JSON.parse(JSON.stringify(context.messages)));
+    const response = responses[requests.length - 1];
+    assert.ok(response, "no extra provider request");
+    const message = { ...response, api: model.api, provider: model.provider, model: model.id, timestamp: Date.now() };
+    const stream = createAssistantMessageEventStream();
+    queueMicrotask(() => {
+      stream.push({ type: "done", reason: message.stopReason === "toolUse" ? "toolUse" : "stop", message });
+      stream.end();
+    });
+    return stream;
+  };
+  await h.session.prompt("Work through the goal one step per turn.");
+  await waitForGoalCompletion(h);
+  assert.equal(requests.length, responses.length, "three automatic continuations, completion and its receipt");
+  for (let index = 1; index < requests.length; index += 1) {
+    const previous = requests[index - 1]!, current = requests[index]!;
+    assert.deepEqual(current.slice(0, previous.length), previous, `request ${index} resends request ${index - 1} unchanged`);
+  }
+});

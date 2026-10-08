@@ -109,15 +109,6 @@ export function escapeXmlText(value: string): string {
     .replaceAll(">", "&gt;");
 }
 
-export function supersededContinuationMessage(goalId: string): string {
-  return [
-    "Superseded hidden goal continuation bookkeeping.",
-    `Goal id: ${goalId}.`,
-    "A newer continuation for this active goal appears later in context.",
-    "Ignore this message; do not perform work for it or mention it to the user.",
-  ].join("\n");
-}
-
 export function compactContinuationPrompt(goal: ThreadGoal): string {
   return [
     `${CONTINUATION_MARKER_PREFIX}${goal.goalId}\">`,

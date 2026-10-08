@@ -9,8 +9,8 @@ import type {
 } from "./goal-runtime-event-handler-types.ts";
 
 export type {
-  ContextEventResult,
   GoalRuntimeEventHandlers,
+  MessageEndEvent,
   MessageStartEvent,
   ToolExecutionEndEvent,
 } from "./goal-runtime-event-handler-types.ts";
