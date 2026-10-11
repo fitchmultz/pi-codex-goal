@@ -8,7 +8,7 @@ pi-codex-goal adds a persistent goal to [Pi](https://github.com/earendil-works/p
 
 ## Install and start
 
-Use Pi 1.0.0 or later and Node.js 24 or later. The extension supports official Pi releases and the maintained fork.
+Use Pi 1.0.0 or later and Node.js 24 or later. The extension supports official Pi releases and the [fitchmultz Pi fork](https://github.com/fitchmultz/pi).
 
 ```sh
 pi install npm:pi-codex-goal
@@ -21,7 +21,7 @@ Run `/reload` if Pi is already open. Enter a task in the Pi editor:
 /create-goal Add CSV export to the reports page. Test the export. Document its use.
 ```
 
-`/create-goal` expands your task into an objective with completion checks. This command replaces the current goal. Include all requirements that must remain.
+`/create-goal` expands your task into an objective with completion checks. The new goal replaces the old one. Include every requirement you want to keep.
 
 ## Goal controls
 
@@ -59,7 +59,7 @@ Pi controls compaction. The extension uses bounded retries for transient provide
 
 Ask the agent to use `create_goal`, `get_goal`, and `update_goal` for headless runs.
 
-`/goal` works in Pi's editor. Print-mode input such as `pi -p '/goal …'` does not call this command.
+`pi -p '/goal …'` runs the command and can change saved goals. Print mode can exit before the goal turn finishes and leave the goal paused.
 
 ## Details
 

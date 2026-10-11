@@ -39,8 +39,8 @@
   <rect width="1600" height="640" fill="url(#blueBloom)"/>
   <rect width="1600" height="640" fill="url(#violetBloom)"/>
   <g class="sans">
-    <text x="64" y="82" font-size="48" font-weight="700" letter-spacing="-1" fill="#F8FAFC">One goal. Progress across turns.</text>
-    <text x="64" y="124" class="copy">Set the objective, let Pi work, and stay in control.</text>
+    <text x="64" y="82" font-size="48" font-weight="700" letter-spacing="-1" fill="#F8FAFC">How a goal runs</text>
+    <text x="64" y="124" class="copy">Pi continues an active goal and saves its state in the session.</text>
   </g>
 
   <!-- Reserved lanes: creation and completion run left-to-right; save and stop branch downward. -->

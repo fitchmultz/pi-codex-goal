@@ -4,23 +4,17 @@
 
 ## Installation options
 
-Requires Pi 1.0.0 or later (official releases and the maintained fork) and Node.js 24 or later.
+Requires Pi 1.0.0 or later (official releases and the [fitchmultz Pi fork](https://github.com/fitchmultz/pi)) and Node.js 24 or later.
 
 ```sh
 # Latest npm release
 pi install npm:pi-codex-goal
 
-# A specific npm version
-pi install npm:pi-codex-goal@<version>
-
 # Current GitHub default branch
 pi install https://github.com/fitchmultz/pi-codex-goal
-
-# A specific GitHub release tag
-pi install https://github.com/fitchmultz/pi-codex-goal@v<version>
 ```
 
-npm versions and pinned GitHub tags are reproducible release artifacts. The default branch can include unreleased changes even when `package.json` still identifies the latest published version.
+The GitHub default branch can include unreleased changes even when `package.json` still identifies the latest published version.
 
 npm, Git, and local directory installs all load the TypeScript source (`extensions/index.ts` and `src/`) through Pi's extension loader. There is no build step or production TypeScript dependency. See [development setup](development.md#local-setup) for local checkouts and duplicate-install precautions.
 
@@ -29,6 +23,8 @@ npm, Git, and local directory installs all load the TypeScript source (`extensio
 The [README command table](../README.md#goal-controls) covers the usual controls.
 
 `/create-goal <task>` expands the task into an objective covering outcome, verification, constraints, iteration, a completion audit, and a blocked-stop condition. It asks the model to call `create_goal` with explicit replacement enabled, so you do not need to run `/goal clear` before setting a new goal.
+
+The template follows the goal-writing practices in OpenAI's [Codex follow-goals guide](https://developers.openai.com/codex/use-cases/follow-goals) and [Using goals in Codex cookbook](https://developers.openai.com/cookbook/examples/codex/using_goals_in_codex).
 
 `/goal` with no arguments reports the current objective, status, token budget, token usage, and elapsed active time. A plain `/goal <objective>` starts a new unlimited goal or replaces the current one after confirmation. `/goal copy` copies the objective for active, paused, blocked, budget-limited, and completed goals.
 

@@ -32,12 +32,11 @@ Run the shared native Git/packed consumer qualification locally:
 
 ```sh
 git clone https://github.com/fitchmultz/.github.git /tmp/pi-goal-automation
-git -C /tmp/pi-goal-automation checkout 9b08d65d70a01c74c4e01477ccf9473e86be33ee
 node /tmp/pi-goal-automation/scripts/qualify.mjs --repo pi-codex-goal --source "$PWD" \
   --host official --target latest --output /tmp/pi-goal-evidence
 ```
 
-The helper revision above matches `.github/workflows/pi-compatibility.yml`; update them together when qualification changes. Qualification does not publish, install into live settings, restart active sessions, merge, or tag.
+The compatibility workflow uses this qualification tool for both Pi hosts. Qualification does not publish, install into live settings, restart active sessions, merge, or tag.
 
 ## Interactive smoke tests
 
@@ -86,7 +85,7 @@ Verified content: PI_GOAL_SLASH_OK
 Final goal status: complete
 ```
 
-`/goal` is an interactive editor command. Do not use `pi -p '/goal ...'` as a slash-command smoke path; print mode sends an initial model prompt and does not reliably exercise this extension command. For headless automation, prompt the model to call `create_goal`, `get_goal`, and `update_goal` instead.
+Print mode dispatches `/goal` commands and can change saved goal state. It can exit before a queued goal turn finishes; an aborted active goal becomes paused. Run these smoke tests in interactive Pi. For headless automation, prompt the model to call `create_goal`, `get_goal`, and `update_goal`.
 
 ### TUI automation and troubleshooting
 
