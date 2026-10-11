@@ -4,8 +4,6 @@ pi-codex-goal adds a persistent goal to [Pi](https://github.com/earendil-works/p
 
 ![Goal flow: create a task, work in Pi, save session state, and stop at completion, pause, a blocker, or a token limit.](.github/readme/goal-workflow.png)
 
-*Completion, pause, a blocker, or a token limit stops automatic continuation.*
-
 ## Install and start
 
 Use Pi 1.0.0 or later and Node.js 24 or later. The extension supports official Pi releases and the [fitchmultz Pi fork](https://github.com/fitchmultz/pi).
