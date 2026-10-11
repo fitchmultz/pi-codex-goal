@@ -26,7 +26,7 @@ npm, Git, and local directory installs all load the TypeScript source (`extensio
 
 ## User commands
 
-The [README command table](../README.md#control-the-goal) covers the usual controls.
+The [README command table](../README.md#goal-controls) covers the usual controls.
 
 `/create-goal <task>` expands the task into an objective covering outcome, verification, constraints, iteration, a completion audit, and a blocked-stop condition. It asks the model to call `create_goal` with explicit replacement enabled, so you do not need to run `/goal clear` before setting a new goal.
 
