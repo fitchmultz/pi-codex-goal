@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="640" viewBox="0 0 1600 640" role="img" aria-labelledby="title desc">
+  <title id="title">How a Pi goal keeps moving</title>
+  <desc id="desc">A task creates one active goal in Pi. Pi sends follow-ups while the goal remains active and saves objective, status and usage in session history. Verified completion ends the goal; pause, a blocked dependency or a reached token budget stops automatic continuation.</desc>
+  <!-- Semantic sources: prompts/create-goal.md; src/commands.ts; src/continuation-scheduler.ts; src/tools.ts; src/state.ts; src/goal-persistence.ts. -->
+  <defs>
+    <linearGradient id="canvas" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#060A12"/><stop offset="0.52" stop-color="#0B1120"/><stop offset="1" stop-color="#080C16"/>
+    </linearGradient>
+    <radialGradient id="blueBloom" cx="0.18" cy="0.18" r="0.8">
+      <stop stop-color="#2563EB" stop-opacity="0.22"/><stop offset="1" stop-color="#2563EB" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="violetBloom" cx="0.82" cy="0.36" r="0.7">
+      <stop stop-color="#8B5CF6" stop-opacity="0.16"/><stop offset="1" stop-color="#8B5CF6" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#172238" stop-opacity="0.96"/><stop offset="1" stop-color="#0E1525" stop-opacity="0.98"/>
+    </linearGradient>
+    <linearGradient id="focus" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#172554" stop-opacity="0.82"/><stop offset="1" stop-color="#312E81" stop-opacity="0.58"/>
+    </linearGradient>
+    <filter id="shadow" x="-15%" y="-25%" width="130%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#02040A" flood-opacity="0.54"/>
+    </filter>
+    <marker id="arrowBlue" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="8" markerHeight="8" orient="auto"><path d="M1 1 11 6 1 11Z" fill="#60A5FA"/></marker>
+    <marker id="arrowViolet" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="8" markerHeight="8" orient="auto"><path d="M1 1 11 6 1 11Z" fill="#A78BFA"/></marker>
+    <marker id="arrowGreen" viewBox="0 0 12 12" refX="10" refY="6" markerWidth="8" markerHeight="8" orient="auto"><path d="M1 1 11 6 1 11Z" fill="#34D399"/></marker>
+    <style>
+      .sans { font-family: Inter, ui-sans-serif, Arial, sans-serif; }
+      .mono { font-family: "JetBrains Mono", ui-monospace, monospace; }
+      .heading { font-size: 32px; font-weight: 650; fill: #F8FAFC; }
+      .copy { font-size: 26px; fill: #BBC9DE; }
+      .chip { font: 600 20px "JetBrains Mono", ui-monospace, monospace; }
+      .connector { fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+    </style>
+  </defs>
+
+  <!-- Solid canvas and restrained bloom use the fleet's dark starter tokens. -->
+  <rect width="1600" height="640" fill="url(#canvas)"/>
+  <rect width="1600" height="640" fill="url(#blueBloom)"/>
+  <rect width="1600" height="640" fill="url(#violetBloom)"/>
+  <g class="sans">
+    <text x="64" y="82" font-size="48" font-weight="700" letter-spacing="-1" fill="#F8FAFC">One goal. Progress across turns.</text>
+    <text x="64" y="124" class="copy">Set the objective, let Pi work, and stay in control.</text>
+  </g>
+
+  <!-- Reserved lanes: creation and completion run left-to-right; save and stop branch downward. -->
+  <path d="M419 295H479" class="connector" stroke="#60A5FA" marker-end="url(#arrowBlue)"/>
+  <path d="M1079 295H1140" class="connector" stroke="#34D399" marker-end="url(#arrowGreen)"/>
+  <path d="M608 425V447H384V470" class="connector" stroke="#60A5FA" stroke-dasharray="6 8"/>
+  <path d="M960 425V470" class="connector" stroke="#A78BFA" marker-end="url(#arrowViolet)"/>
+
+  <g class="sans" filter="url(#shadow)">
+    <g transform="translate(64 185)">
+      <rect width="355" height="210" rx="24" fill="url(#glass)" stroke="#2A3851"/>
+      <rect x="24" y="24" width="280" height="34" rx="17" fill="#172554" stroke="#38517A"/>
+      <text x="40" y="48" class="chip" fill="#93C5FD">/create-goal &lt;task&gt;</text>
+      <text x="28" y="106" class="heading">Your objective</text>
+      <text x="28" y="147" class="copy">What to build</text>
+      <text x="28" y="181" class="copy">and how to verify it</text>
+    </g>
+    <g transform="translate(479 160)">
+      <rect width="600" height="265" rx="28" fill="url(#focus)" stroke="#6D7DFF" stroke-opacity="0.62"/>
+      <rect x="28" y="26" width="112" height="34" rx="17" fill="#101D38" stroke="#51426F"/>
+      <text x="45" y="50" class="chip" fill="#D8B4FE">ACTIVE</text>
+      <text x="28" y="110" font-size="38" font-weight="700" fill="#F8FAFC">Pi works toward the goal</text>
+      <text x="28" y="153" class="copy">Tracks tokens and active time</text>
+      <path d="M44 198a14 14 0 1 0 8 25M44 198h11v-11" fill="none" stroke="#A78BFA" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="74" y="220" class="copy" fill="#E9D5FF">Follow-ups while still active</text>
+    </g>
+    <g transform="translate(1140 185)">
+      <rect width="396" height="210" rx="24" fill="url(#glass)" stroke="#285A4A"/>
+      <circle cx="47" cy="43" r="20" fill="#34D399" fill-opacity="0.14"/>
+      <path d="m37 43 7 7 14-17" fill="none" stroke="#6EE7B7" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      <text x="28" y="106" class="heading">Verified completion</text>
+      <text x="28" y="147" class="chip" fill="#6EE7B7">update_goal: complete</text>
+      <text x="28" y="181" class="copy">Automatic follow-ups end</text>
+    </g>
+    <g transform="translate(64 470)">
+      <rect width="620" height="126" rx="22" fill="url(#glass)" stroke="#2A3851"/>
+      <text x="28" y="46" font-size="30" font-weight="650" fill="#F8FAFC">Saved in Pi session history</text>
+      <text x="28" y="88" class="copy">Objective, status, and usage travel with it</text>
+    </g>
+    <g transform="translate(840 470)">
+      <rect width="696" height="126" rx="22" fill="url(#glass)" stroke="#51426F"/>
+      <text x="28" y="46" font-size="30" font-weight="650" fill="#F8FAFC">Paused · blocked · budget reached</text>
+      <text x="28" y="88" class="copy">Automatic follow-ups stop; inspect with /goal</text>
+    </g>
+  </g>
+</svg>
