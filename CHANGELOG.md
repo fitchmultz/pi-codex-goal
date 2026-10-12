@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased (0.6.0)
+## 0.6.1 - 2026-10-12
+
+- Keep user-prompt bookkeeping separate from custom-message starts on newer Pi hosts, preventing hidden goal continuations and notifications from throwing before a run starts.
+- Preserve active, superseded, stale, and budget-limited custom work through native lifecycle bookkeeping, with subsequent ordinary user input verified on both supported hosts.
+- Type user-start fixtures against both the released official Pi event and the newer fork's discriminated event contract.
+- Refresh the installation, controls, recovery, and headless-use documentation; make completion-audit prompt helpers internal without changing their prompt text.
+
+## 0.6.0 - 2026-10-01
 
 - Raise the documented supported floor and exact development Pi cohort to 1.0.0 with host TypeBox 1.3.27; preserve optional host-owned runtime peers.
 - Refresh shared qualification to immutable helper f2a480f00d45cdbd8595090b79aee107c4d88098; qualify ordinary standalone source and native SDK/Git/packed CLI lifecycle locally without model credentials.

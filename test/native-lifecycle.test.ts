@@ -7,7 +7,9 @@ import { createAssistantMessageEventStream, fauxProvider, fauxAssistantMessage, 
 import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager, type ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import goalExtension from "../src/index.ts";
+import { compactContinuationPrompt, supersededContinuationMessage } from "../src/prompts.ts";
 import { reconstructGoal } from "../src/state.ts";
+import { CUSTOM_ENTRY_TYPE } from "../src/types.ts";
 
 async function fixture(t: TestContext, recover = false, extraFactories: ExtensionFactory[] = []) {
   const root = mkdtempSync(join(tmpdir(), "goal-native-"));
@@ -39,6 +41,80 @@ async function fixture(t: TestContext, recover = false, extraFactories: Extensio
 }
 
 const complete = () => fauxAssistantMessage(fauxToolCall("update_goal", { status: "complete" }), { stopReason: "toolUse" });
+
+for (const kind of ["continuation", "superseded_continuation", "stale_continuation"] as const) {
+test(`native idle ${kind} preserves goal bookkeeping and subsequent user input`, async (t) => {
+  const h = await fixture(t);
+  const goal = h.goal();
+  assert.ok(goal);
+  if (kind === "stale_continuation") {
+    const runner = h.session.extensionRunner;
+    const update = runner.getToolDefinition("update_goal");
+    assert.ok(update);
+    await update.execute("complete", { status: "complete" }, undefined, undefined, runner.createToolContext("complete", undefined));
+  }
+  h.faux.setResponses(kind === "continuation"
+    ? [fauxAssistantMessage(fauxToolCall("get_goal", {}), { stopReason: "toolUse" }), fauxAssistantMessage("Only inspected status.")]
+    : [complete(), fauxAssistantMessage("Goal complete.")]);
+  await h.session.sendCustomMessage({
+    customType: CUSTOM_ENTRY_TYPE,
+    content: kind === "superseded_continuation" ? supersededContinuationMessage(goal.goalId) : compactContinuationPrompt(goal),
+    display: false,
+    details: { kind: kind === "stale_continuation" ? "continuation" : kind, goalId: goal.goalId },
+  }, { triggerTurn: true });
+  await h.session.waitForIdle();
+  assert.equal(h.goal()?.status, kind === "continuation" ? "paused" : "complete");
+  assert.equal(h.faux.state.callCount, kind === "stale_continuation" ? 0 : 2,
+    "stale work is aborted before the provider; active or superseded work runs without duplicate continuation");
+  const saved = h.goal();
+  const calls = h.faux.state.callCount;
+  h.faux.setResponses([fauxAssistantMessage("Ordinary user input still works.")]);
+  await h.session.prompt("Answer an unrelated user question.");
+  await h.session.waitForIdle();
+  assert.deepEqual(h.goal(), saved, "user input must not reactivate a stopped goal or inherit a stale abort");
+  assert.equal(h.faux.state.callCount, calls + 1);
+});
+}
+
+test("native budget notification can start an idle run without reactivating the goal", async (t) => {
+  const h = await fixture(t);
+  await h.session.setModel({ ...h.faux.getModel(), contextWindow: 1_000_000 });
+  const runner = h.session.extensionRunner;
+  const create = runner.getToolDefinition("create_goal");
+  assert.ok(create);
+  await create.execute("budget", { objective: "Limited work", token_budget: 500_000, replace_existing: true },
+    undefined, undefined, runner.createToolContext("budget", undefined));
+  const response = fauxAssistantMessage("Budget consumed.");
+  response.usage = { ...response.usage, input: 500_000, output: 1, totalTokens: 500_001 };
+  const responses = [response, ...["Wrapping up.", "Still limited.", "Ordinary user input still works."].map((text) => fauxAssistantMessage(text))];
+  let requests = 0;
+  h.session.agent.streamFunction = () => {
+    const message = responses[requests++];
+    assert.ok(message, "budget-limited goals must not schedule another continuation");
+    const stream = createAssistantMessageEventStream();
+    queueMicrotask(() => {
+      stream.push({ type: "done", reason: "stop", message });
+      stream.end();
+    });
+    return stream;
+  };
+  await h.session.prompt("Do the limited work.");
+  await h.session.waitForIdle();
+  assert.equal(h.goal()?.status, "budgetLimited");
+  assert.equal(requests, 2, "the native budget warning runs once after the work response");
+  const notification = h.session.messages.find((message) =>
+    message.role === "custom" && (message.details as { kind?: unknown })?.kind === "budget_limit");
+  assert.ok(notification?.role === "custom");
+  const saved = h.goal();
+  await h.session.sendCustomMessage(notification, { triggerTurn: true });
+  await h.session.waitForIdle();
+  assert.deepEqual(h.goal(), saved, "idle budget notification is not new goal work or user command input");
+  assert.equal(requests, 3);
+  await h.session.prompt("Answer an unrelated user question.");
+  await h.session.waitForIdle();
+  assert.deepEqual(h.goal(), saved);
+  assert.equal(requests, 4);
+});
 
 async function waitForGoalCompletion(h: Awaited<ReturnType<typeof fixture>>): Promise<void> {
   // A scheduled continuation is not necessarily admitted when prompt() first returns.

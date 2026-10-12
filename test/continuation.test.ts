@@ -9,6 +9,7 @@ import { CUSTOM_ENTRY_TYPE } from "../src/types.ts";
 import {
   assistantMessage,
   createRuntimeHarness,
+  userBeforeAgentStartEvent,
   emitPersistentAssistantError,
   emitToolExecutionEnd,
   fireProviderLimitAutoResume,
@@ -84,12 +85,7 @@ test("a new user-driven agent start leaves a paused goal paused", async () => {
     toolResults: [],
   });
 
-  await harness.emit("before_agent_start", {
-    type: "before_agent_start",
-    prompt: "continue",
-    systemPrompt: "",
-    systemPromptOptions: {},
-  });
+  await harness.emit("before_agent_start", userBeforeAgentStartEvent("continue"));
 
   assert.equal(harness.snapshot().goal?.status, "paused");
   assert.equal(harness.snapshot().goal?.usage.tokensUsed, 10);
@@ -704,12 +700,7 @@ test("auto-queued continuations use the compact prompt", async () => {
   assert.match(startPrompt, /<untrusted_objective>/);
 
   harness.sentMessages.length = 0;
-  await harness.emit("before_agent_start", {
-    type: "before_agent_start",
-    prompt: startPrompt,
-    systemPrompt: "",
-    systemPromptOptions: {},
-  });
+  await harness.emit("before_agent_start", userBeforeAgentStartEvent(startPrompt));
   await harness.emit("agent_end", {
     type: "agent_end",
     messages: [assistantMessage("stop", { input: 1, output: 1 })],
@@ -756,12 +747,7 @@ test("session compaction queues continuation for active goals after the compacti
     const content = String(queued.message.content);
     harness.sentMessages.length = 0;
 
-    await harness.emit("before_agent_start", {
-      type: "before_agent_start",
-      prompt: content,
-      systemPrompt: "",
-      systemPromptOptions: {},
-    });
+    await harness.emit("before_agent_start", userBeforeAgentStartEvent(content));
     await harness.emit("session_compact", sessionCompactEvent());
 
     const goal = harness.snapshot().goal;
@@ -829,21 +815,11 @@ test("session compaction continuation is cancelled if a host retry starts before
     const content = String(queued.message.content);
     harness.sentMessages.length = 0;
 
-    await harness.emit("before_agent_start", {
-      type: "before_agent_start",
-      prompt: content,
-      systemPrompt: "",
-      systemPromptOptions: {},
-    });
+    await harness.emit("before_agent_start", userBeforeAgentStartEvent(content));
     await harness.emit("session_compact", sessionCompactEvent());
     assert.equal(harness.sentMessages.length, 0);
 
-    await harness.emit("before_agent_start", {
-      type: "before_agent_start",
-      prompt: "host compact-and-retry prompt",
-      systemPrompt: "",
-      systemPromptOptions: {},
-    });
+    await harness.emit("before_agent_start", userBeforeAgentStartEvent("host compact-and-retry prompt"));
     mock.timers.tick(1);
     assert.equal(harness.sentMessages.length, 0);
 
@@ -873,12 +849,7 @@ test("repeated session_compact events before the deferred check queue at most on
     const content = String(queued.message.content);
     harness.sentMessages.length = 0;
 
-    await harness.emit("before_agent_start", {
-      type: "before_agent_start",
-      prompt: content,
-      systemPrompt: "",
-      systemPromptOptions: {},
-    });
+    await harness.emit("before_agent_start", userBeforeAgentStartEvent(content));
     for (let index = 0; index < 3; index += 1) {
       await harness.emit("session_compact", sessionCompactEvent({
         summary: `compact summary ${index}`,
@@ -909,12 +880,7 @@ test("session shutdown cancels deferred session_compact continuations", async ()
     const content = String(queued.message.content);
     harness.sentMessages.length = 0;
 
-    await harness.emit("before_agent_start", {
-      type: "before_agent_start",
-      prompt: content,
-      systemPrompt: "",
-      systemPromptOptions: {},
-    });
+    await harness.emit("before_agent_start", userBeforeAgentStartEvent(content));
     await harness.emit("session_compact", sessionCompactEvent());
     await harness.emit("session_shutdown", sessionShutdownEvent());
 
