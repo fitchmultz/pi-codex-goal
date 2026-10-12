@@ -4,6 +4,7 @@ import { test } from "node:test";
 import {
   assistantMessage,
   createRuntimeHarness,
+  userBeforeAgentStartEvent,
   emitProviderContext,
   emitQueuedTurnThroughContext,
   goalCustomContextMessage,
@@ -55,12 +56,7 @@ for (const source of ["interactive", "rpc"] as const) {
     });
     assert.equal(inputResults[0], undefined);
 
-    const beforeAgentStartResults = await harness.emit("before_agent_start", {
-      type: "before_agent_start",
-      prompt,
-      systemPrompt: "base prompt",
-      systemPromptOptions: {},
-    });
+    const beforeAgentStartResults = await harness.emit("before_agent_start", userBeforeAgentStartEvent(prompt, "base prompt"));
     assert.equal(beforeAgentStartResults[0], undefined);
 
     const userMessage = goalUserContextMessage(prompt, 1);
@@ -97,12 +93,7 @@ test("stale queued continuation aborts if the goal became complete before launch
   }
 
   await harness.runTool("update_goal", { status: "complete" });
-  const results = await harness.emit("before_agent_start", {
-    type: "before_agent_start",
-    prompt,
-    systemPrompt: "base prompt",
-    systemPromptOptions: {},
-  });
+  const results = await harness.emit("before_agent_start", userBeforeAgentStartEvent(prompt, "base prompt"));
 
   assert.equal(results[0], undefined);
   assert.equal(harness.abortCount, 0);
@@ -407,12 +398,7 @@ test("goal follow-up guard resets when the queued prompt-based agent turn starts
   }
   harness.sentMessages.length = 0;
 
-  await harness.emit("before_agent_start", {
-    type: "before_agent_start",
-    prompt,
-    systemPrompt: "",
-    systemPromptOptions: {},
-  });
+  await harness.emit("before_agent_start", userBeforeAgentStartEvent(prompt));
   await harness.emit("agent_end", {
     type: "agent_end",
     messages: [assistantMessage("stop", { input: 30, output: 12 })],

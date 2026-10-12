@@ -12,6 +12,7 @@ import {
 import {
   assistantMessage,
   createRuntimeHarness,
+  userBeforeAgentStartEvent,
   emitPersistentAssistantError,
   flushContinuationScheduler,
   queuedCustomMessage,
@@ -333,12 +334,7 @@ test("successful turns reset transient error counters and continue active goals"
   await emitPersistentAssistantError(harness, 0, "websocket closed");
   assert.equal(harness.sentMessages.length, 0);
 
-  await harness.emit("before_agent_start", {
-    type: "before_agent_start",
-    prompt: "keep going",
-    systemPrompt: "",
-    systemPromptOptions: {},
-  });
+  await harness.emit("before_agent_start", userBeforeAgentStartEvent("keep going"));
   await harness.emit("turn_start", { type: "turn_start", turnIndex: 1, timestamp: 2 });
   await harness.emit("turn_end", {
     type: "turn_end",

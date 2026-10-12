@@ -3,6 +3,7 @@ import { mock } from "node:test";
 
 import type { AssistantMessage } from "@earendil-works/pi-ai";
 import type {
+  BeforeAgentStartEvent,
   ExtensionAPI,
   ExtensionCommandContext,
   ExtensionContext,
@@ -23,6 +24,16 @@ import {
 import { CUSTOM_ENTRY_TYPE } from "../../src/types.ts";
 
 type EventHandler = (event: object, ctx: ExtensionContext) => unknown | Promise<unknown>;
+
+export function userBeforeAgentStartEvent(prompt: string, systemPrompt = "") {
+  const systemPromptOptions = {
+    cwd: "/tmp", selectedTools: [], hiddenTools: [], toolSnippets: {}, toolGuidelines: {},
+    promptGuidelines: [], appendSystemPrompt: "", sections: {}, contextFiles: [], skills: [],
+  };
+  return {
+    type: "before_agent_start", messageType: "user", prompt, systemPrompt, systemPromptOptions,
+  } satisfies BeforeAgentStartEvent & { messageType: "user" };
+}
 
 function unsupportedHarnessMethod(name: string): never {
   throw new Error(`${name} is not implemented in this test harness.`);
