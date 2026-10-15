@@ -1,11 +1,14 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-import { formatFooterStatus } from "./format.ts";
+import { truncateToWidth } from "@earendil-works/pi-tui";
+
+import { formatFooterStatus, formatGoalObjective } from "./format.ts";
 import type { GoalRecoveryMachineState } from "./recovery-machine.ts";
 import type { ThreadGoal } from "./types.ts";
 
 export interface StatusContext {
-  ui: Pick<ExtensionContext["ui"], "setStatus">;
+  mode: ExtensionContext["mode"];
+  ui: Pick<ExtensionContext["ui"], "setStatus" | "setWidget" | "theme">;
 }
 
 interface GoalRuntimeStatusDeps {
@@ -58,6 +61,15 @@ export function createGoalRuntimeStatus(deps: GoalRuntimeStatusDeps) {
   const refreshUi = (ctx: StatusContext): void => {
     statusContext = ctx;
     ctx.ui.setStatus("codex-goal", formatFooterStatusForRuntime(deps));
+    if (ctx.mode === "tui") {
+      const goal = deps.getGoalForDisplay();
+      const objective = formatGoalObjective(goal);
+      const color = goal?.status === "active" ? "accent" : goal?.status === "budgetLimited" ? "error" : "warning";
+      ctx.ui.setWidget("codex-goal-objective", objective === undefined ? undefined : () => ({
+        render: (width) => [truncateToWidth(ctx.ui.theme.fg(color, objective), width, "…")],
+        invalidate() {},
+      }), { placement: "belowEditor" });
+    }
     syncStatusRefresh();
   };
 

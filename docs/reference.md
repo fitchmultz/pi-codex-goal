@@ -82,7 +82,7 @@ While a goal is active, the extension:
 - Marks the goal `budgetLimited` when a positive token budget is reached.
 - Sends hidden steering messages when budget is reached or when the agent is idle but the goal is still active.
 - Compacts repeated hidden goal continuations before provider context so only the latest active continuation stays runnable. Older ones become short bookkeeping markers, and auto-queued continuations use a compact prompt after `/goal` start or resume.
-- Shows Codex-style status labels with compact token or elapsed-time usage in the Pi footer when a UI is available.
+- Shows Codex-style status labels with compact token or elapsed-time usage in the Pi footer when a UI is available. The terminal UI also shows the current unfinished objective in a separate single-line widget below the editor. Paused, blocked, and budget-limited goals retain an explicit state label; completed or cleared goals hide the widget. Terminal control sequences are removed, whitespace is condensed, and long text is truncated to the available display width. Use `/goal` for the full objective.
 
 Token counts use commas and compact abbreviations, for example `123M (123,456,789) tokens`. Goal totals count only completed assistant-turn `input` plus `output` while the goal is active. Cache read/write channels are excluded because they are provider cache accounting fields rather than extra sent and received text tokens. Pi 0.81+ also folds tool, compaction, and branch-summary usage into host session totals/footer stats. Those host maintenance and nested-tool costs stay out of goal budgets, so goal tokens measure assistant turn work toward the objective rather than whole-session spend.
 
