@@ -1,3 +1,5 @@
+import { stripTerminalSequences } from "@earendil-works/pi-tui";
+
 import { formatRecoveryAttention, type RecoveryAttention } from "./recovery.ts";
 import type { GoalStatus, ThreadGoal } from "./types.ts";
 
@@ -123,6 +125,19 @@ export function formatGoalSummary(goal: ThreadGoal | null): string {
 
   lines.push(`Hint: ${commandHint(goal.status)}`);
   return lines.join("\n");
+}
+
+export function formatGoalObjective(goal: ThreadGoal | null): string | undefined {
+  if (!goal || goal.status === "complete") {
+    return undefined;
+  }
+
+  // Objectives are untrusted text, not terminal markup. Keep the widget on one line.
+  const objective = stripTerminalSequences(goal.objective)
+    .replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return `Goal (${statusLabel(goal.status)}): ${objective}`;
 }
 
 function compactBudgetUsage(goal: ThreadGoal): string {

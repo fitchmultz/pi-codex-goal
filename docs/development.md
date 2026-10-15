@@ -24,6 +24,12 @@ Install the checkout in only one Pi configuration scope at a time. Different loc
 
 On this maintainer machine, the active global/user Git package already points at `~/.pi/agent/git/github.com/fitchmultz/pi-codex-goal`. Do not also leave a project-local install in this repository's `.pi/` settings. See [AGENTS.md](../AGENTS.md) for machine-specific install policy and the module map.
 
+## Objective-row UI checks
+
+The below-editor objective row is display-only: it must not create goals, queue model work, or replace the existing footer. Keep multiline objectives on one terminal row, remove control sequences with Pi's `stripTerminalSequences()`, and truncate with `truncateToWidth()` rather than character counts. `test/goal-runtime-status.test.ts` covers OSC/ANSI input, wide characters, resize, themes, non-TUI modes, and goal/session transitions.
+
+Host-supplied runtime imports belong in optional wildcard peers **and** pinned direct development dependencies from the selected host cohort. Update the lockfile and retain the offline production-install test; an optional peer left only as a transitive development dependency can become `devOptional` and pull packages into a production install.
+
 ## Compatibility qualification
 
 Pull-request CI runs `check:compat` against the latest stable official Pi and latest maintained fork `main` on Ubuntu/Node 24. Version/commit identities are resolved once per workflow run and retained with exact SDK/CLI evidence. Both hosts are required. Qualification also checks clean Git and npm consumer installs through the native Pi CLI. Hosted CI does not call a model.

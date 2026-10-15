@@ -26,7 +26,8 @@ function createRecoveryTestRuntime(goal: ThreadGoal | null = activeGoal) {
   let refreshCount = 0;
 
   const ctx = {
-    ui: { setStatus() {} },
+    mode: "print",
+    ui: { setStatus() {}, setWidget() {}, theme: {} as StatusContext["ui"]["theme"] },
   } satisfies StatusContext;
 
   const runtime = createGoalRecoveryRuntime<StatusContext>({
@@ -173,7 +174,10 @@ test("recovery pause delegates reason without clearing continuation in recovery 
     scheduleProviderLimitAutoResume: () => {},
   });
 
-  const ctx = { ui: { setStatus() {} } } satisfies StatusContext;
+  const ctx = {
+    mode: "print",
+    ui: { setStatus() {}, setWidget() {}, theme: {} as StatusContext["ui"]["theme"] },
+  } satisfies StatusContext;
 
   runtime.handlePersistentAssistantError(
     { role: "assistant", stopReason: "error", errorMessage: "context_length_exceeded" },
