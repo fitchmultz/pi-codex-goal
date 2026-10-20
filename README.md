@@ -27,8 +27,8 @@ Run `/reload` if Pi is already open. Enter a task in the Pi editor:
 | --- | --- |
 | `/goal` | Show the objective, status, token budget, usage, and active time. |
 | `/goal <objective>` | Set the exact objective. Confirm replacement of an unfinished goal. |
-| `/goal pause` | Pause the active goal. |
-| `/goal resume` | Continue a paused or blocked goal. |
+| `/goal pause` | Pause an active or waiting goal. |
+| `/goal resume` | Continue a paused, blocked, or waiting goal. |
 | `/goal resume cancel` | Cancel a scheduled provider-limit retry. |
 | `/goal copy` | Copy the objective to the system clipboard. |
 | `/goal clear` | Remove the current goal. |
@@ -36,6 +36,8 @@ Run `/reload` if Pi is already open. Enter a task in the Pi editor:
 Press Esc to stop the current assistant turn and pause its active goal.
 
 A blocked goal needs input or external work. Run `/goal` to read the reason. Resolve the dependency. Run `/goal resume`.
+
+For background jobs that deliver their own result messages, the agent can set the goal to `waiting` with a reason naming the work. Waiting stops hidden continuations and active-time accounting without polling. New user input, steering, or another extension's result automatically reactivates the goal; `/goal resume` also works. `/goal pause` keeps it paused even when a result arrives.
 
 Completed goals stay complete. Create a new goal for more work.
 

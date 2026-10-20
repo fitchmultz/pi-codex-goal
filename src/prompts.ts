@@ -14,6 +14,8 @@ export function goalToolReference(toolName: GoalToolName): string {
 
 const UPDATE_GOAL_REF_PLACEHOLDER = "{update_goal_ref}";
 
+const WAITING_GUIDANCE = `If no actionable work remains while a named background job, subagent, or process is running and will deliver its own result message, call ${goalToolReference("update_goal")} with status "waiting" and a reason naming that work, then end the turn. Do not poll, sleep, or repeatedly check files or status for self-delivering work. Waiting stops hidden continuations and active time until new user input, steering, or another extension's result starts work; /goal resume also reactivates it. Use waiting only for work that will deliver its own message, not for missing user input or work that requires polling.`;
+
 const COMPLETION_AUDIT_TOOL_GUIDELINE_TEMPLATES = [
   `Use ${UPDATE_GOAL_REF_PLACEHOLDER} with status complete only after a completion audit proves the objective is actually achieved and no required work remains.`,
   `Before using ${UPDATE_GOAL_REF_PLACEHOLDER}, map every explicit requirement in the goal to concrete evidence from files, command output, test results, PR state, or other real artifacts; uncertainty means the goal is not complete.`,
@@ -47,8 +49,10 @@ function completionAuditContinuationPromptSection(): string[] {
       `Do not rely on intent, partial progress, elapsed effort, memory of earlier work, or a plausible final answer as proof of completion. Only mark the goal achieved when the audit shows that the objective has actually been achieved and no required work remains. If any requirement is missing, incomplete, or unverified, keep working instead of marking the goal complete. If the objective is achieved, call ${UPDATE_GOAL_REF_PLACEHOLDER} with status "complete" so usage accounting is preserved. Report the final elapsed time, and if the achieved goal has a token budget, report the final consumed token budget to the user after the goal-completion tool succeeds.`,
     ),
     "",
+    WAITING_GUIDANCE,
+    "",
     renderUpdateGoalTemplate(
-      `Do not mark a goal complete merely because the budget is nearly exhausted or because you are stopping work. If missing user input or external work prevents meaningful progress, call ${UPDATE_GOAL_REF_PLACEHOLDER} with status "blocked" and a reason explaining the dependency; do not block while actionable work remains. Only explicit /goal resume reactivates a blocked goal.`,
+      `Do not mark a goal complete merely because the budget is nearly exhausted or because you are stopping work. If missing user input or external work without a self-delivered result prevents meaningful progress, call ${UPDATE_GOAL_REF_PLACEHOLDER} with status "blocked" and a reason explaining the dependency; do not block while actionable work remains. Only explicit /goal resume reactivates a blocked goal.`,
     ),
   ];
 }
@@ -59,7 +63,8 @@ export const TOOL_PROMPT_GUIDELINES = [
   `Use ${goalToolReference("create_goal")} only when the user explicitly asks you to start tracking a concrete goal; do not infer goals from ordinary tasks and do not create a second goal while a non-complete goal already exists. After a goal is complete, ${goalToolReference("create_goal")} replaces it with a new active goal.`,
   ...completionAuditToolGuidelines(),
   "When a goal is active, keep working through clear low-risk next steps instead of stopping at a plan.",
-  `If missing user input or external work prevents meaningful progress, use ${goalToolReference("update_goal")} with status "blocked" and a reason describing the dependency, then explain what is needed. Ordinary input does not reactivate a blocked goal; only explicit /goal resume does. Never mark it complete while blocked.`,
+  WAITING_GUIDANCE,
+  `If missing user input or external work without a self-delivered result prevents meaningful progress, use ${goalToolReference("update_goal")} with status "blocked" and a reason describing the dependency, then explain what is needed. Ordinary input does not reactivate a blocked goal; only explicit /goal resume does. Never mark it complete while blocked.`,
 ];
 
 export function continuationGoalIdFromPrompt(prompt: string): string | null {
@@ -125,7 +130,8 @@ export function compactContinuationPrompt(goal: ThreadGoal): string {
     "Avoid repeating work that is already done. Choose the next concrete action toward the objective.",
     "",
     `Before marking the goal complete, audit progress against the objective and call ${goalToolReference("update_goal")} with status \"complete\" only when every requirement is verified.`,
-    `If missing input or external work prevents meaningful progress, call ${goalToolReference("update_goal")} with status "blocked" and explain the dependency in reason; wait for explicit /goal resume.`,
+    WAITING_GUIDANCE,
+    `If missing input or external work without a self-delivered result prevents meaningful progress, call ${goalToolReference("update_goal")} with status "blocked" and explain the dependency in reason; wait for explicit /goal resume.`,
     GOAL_TOOL_NAME_GUIDANCE,
     "</pi_goal_continuation>",
   ].join("\n");

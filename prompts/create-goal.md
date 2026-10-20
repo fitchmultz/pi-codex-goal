@@ -8,7 +8,7 @@ $@
 
 Turn the user task into exactly one durable pi-codex-goal objective, then call the goal creation tool with that objective.
 
-This prompt invocation is an explicit user request to set a new goal. When the goal creation tool exposes `replace_existing`, pass `replace_existing: true` so an existing active, paused, or budget-limited goal is replaced instead of requiring `/goal clear` first.
+This prompt invocation is an explicit user request to set a new goal. When the goal creation tool exposes `replace_existing`, pass `replace_existing: true` so an existing active, paused, blocked, waiting, or budget-limited goal is replaced instead of requiring `/goal clear` first.
 
 Do not set a token budget limit unless the user explicitly provides a budget/limit in the task. If no explicit budget is provided, omit the token budget field entirely. Follow the exposed creation tool's token-budget policy: when supported, explicit budgets must meet its configured minimum (500,000 tokens by default); when the field is absent, explicit budgets are disabled. If the supplied budget violates that policy, ask for a valid budget or no limit instead of raising it or silently dropping it.
 
@@ -42,7 +42,8 @@ The goal must require:
    - Phrases like "for the scope this is complete", "good enough", "out of scope", or "remaining tech debt" are not valid completion evidence unless the original user task explicitly allowed that limitation.
 
 6. Blocked stop condition
-   - If missing user input or external work prevents meaningful progress, call `update_goal` with status `blocked` and a reason describing the dependency, then explain what is needed. Wait for explicit `/goal resume`; ordinary input does not reactivate the goal.
+   - If no actionable work remains while a named background job or subagent will deliver its own result message, call `update_goal` with status `waiting` and a reason naming the work, then end the turn without polling or sleeping. New user input, steering, or another extension's result reactivates a waiting goal; `/goal resume` also works.
+   - If missing user input or external work without a self-delivered result prevents meaningful progress, call `update_goal` with status `blocked` and a reason describing the dependency, then explain what is needed. Wait for explicit `/goal resume`; ordinary input does not reactivate the goal.
    - If completion is impossible with current access, tools, or budget, stop without marking complete.
    - Report attempted paths, evidence gathered, exact blockers, remaining unmet requirements, and what input would unblock progress.
 

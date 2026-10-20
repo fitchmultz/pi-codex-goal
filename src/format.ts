@@ -1,3 +1,5 @@
+import { stripVTControlCharacters } from "node:util";
+
 import { formatRecoveryAttention, type RecoveryAttention } from "./recovery.ts";
 import type { GoalStatus, ThreadGoal } from "./types.ts";
 
@@ -13,6 +15,7 @@ export interface GoalToolRecord {
   objective: string;
   status: GoalStatus;
   blockedReason?: string;
+  waitingReason?: string;
   tokenBudget: number | null;
   tokensUsed: number;
   timeUsedSeconds: number;
@@ -93,7 +96,7 @@ function commandHint(status: GoalStatus): string {
   if (status === "active") {
     return "/goal copy, /goal pause, /goal clear";
   }
-  if (status === "paused" || status === "blocked") {
+  if (status === "paused" || status === "blocked" || status === "waiting") {
     return "/goal copy, /goal resume, /goal clear";
   }
   if (status === "complete") {
@@ -119,6 +122,10 @@ export function formatGoalSummary(goal: ThreadGoal | null): string {
   }
   if (goal.status === "blocked") {
     lines.push(`Blocked on: ${goal.blockedReason}`);
+  }
+
+  if (goal.status === "waiting") {
+    lines.push(`Waiting for: ${goal.waitingReason}`);
   }
 
   lines.push(`Hint: ${commandHint(goal.status)}`);
@@ -155,6 +162,11 @@ export function formatFooterStatus(
   if (goal.status === "blocked") {
     return "Goal blocked (/goal for reason; /goal resume)";
   }
+  if (goal.status === "waiting") {
+    // Keep model-provided reasons on one terminal-safe footer line.
+    const reason = stripVTControlCharacters(goal.waitingReason ?? "").replace(/[\x00-\x1f\x7f-\x9f]/g, " ").replace(/\s+/g, " ").trim();
+    return `Goal waiting: ${reason} (/goal resume)`;
+  }
 
   const recoveryAttentionMessage = formatRecoveryAttention(recoveryAttention);
   if (recoveryAttentionMessage) {
@@ -190,6 +202,7 @@ export function toToolGoal(goal: ThreadGoal): GoalToolRecord {
     objective: goal.objective,
     status: goal.status,
     ...(goal.blockedReason !== undefined ? { blockedReason: goal.blockedReason } : {}),
+    ...(goal.waitingReason !== undefined ? { waitingReason: goal.waitingReason } : {}),
     tokenBudget: goal.tokenBudget,
     tokensUsed: goal.usage.tokensUsed,
     timeUsedSeconds: goal.usage.activeSeconds,

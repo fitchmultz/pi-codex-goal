@@ -111,9 +111,10 @@ export interface GoalRuntimeInputContextHandlerContext extends StaleQueuedWorkEf
   >;
   stateController: Pick<
     GoalStateController,
-    "getGoal" | "isCurrentActiveGoalId" | "persistHostOverflowUserReset"
+    "getGoal" | "isCurrentActiveGoalId" | "persistHostOverflowUserReset" | "resumeWaitingGoal"
   >;
   continuation: GoalRuntimeContinuationPort;
+  goalAccounting: Pick<GoalAccountingPort, "beginAccounting">;
   recoveryRuntime: Pick<RecoveryRuntimePort, "onUserInput">;
   resetErrorRecovery: () => void;
 }
