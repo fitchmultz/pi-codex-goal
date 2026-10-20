@@ -49,7 +49,7 @@ Goal tokens count assistant input and output. This count excludes provider cache
 
 ## Sessions and recovery
 
-The goal survives resume, reload, fork, tree navigation, and compaction. The Pi footer shows goal status and usage when a UI is available.
+The goal survives resume, reload, fork, tree navigation, and compaction. The Pi footer shows goal status and usage when a UI is available. In the terminal UI, a separate line below the editor shows the unfinished goal's status and objective. Long or multiline objectives are condensed to one truncated line; run `/goal` for the full text. Completing or clearing the goal hides this line.
 
 Pi controls compaction. The extension uses bounded retries for transient provider errors. Recognized provider usage limits can schedule an automatic retry.
 

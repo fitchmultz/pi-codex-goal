@@ -38,7 +38,8 @@ function createStateControllerTestHarness(goal: ThreadGoal | null = activeGoal) 
 
   let refreshCount = 0;
   const ctx = {
-    ui: { setStatus() {} },
+    mode: "print",
+    ui: { setStatus() {}, setWidget() {}, theme: {} as StatusContext["ui"]["theme"] },
   } satisfies StatusContext;
 
   const stateController = createGoalStateController({

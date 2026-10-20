@@ -96,6 +96,7 @@ export function sessionShutdownEvent(
 }
 
 export function createRuntimeHarness(options: {
+  theme?: ExtensionCommandContext["ui"]["theme"];
   idle?: boolean;
   pendingMessages?: boolean;
   compactBehavior?: "success" | "error" | "unavailable";
@@ -290,7 +291,7 @@ export function createRuntimeHarness(options: {
     setWorkingIndicator() {},
     setWorkingMessage() {},
     setWorkingVisible() {},
-    theme: {} as ExtensionCommandContext["ui"]["theme"],
+    theme: options.theme ?? {} as ExtensionCommandContext["ui"]["theme"],
   };
 
   ctx = {
@@ -420,6 +421,7 @@ export function createRuntimeHarness(options: {
     appendMessage,
     compactCalls,
     footerStatuses,
+    ui,
     emit,
     entries,
     runCommand,
