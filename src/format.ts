@@ -1,4 +1,4 @@
-import { stripVTControlCharacters } from "node:util";
+import { stripTerminalSequences } from "@earendil-works/pi-tui";
 
 import { formatRecoveryAttention, type RecoveryAttention } from "./recovery.ts";
 import type { GoalStatus, ThreadGoal } from "./types.ts";
@@ -132,6 +132,19 @@ export function formatGoalSummary(goal: ThreadGoal | null): string {
   return lines.join("\n");
 }
 
+export function formatGoalObjective(goal: ThreadGoal | null): string | undefined {
+  if (!goal || goal.status === "complete") {
+    return undefined;
+  }
+
+  // Objectives are untrusted text, not terminal markup. Keep the widget on one line.
+  const objective = stripTerminalSequences(goal.objective)
+    .replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return `Goal (${statusLabel(goal.status)}): ${objective}`;
+}
+
 function compactBudgetUsage(goal: ThreadGoal): string {
   if (goal.tokenBudget === null) {
     return `${formatCompactTokenValue(goal.usage.tokensUsed)} tokens`;
@@ -164,7 +177,10 @@ export function formatFooterStatus(
   }
   if (goal.status === "waiting") {
     // Keep model-provided reasons on one terminal-safe footer line.
-    const reason = stripVTControlCharacters(goal.waitingReason ?? "").replace(/[\x00-\x1f\x7f-\x9f]/g, " ").replace(/\s+/g, " ").trim();
+    const reason = stripTerminalSequences(goal.waitingReason ?? "")
+      .replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
     return `Goal waiting: ${reason} (/goal resume)`;
   }
 

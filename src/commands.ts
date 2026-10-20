@@ -2,6 +2,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 
 import { copyTextToClipboard, type ClipboardCopyResult } from "./clipboard.ts";
 import { formatGoalSummary } from "./format.ts";
+import type { StatusContext } from "./goal-runtime-status.ts";
 import type { GoalStartTurnStrategy } from "./recovery-machine.ts";
 import { compactContinuationPrompt, continuationPrompt } from "./prompts.ts";
 import { replaceGoal, updateGoalStatus } from "./state.ts";
@@ -26,9 +27,9 @@ type CopyText = (text: string) => Promise<ClipboardCopyResult>;
 
 export type GoalCommandPi = Pick<ExtensionAPI, "registerCommand" | "sendMessage" | "sendUserMessage">;
 
-export interface GoalCommandContext {
+export interface GoalCommandContext extends StatusContext {
   hasUI: boolean;
-  ui: Pick<ExtensionCommandContext["ui"], "confirm" | "notify" | "setStatus">;
+  ui: StatusContext["ui"] & Pick<ExtensionCommandContext["ui"], "confirm" | "notify">;
 }
 
 function completions(prefix: string) {

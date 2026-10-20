@@ -60,6 +60,7 @@ function createHarness() {
   };
 
   const ctx: GoalCommandContext = {
+    mode: "tui",
     hasUI: true,
     ui: {
       notify(message: string) {
@@ -67,6 +68,8 @@ function createHarness() {
       },
       confirm: async () => true,
       setStatus: () => {},
+      setWidget() {},
+      theme: {} as GoalCommandContext["ui"]["theme"],
     },
   };
 
