@@ -31,7 +31,7 @@ export interface GoalRuntimeController extends GoalRuntimeEventHandlers {
   getGoalStartTurnStrategy(): GoalStartTurnStrategy;
   setGoal(goal: ThreadGoal, source: GoalEntrySource, ctx: ExtensionContext): void;
   clearGoal(source: GoalEntrySource, ctx: ExtensionContext): void;
-  updateGoal(source: GoalEntrySource, ctx: ExtensionContext, toolCallId: string, status: "complete" | "blocked", reason?: string): GoalResult;
+  updateGoal(source: GoalEntrySource, ctx: ExtensionContext, toolCallId: string, status: "complete" | "blocked" | "waiting", reason?: string): GoalResult;
   cancelProviderLimitAutoResume(goalId: string, ctx: StatusContext): void;
   resumeGoalWithContinuation(goalId: string, source: GoalEntrySource, ctx: StatusContext): GoalResult;
 }
@@ -148,6 +148,8 @@ export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeContro
     providerLimitAutoResume.clear();
     if (current?.status === "blocked") {
       stateController.applyGoalTransition({ kind: "set", nextGoal: result.goal, source }, ctx);
+    } else if (current?.status === "waiting") {
+      stateController.resumeWaitingGoal(ctx);
     } else {
       stateController.resumePausedGoal(ctx);
     }
@@ -176,7 +178,7 @@ export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeContro
     source: GoalEntrySource,
     ctx: ExtensionContext,
     toolCallId: string,
-    status: "complete" | "blocked",
+    status: "complete" | "blocked" | "waiting",
     reason?: string,
   ): GoalResult => {
     const goal = stateController.getGoal();
@@ -192,7 +194,7 @@ export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeContro
       return validation;
     }
     providerLimitAutoResume.clear();
-    if (status === "blocked") {
+    if (status === "blocked" || status === "waiting") {
       continuation.clearPostCompactContinuationFallback();
     }
     const completedTurnTokens = assistantTurnTokensForToolCall(ctx.sessionManager.getBranch(), toolCallId);

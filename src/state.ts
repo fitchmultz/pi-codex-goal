@@ -51,6 +51,7 @@ export function goalsEquivalent(left: ThreadGoal, right: ThreadGoal): boolean {
     left.objective === right.objective &&
     left.status === right.status &&
     left.blockedReason === right.blockedReason &&
+    left.waitingReason === right.waitingReason &&
     left.tokenBudget === right.tokenBudget &&
     left.createdAt === right.createdAt &&
     left.updatedAt === right.updatedAt &&
@@ -202,6 +203,8 @@ export function isThreadGoal(goal: unknown): goal is ThreadGoal {
     isGoalStatus(candidate.status) &&
     (candidate.blockedReason === undefined || typeof candidate.blockedReason === "string") &&
     (candidate.status !== "blocked" || Boolean(candidate.blockedReason?.trim())) &&
+    (candidate.waitingReason === undefined || typeof candidate.waitingReason === "string") &&
+    (candidate.status !== "waiting" || Boolean(candidate.waitingReason?.trim())) &&
     (candidate.tokenBudget === null || typeof candidate.tokenBudget === "number") &&
     typeof candidate.createdAt === "number" &&
     typeof candidate.updatedAt === "number" &&
@@ -210,7 +213,7 @@ export function isThreadGoal(goal: unknown): goal is ThreadGoal {
 }
 
 export function isGoalStatus(status: unknown): status is GoalStatus {
-  return status === "active" || status === "paused" || status === "blocked" || status === "budgetLimited" || status === "complete";
+  return status === "active" || status === "paused" || status === "blocked" || status === "waiting" || status === "budgetLimited" || status === "complete";
 }
 
 function canApplyRuntimeUsageEntry(goal: ThreadGoal | null, entry: Extract<GoalCustomEntry, { kind: "usage" }>): goal is ThreadGoal {
@@ -326,7 +329,7 @@ export function replaceGoal(objective: string, tokenBudget?: number | null, poli
   };
 }
 
-export function updateGoalStatus(current: ThreadGoal | null, status: GoalStatus, blockedReason?: string): GoalResult {
+export function updateGoalStatus(current: ThreadGoal | null, status: GoalStatus, reason?: string): GoalResult {
   if (!current) {
     return {
       ok: false,
@@ -358,16 +361,32 @@ export function updateGoalStatus(current: ThreadGoal | null, status: GoalStatus,
     };
   }
 
+  if (status === "waiting") {
+    if (current.status !== "active" && current.status !== "paused") {
+      return { ok: false, message: "Only active or paused goals can wait.", goal: current };
+    }
+    if (typeof reason !== "string" || !reason.trim()) {
+      return { ok: false, message: "A non-empty reason naming background work that will deliver its own message is required.", goal: current };
+    }
+    const goal = cloneGoal(current);
+    goal.status = "waiting";
+    delete goal.blockedReason;
+    goal.waitingReason = reason.trim();
+    goal.updatedAt = unixSeconds();
+    return { ok: true, message: "Goal waiting. New input or a background result will reactivate it; /goal resume also works.", goal };
+  }
+
   if (status === "blocked") {
     if (current.status !== "active" && current.status !== "paused") {
       return { ok: false, message: "Only active or paused goals can be blocked.", goal: current };
     }
-    if (typeof blockedReason !== "string" || !blockedReason.trim()) {
+    if (typeof reason !== "string" || !reason.trim()) {
       return { ok: false, message: "A non-empty reason describing the missing input or external dependency is required.", goal: current };
     }
     const goal = cloneGoal(current);
     goal.status = "blocked";
-    goal.blockedReason = blockedReason.trim();
+    goal.blockedReason = reason.trim();
+    delete goal.waitingReason;
     goal.updatedAt = unixSeconds();
     return { ok: true, message: "Goal blocked. Use /goal resume when the dependency is resolved.", goal };
   }
@@ -375,6 +394,7 @@ export function updateGoalStatus(current: ThreadGoal | null, status: GoalStatus,
   if (status === "complete") {
     const goal = cloneGoal(current);
     goal.status = "complete";
+    delete goal.waitingReason;
     goal.updatedAt = unixSeconds();
     return {
       ok: true,
@@ -383,24 +403,25 @@ export function updateGoalStatus(current: ThreadGoal | null, status: GoalStatus,
     };
   }
 
-  if (status === "paused" && current.status !== "active") {
+  if (status === "paused" && current.status !== "active" && current.status !== "waiting") {
     return {
       ok: false,
-      message: "Only active goals can be paused.",
+      message: "Only active or waiting goals can be paused.",
       goal: current,
     };
   }
 
-  if (status === "active" && current.status !== "paused" && current.status !== "blocked") {
+  if (status === "active" && current.status !== "paused" && current.status !== "blocked" && current.status !== "waiting") {
     return {
       ok: false,
-      message: "Only paused or blocked goals can be resumed.",
+      message: "Only paused, blocked, or waiting goals can be resumed.",
       goal: current,
     };
   }
 
   const goal = cloneGoal(current);
   delete goal.blockedReason;
+  delete goal.waitingReason;
   if (current.status === "budgetLimited" && (status === "active" || status === "paused")) {
     goal.status = "budgetLimited";
   } else {

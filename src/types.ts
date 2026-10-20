@@ -1,7 +1,7 @@
 export const CUSTOM_ENTRY_TYPE = "pi-codex-goal";
 export const MAX_OBJECTIVE_CHARS = 8000;
 
-export type GoalStatus = "active" | "paused" | "blocked" | "budgetLimited" | "complete";
+export type GoalStatus = "active" | "paused" | "blocked" | "waiting" | "budgetLimited" | "complete";
 
 export interface GoalUsage {
 	tokensUsed: number;
@@ -13,6 +13,7 @@ export interface ThreadGoal {
 	objective: string;
 	status: GoalStatus;
 	blockedReason?: string;
+	waitingReason?: string;
 	tokenBudget: number | null;
 	usage: GoalUsage;
 	createdAt: number;

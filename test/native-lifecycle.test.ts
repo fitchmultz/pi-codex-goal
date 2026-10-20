@@ -320,3 +320,107 @@ test(`native ${route} repeated call IDs account the current response once across
   }
 });
 }
+
+const waitingReason = "Explorer alpha will deliver its report as a message";
+const waitForExplorer = () => fauxAssistantMessage(fauxToolCall("update_goal", { status: "waiting", reason: waitingReason }), { stopReason: "toolUse" });
+
+test("native hidden continuation can declare waiting, survive maintenance, and finish on a background result", async (t) => {
+  const h = await fixture(t);
+  h.faux.setResponses([
+    fauxAssistantMessage("The explorer is running; its report will arrive on its own."),
+    waitForExplorer(), fauxAssistantMessage("Waiting for the explorer's result; no polling."),
+  ]);
+  await h.session.prompt("Integrate the explorer report when it arrives.");
+  await h.session.waitForIdle();
+  const saved = h.goal();
+  assert.equal(saved?.status, "waiting");
+  assert.equal(saved?.waitingReason, waitingReason);
+  assert.equal(h.faux.state.callCount, 3, "at most one hidden continuation declares the wait, then its tool receipt");
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  assert.equal(h.faux.state.callCount, 3, "waiting must not run another provider call");
+  await h.session.compact();
+  await h.session.reload();
+  assert.deepEqual(h.goal(), saved);
+  const file = h.session.sessionManager.getSessionFile();
+  assert.ok(file);
+  const fork = SessionManager.forkFrom(file, h.session.sessionManager.getCwd(), join(h.session.sessionManager.getSessionDir(), "waiting-fork"));
+  assert.deepEqual(reconstructGoal(fork.getBranch()).goal, saved);
+  assert.equal(h.faux.state.callCount, 3, "maintenance does not wake a wait");
+
+  h.faux.setResponses([complete(), fauxAssistantMessage("Explorer integrated and verified.")]);
+  await h.session.sendCustomMessage({ customType: "explorer-result", content: "Explorer alpha report: all verification passed.", display: true }, { triggerTurn: true });
+  await h.session.waitForIdle();
+  assert.equal(h.goal()?.goalId, saved?.goalId);
+  assert.equal(h.goal()?.status, "complete");
+  assert.equal(h.goal()?.waitingReason, undefined);
+  const response = h.session.sessionManager.getBranch().findLast((entry) => entry.type === "message" && entry.message.role === "assistant" && entry.message.stopReason === "toolUse");
+  assert.ok(response?.type === "message" && response.message.role === "assistant");
+  const tokens = response.message.usage.input + response.message.usage.output;
+  assert.ok(tokens > 0);
+  assert.equal(h.goal()?.usage.tokensUsed, (saved?.usage.tokensUsed ?? 0) + tokens, "first resumed response is accounted exactly once, not its completion receipt");
+  assert.equal(h.faux.state.callCount, 5);
+});
+
+test("native ordinary user input automatically resumes waiting and can complete the goal", async (t) => {
+  const h = await fixture(t);
+  h.faux.setResponses([waitForExplorer(), fauxAssistantMessage("Waiting for the report.")]);
+  await h.session.prompt("Work until the explorer is needed.");
+  await h.session.waitForIdle();
+  assert.equal(h.goal()?.status, "waiting");
+  h.faux.setResponses([complete(), fauxAssistantMessage("User supplied the report; goal complete.")]);
+  await h.session.prompt("Here is the explorer report. All requirements are verified.");
+  await h.session.waitForIdle();
+  assert.equal(h.goal()?.status, "complete");
+  assert.equal(h.goal()?.waitingReason, undefined);
+  assert.equal(h.faux.state.callCount, 4);
+});
+
+for (const route of ["custom", "user"] as const) {
+test(`native ${route} input steered during the waiting tool wakes its next turn`, async (t) => {
+  let delivered = false;
+  const h = await fixture(t, false, [(pi) => {
+    pi.on("tool_execution_end", (event) => {
+      if (event.toolName === "update_goal" && !delivered) {
+        delivered = true;
+        if (route === "custom") {
+          pi.sendMessage({ customType: "explorer-result", content: "Explorer alpha has finished; verification passed.", display: true }, { triggerTurn: true, deliverAs: "steer" });
+        } else {
+          pi.sendUserMessage("Here is explorer alpha's verified report.", { deliverAs: "steer" });
+        }
+      }
+    });
+  }]);
+  h.faux.setResponses([waitForExplorer(), complete(), fauxAssistantMessage("Steered report integrated; goal complete.")]);
+  await h.session.prompt("Wait for the running explorer's report.");
+  await h.session.waitForIdle();
+  assert.equal(delivered, true);
+  assert.equal(h.goal()?.status, "complete");
+  assert.equal(h.goal()?.waitingReason, undefined);
+  assert.equal(h.faux.state.callCount, 3, "the steered result is the wake, not another hidden continuation");
+});
+
+}
+
+test("native idle notifications and goal bookkeeping cannot reactivate a waiting goal", async (t) => {
+  const h = await fixture(t);
+  h.faux.setResponses([waitForExplorer(), fauxAssistantMessage("Waiting for the report.")]);
+  await h.session.prompt("Work until the explorer is needed.");
+  await h.session.waitForIdle();
+  const saved = h.goal();
+  assert.ok(saved);
+  assert.equal(saved.status, "waiting");
+  const callsBeforeNotification = h.faux.state.callCount;
+  await h.session.sendCustomMessage({ customType: "display-only-notification", content: "No new work", display: true }, { triggerTurn: false });
+  await h.session.waitForIdle();
+  assert.deepEqual(h.goal(), saved, "a display-only external notification does not start work or wake a wait");
+  assert.equal(h.faux.state.callCount, callsBeforeNotification);
+  h.faux.setResponses([fauxAssistantMessage("Bookkeeping only.")]);
+  await h.session.sendCustomMessage({ customType: CUSTOM_ENTRY_TYPE, content: "Budget bookkeeping", display: false, details: { kind: "budget_limit", goalId: saved.goalId } }, { triggerTurn: true });
+  await h.session.waitForIdle();
+  assert.deepEqual(h.goal(), saved);
+  const calls = h.faux.state.callCount;
+  await h.session.sendCustomMessage({ customType: CUSTOM_ENTRY_TYPE, content: compactContinuationPrompt(saved), display: false, details: { kind: "continuation", goalId: saved.goalId } }, { triggerTurn: true });
+  await h.session.waitForIdle();
+  assert.deepEqual(h.goal(), saved);
+  assert.equal(h.faux.state.callCount, calls, "a stale goal continuation is cancelled before the provider");
+});

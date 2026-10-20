@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add model-declared `waiting` goals for named background work that delivers its own result, stopping hidden continuation loops and active time while waiting (#105). Reactivate on new user/steering/extension input or explicit `/goal resume`, preserve waiting reasons across sessions, and keep goal bookkeeping from waking a wait.
+
 ## 0.6.1 - 2026-10-12
 
 - Keep user-prompt bookkeeping separate from custom-message starts on newer Pi hosts, preventing hidden goal continuations and notifications from throwing before a run starts.

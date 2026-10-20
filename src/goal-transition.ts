@@ -21,6 +21,7 @@ export type GoalTransitionRequest =
   | { kind: "clear"; source: GoalEntrySource }
   | { kind: "abort_pause" }
   | { kind: "resume_active" }
+  | { kind: "resume_waiting" }
   | {
       kind: "recovery_pause";
       recoveryReason: string;
@@ -77,7 +78,7 @@ function memoryEffectsFromGoalChange(
     appendGoalTransitionEffectOnce(effects, { type: "resetRecovery" });
     appendGoalTransitionEffectOnce(effects, { type: "clearBudgetWarning" });
   }
-  if (next.status === "complete" || next.status === "blocked") {
+  if (next.status === "complete" || next.status === "blocked" || next.status === "waiting") {
     appendGoalTransitionEffectOnce(effects, { type: "clearContinuation" });
     appendGoalTransitionEffectOnce(effects, { type: "clearActiveAccounting" });
     appendGoalTransitionEffectOnce(effects, { type: "resetRecovery" });
@@ -148,6 +149,7 @@ function requireStatus(current: ThreadGoal, expected: GoalStatus, kind: string):
 function deriveGoalWithStatus(current: ThreadGoal, status: GoalStatus): ThreadGoal {
   const next = cloneGoal(current);
   next.status = statusAfterBudgetLimit(status, next.usage.tokensUsed, next.tokenBudget);
+  delete next.waitingReason;
   next.updatedAt = unixSeconds();
   return next;
 }
@@ -246,10 +248,10 @@ function planDerivedActiveToPausedTransition(
 
 function planDerivedResumeActiveTransition(
   current: ThreadGoal | null,
+  kind: "resume_active" | "resume_waiting",
 ): GoalTransitionPlan {
-  const kind = "resume_active";
   requireCurrentGoal(current, kind);
-  requireStatus(current, "paused", kind);
+  requireStatus(current, kind === "resume_waiting" ? "waiting" : "paused", kind);
   const nextGoal = deriveGoalWithStatus(current, "active");
 
   return {
@@ -324,7 +326,8 @@ export function planGoalTransition(
       );
 
     case "resume_active":
-      return planDerivedResumeActiveTransition(current);
+    case "resume_waiting":
+      return planDerivedResumeActiveTransition(current, request.kind);
 
     case "recovery_pause":
       return planDerivedActiveToPausedTransition(

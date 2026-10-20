@@ -26,7 +26,7 @@ The [README command table](../README.md#goal-controls) covers the usual controls
 
 The template follows the goal-writing practices in OpenAI's [Codex follow-goals guide](https://developers.openai.com/codex/use-cases/follow-goals) and [Using goals in Codex cookbook](https://developers.openai.com/cookbook/examples/codex/using_goals_in_codex).
 
-`/goal` with no arguments reports the current objective, status, token budget, token usage, and elapsed active time. A plain `/goal <objective>` starts a new unlimited goal or replaces the current one after confirmation. `/goal copy` copies the objective for active, paused, blocked, budget-limited, and completed goals.
+`/goal` with no arguments reports the current objective, status, token budget, token usage, and elapsed active time. A plain `/goal <objective>` starts a new unlimited goal or replaces the current one after confirmation. `/goal copy` copies the objective for active, paused, blocked, waiting, budget-limited, and completed goals.
 
 Objectives are limited to 8000 Unicode characters. Token budgets are set through the model tool; `/goal --tokens` is not a budget option.
 
@@ -53,11 +53,13 @@ Returns the current goal state and usage.
 
 ### `update_goal`
 
-Accepts `status: "complete"` after verified completion, or `status: "blocked"` with a non-empty `reason` when missing user input or external work prevents meaningful progress.
+Accepts `status: "complete"` after verified completion, `status: "waiting"` with a non-empty `reason` naming background work that will deliver its own result message, or `status: "blocked"` with a non-empty `reason` when missing user input or external work without a self-delivered result prevents meaningful progress.
+
+Waiting preserves the unfinished objective, `waitingReason`, and usage through reload, fork, and compaction. Like blocking, it cancels automatic continuations and provider auto-resume without interrupting a running tool; it accrues no active time while waiting. Use it only when no other actionable work remains and a named job/subagent/process will send its own message. Do not poll or sleep for that work. `/goal` and the footer show the reason. The next genuine user input, steering message, or other extension's result automatically reactivates the goal before the response is accounted, so the result turn can finish it. Goal-queued bookkeeping, compaction, and session reopening do not reactivate it. `/goal resume` explicitly reactivates it; `/goal pause` disables automatic reactivation. If no result arrives, it stays idle until new input. Reached budgets still prevent reactivation.
 
 Blocking preserves the unfinished objective, reason, and usage through reload, fork, and compaction. It cancels automatic continuations and provider auto-resume, and does not interrupt an already-running tool. Use `/goal` to inspect the dependency and explicit `/goal resume` to reactivate the goal. Ordinary input or reopening the session cannot resume it, and completion is rejected while blocked. Reaching the token budget still stops the goal rather than allowing blocking to bypass the limit.
 
-Calling `update_goal` on an already-complete goal is idempotent and does not append duplicate session entries. The extension accounts the assistant response calling either status change before persisting it; completion reports final token and elapsed-time usage.
+Calling `update_goal` on an already-complete goal is idempotent and does not append duplicate session entries. The extension accounts the assistant response calling a status change before persisting it; completion reports final token and elapsed-time usage.
 
 Completed goals are terminal for automatic transitions: pause, resume, and hidden continuations do not reopen them. To recover from premature completion, use `/goal <objective>` to replace the goal, call `create_goal` with `replace_existing: true`, or `/goal clear` before starting again.
 
@@ -77,18 +79,18 @@ While a goal is active, the extension:
 - Recovers from provider assistant errors without immediate hidden continuation loops. Context-window overflow triggers automatic compaction and then resumes the active goal; transient errors use bounded backoff retries; recognized provider usage-limit pauses schedule a conservative auto-resume retry. Use `/goal resume cancel` to stop the scheduled retry.
 - Prompts on session resume before reactivating a paused goal when a UI is available, and supports explicit `/goal resume`.
 - Pauses a hidden continuation that only inspects goal status with `get_goal` without doing actionable work.
-- Rejects `/goal pause` unless the goal is active and rejects `/goal resume` unless the goal is paused or blocked. An exception is an active goal waiting for a user-start recovery turn after host overflow recovery: `/goal resume` sends the required user follow-up without changing goal status.
+- Rejects `/goal pause` unless the goal is active or waiting and rejects `/goal resume` unless the goal is paused, blocked, or waiting. An exception is an active goal waiting for a user-start recovery turn after host overflow recovery: `/goal resume` sends the required user follow-up without changing goal status.
 - Treats completed goals as terminal for automatic transitions while allowing `/goal <objective>` and explicit `create_goal` replacement to replace goals.
 - Marks the goal `budgetLimited` when a positive token budget is reached.
 - Sends hidden steering messages when budget is reached or when the agent is idle but the goal is still active.
 - Compacts repeated hidden goal continuations before provider context so only the latest active continuation stays runnable. Older ones become short bookkeeping markers, and auto-queued continuations use a compact prompt after `/goal` start or resume.
-- Shows Codex-style status labels with compact token or elapsed-time usage in the Pi footer when a UI is available. The terminal UI also shows the current unfinished objective in a separate single-line widget below the editor. Paused, blocked, and budget-limited goals retain an explicit state label; completed or cleared goals hide the widget. Terminal control sequences are removed, whitespace is condensed, and long text is truncated to the available display width. Use `/goal` for the full objective.
+- Shows Codex-style status labels with compact token or elapsed-time usage in the Pi footer when a UI is available. The terminal UI also shows the current unfinished objective in a separate single-line widget below the editor. Paused, blocked, waiting, and budget-limited goals retain an explicit state label; completed or cleared goals hide the widget. Terminal control sequences are removed, whitespace is condensed, and long text is truncated to the available display width. Use `/goal` for the full objective.
 
 Token counts use commas and compact abbreviations, for example `123M (123,456,789) tokens`. Goal totals count only completed assistant-turn `input` plus `output` while the goal is active. Cache read/write channels are excluded because they are provider cache accounting fields rather than extra sent and received text tokens. Pi 0.81+ also folds tool, compaction, and branch-summary usage into host session totals/footer stats. Those host maintenance and nested-tool costs stay out of goal budgets, so goal tokens measure assistant turn work toward the objective rather than whole-session spend.
 
 ## Durable recovery and accounting
 
-Native custom entries remain the source of truth across resume, tree/fork, reload, and compaction. Existing goal formats and historical saved budgets are retained without migration or journal rewriting. Paused headless goals require explicit `/goal resume`; blocked goals remain blocked until explicitly resumed. Shutdown persists pending recovery before disposal. Neither supported 1.0 target provides the old fork checkpoint/accounting APIs; legacy session goal entries still recover normally.
+Native custom entries remain the source of truth across resume, tree/fork, reload, and compaction. Existing goal formats and historical saved budgets are retained without migration or journal rewriting. Paused headless goals require explicit `/goal resume`; blocked goals remain blocked until explicitly resumed. Waiting goals remain idle across session reopening and reactivate only on new non-goal input or explicit resume. Shutdown persists pending recovery before disposal. Neither supported 1.0 target provides the old fork checkpoint/accounting APIs; legacy session goal entries still recover normally.
 
 Turn accounting consumes the current native response once, including a status-changing tool's calling response. Native `ctx.executeTool()` child calls are correlated to their calling response, and repeated tool-call IDs are correlated to the latest response rather than older entries. Multiple children do not charge that response again; the completion receipt is not goal work. Accounting uses persisted `turn_end` messages rather than reading the not-yet-appended `message_end`, and does not assume boundary drafts are committed inside handlers.
 

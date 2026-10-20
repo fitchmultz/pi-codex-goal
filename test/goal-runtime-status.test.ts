@@ -81,7 +81,7 @@ test("unfinished goal states are explicit; completing or clearing removes the ro
   const h = createStatusHarness();
   t.after(h.runtime.stopStatusRefresh);
   for (const [status, label] of [
-    ["active", "active"], ["paused", "paused"], ["blocked", "blocked"], ["budgetLimited", "limited by budget"],
+    ["active", "active"], ["paused", "paused"], ["blocked", "blocked"], ["waiting", "waiting"], ["budgetLimited", "limited by budget"],
   ] as const) {
     h.setGoal({ ...activeGoal, status });
     h.runtime.refreshUi(h.ctx);
@@ -145,6 +145,10 @@ for (const mode of ["rpc", "json", "print"] as const) {
     h.runtime.refreshUi(h.ctx);
     assert.equal(h.footerStatuses.at(-1), "Pursuing goal");
     assert.deepEqual(h.widgetCalls, []);
+    h.setGoal({ ...activeGoal, status: "waiting", waitingReason: "Explorer report" });
+    h.runtime.refreshUi(h.ctx);
+    assert.equal(h.footerStatuses.at(-1), "Goal waiting: Explorer report (/goal resume)");
+    assert.deepEqual(h.widgetCalls, []);
   });
 }
 
@@ -164,6 +168,35 @@ test("footer clock does not recreate the objective row and stops on pause", (t) 
   assert.equal(h.footerStatuses.length, count);
 });
 
+test("waiting keeps the objective and safe reason visible without a footer clock; waking restarts it", (t) => {
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  const h = createStatusHarness();
+  t.after(h.runtime.stopStatusRefresh);
+  h.runtime.refreshUi(h.ctx);
+  const waiting: ThreadGoal = {
+    ...activeGoal,
+    status: "waiting",
+    waitingReason: "\x1b[31mExplorer\x1b[0m\n report\tA",
+  };
+  h.setGoal(waiting);
+  h.runtime.refreshUi(h.ctx);
+  const objective = formatGoalObjective(waiting)!;
+  assert.equal(objective, `Goal (waiting): ${activeGoal.objective}`);
+  assert.equal(h.component().render(100)[0], h.ctx.ui.theme.fg("warning", objective));
+  assert.equal(h.footerStatuses.at(-1), "Goal waiting: Explorer report A (/goal resume)");
+  const count = h.footerStatuses.length;
+  t.mock.timers.tick(5_000);
+  assert.equal(h.footerStatuses.length, count, "waiting has no live footer clock");
+  assert.equal(h.widgetCalls.length, 2);
+  h.setGoal(activeGoal);
+  h.runtime.refreshUi(h.ctx);
+  assert.equal(h.component().render(100)[0], h.ctx.ui.theme.fg("accent", formatGoalObjective(activeGoal)!));
+  h.setGoal({ ...activeGoal, usage: { tokensUsed: 0, activeSeconds: 3 } });
+  t.mock.timers.tick(1_000);
+  assert.equal(h.footerStatuses.at(-1), "Pursuing goal (3s)");
+  assert.equal(h.widgetCalls.length, 3, "footer ticks do not recreate the objective widget");
+});
+
 test("real command/tool transitions, reload and tree navigation refresh or clear the row", async (t) => {
   const h = createRuntimeHarness({ theme: themeNamed("dark") });
   t.after(async () => { await h.emit("session_shutdown", sessionShutdownEvent()); });
@@ -180,6 +213,24 @@ test("real command/tool transitions, reload and tree navigation refresh or clear
   assert.equal(rows.at(-1), undefined);
   await h.runTool("create_goal", { objective: "tool objective" });
   assert.equal(rows.at(-1), "Goal (active): tool objective");
+  await h.runCommand("pause");
+  assert.equal(rows.at(-1), "Goal (paused): tool objective");
+  await h.runCommand("resume");
+  assert.equal(rows.at(-1), "Goal (active): tool objective");
+  await h.runTool("update_goal", { status: "waiting", reason: "Explorer report" });
+  assert.equal(rows.at(-1), "Goal (waiting): tool objective");
+  await h.emit("session_shutdown", sessionShutdownEvent("reload"));
+  await h.reloadSession("reload");
+  assert.equal(rows.at(-1), "Goal (waiting): tool objective");
+  await h.emit("session_tree", { type: "session_tree" });
+  assert.equal(rows.at(-1), "Goal (waiting): tool objective");
+  await h.emit("turn_start", { type: "turn_start", turnIndex: 1, timestamp: 1 });
+  await h.emit("message_start", { type: "message_start", message: {
+    role: "custom", customType: "explorer-result", content: "Report A", display: true, timestamp: 1,
+  } });
+  assert.equal(rows.at(-1), "Goal (active): tool objective");
+  await h.runTool("update_goal", { status: "waiting", reason: "Another explorer report" });
+  assert.equal(rows.at(-1), "Goal (waiting): tool objective");
   await h.runCommand("pause");
   assert.equal(rows.at(-1), "Goal (paused): tool objective");
   await h.runCommand("resume");

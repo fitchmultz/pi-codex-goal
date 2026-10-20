@@ -29,16 +29,16 @@ function createGoalParams(policy: TokenBudgetPolicy) {
 }
 
 const UpdateGoalParams = Type.Object({
-  status: StringEnum(["complete", "blocked"] as const, {
-    description: "Complete only when no required work remains; blocked only when missing input or external work prevents meaningful progress.",
+  status: StringEnum(["complete", "blocked", "waiting"] as const, {
+    description: "Complete only when no required work remains; waiting only for background work that will deliver its own message; blocked for dependencies requiring explicit user resume.",
   }),
-  reason: Type.Optional(Type.String({ minLength: 1, description: "Required for blocked: explain the missing input or external dependency." })),
+  reason: Type.Optional(Type.String({ minLength: 1, description: "Required for waiting: name background work that will deliver its own message. Required for blocked: explain the missing input or external dependency." })),
 });
 
 export interface ToolHost {
   getGoal(): ThreadGoal | null;
   setGoal(goal: ThreadGoal, source: GoalEntrySource, ctx: ExtensionContext): void;
-  updateGoal(source: GoalEntrySource, ctx: ExtensionContext, toolCallId: string, status: "complete" | "blocked", reason?: string): GoalResult;
+  updateGoal(source: GoalEntrySource, ctx: ExtensionContext, toolCallId: string, status: "complete" | "blocked" | "waiting", reason?: string): GoalResult;
 }
 
 function textResult(
@@ -105,14 +105,14 @@ export function registerGoalTools(pi: ExtensionAPI, host: ToolHost): void {
     name: "update_goal",
     label: "Update Goal",
     description:
-      "Mark the goal complete only after the objective is achieved, or blocked with a reason when missing user input or external work prevents meaningful progress. Blocked goals stop automatic continuation and require explicit /goal resume before completion.",
-    promptSnippet: "Complete after an evidence-backed audit, or block on missing input/external work with a reason. Only /goal resume reactivates blocked goals.",
+      "Mark the goal complete only after the objective is achieved, waiting with a reason naming background work that will deliver its own message, or blocked with a reason when a dependency needs user intervention. Waiting stops continuations until new input or a background result arrives; do not poll. Blocked goals require explicit /goal resume before completion.",
+    promptSnippet: "Complete after an evidence-backed audit; wait for named self-delivering background work without polling; block on dependencies needing explicit /goal resume. Waiting and blocked require a reason.",
     promptGuidelines: TOOL_PROMPT_GUIDELINES,
     parameters: UpdateGoalParams,
     executionMode: "sequential",
     async execute(toolCallId, params, _signal, _onUpdate, ctx) {
-      if (params.status !== "complete" && params.status !== "blocked") {
-        throwToolError("Status must be complete or blocked.");
+      if (params.status !== "complete" && params.status !== "blocked" && params.status !== "waiting") {
+        throwToolError("Status must be complete, blocked, or waiting.");
       }
       const result = host.updateGoal("tool", ctx, toolCallId, params.status, params.reason);
       if (!result.ok || !result.goal) {
