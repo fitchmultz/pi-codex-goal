@@ -34,6 +34,16 @@ jobs:
       official-version: ${{ inputs.official-version }}
       fork-ref: ${{ inputs.fork-ref }}
 
+  fleet:
+    needs: resolve
+    uses: fitchmultz/.github/.github/workflows/pi-compatibility.yml@8fa3c0629e895ed47a8e0e78d05a0d932c5a5793 # main
+    with:
+      automation-ref: 8fa3c0629e895ed47a8e0e78d05a0d932c5a5793 # main
+      repository: fitchmultz/pi-codex-goal
+      source-ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      official-version: ${{ needs.resolve.outputs.official-version }}
+      fork-ref: ${{ needs.resolve.outputs.fork-ref }}
+
   compatibility:
     needs: resolve
     if: ${{ !cancelled() }}
