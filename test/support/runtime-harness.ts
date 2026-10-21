@@ -296,6 +296,9 @@ export function createRuntimeHarness(options: {
 
   ctx = {
     ...{
+      runInBackground() {
+        return unsupportedHarnessMethod("ctx.runInBackground");
+      },
       isBashRunning() {
         return unsupportedHarnessMethod("ctx.isBashRunning");
       },
@@ -419,6 +422,7 @@ export function createRuntimeHarness(options: {
 
   return {
     appendMessage,
+    context: ctx,
     compactCalls,
     footerStatuses,
     ui,
