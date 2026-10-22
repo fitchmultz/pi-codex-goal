@@ -147,7 +147,25 @@ export function createInputContextEventHandlers(
     onMessageEnd: (async (event, _ctx): Promise<MessageEndEventResult | undefined> => {
       const { message } = event;
       const queuedGoalId = queuedGoalWorkMessageIdForRuntime(message);
-      if (queuedGoalId === null || stateController.isCurrentActiveGoalId(queuedGoalId)) {
+      if (queuedGoalId === null) {
+        return undefined;
+      }
+      if (stateController.isCurrentActiveGoalId(queuedGoalId)) {
+        // Only a newly delivered, runnable Goal message can be refreshed. Never
+        // rewrite answered history, user-pasted markers, or cancelled notices.
+        const runnable = message.role === "user" ||
+          (message.role === "custom" && isActiveGoalQueuedDetails(message.details));
+        const prompt = runnable ? continuation.fullPromptForDelivery(queuedGoalId) : null;
+        if (prompt !== null) {
+          if (message.role === "custom") return { message: { ...message, content: prompt } };
+          if (message.role === "user") {
+            const firstText = typeof message.content === "string" ? -1 : message.content.findIndex((part) => part.type === "text");
+            const content = typeof message.content === "string"
+              ? [{ type: "text" as const, text: prompt }]
+              : message.content.map((part, index) => index === firstText ? { type: "text" as const, text: prompt } : part);
+            return { message: { ...message, content } };
+          }
+        }
         return undefined;
       }
 

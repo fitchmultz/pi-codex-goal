@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import { mock } from "node:test";
 
 import type { AssistantMessage } from "@earendil-works/pi-ai";
@@ -61,7 +62,15 @@ interface CompactionEventOptions {
 export function sessionBeforeCompactEvent(options: CompactionEventOptions = {}): object {
   return {
     type: "session_before_compact",
-    preparation: {},
+    preparation: {
+      messagesToSummarize: [],
+      turnPrefixMessages: [],
+      firstKeptEntryId: "entry-1",
+      isSplitTurn: false,
+      tokensBefore: 100,
+      fileOps: { read: new Set(), written: new Set(), edited: new Set() },
+      settings: { enabled: true, reserveTokens: 16_384, keepRecentTokens: 20_000 },
+    },
     branchEntries: [],
     reason: options.reason ?? "manual",
     willRetry: options.willRetry ?? false,
@@ -106,6 +115,7 @@ export function createRuntimeHarness(options: {
 } = {}) {
   const entries: ReturnType<ExtensionCommandContext["sessionManager"]["getBranch"]> = [];
   const handlers = new Map<string, EventHandler[]>();
+  const eventBus = new EventEmitter();
   const sentMessages: SentMessage[] = [];
   const sentUserMessages: SentUserMessage[] = [];
   const tools = new Map<string, (toolCallId: string, params: Record<string, unknown>) => Promise<unknown>>();
@@ -172,11 +182,10 @@ export function createRuntimeHarness(options: {
       });
     },
     events: {
-      emit() {
-        unsupportedHarnessMethod("pi.events.emit");
-      },
-      on() {
-        unsupportedHarnessMethod("pi.events.on");
+      emit(event, data) { eventBus.emit(event, data); },
+      on(event, handler) {
+        eventBus.on(event, handler);
+        return () => { eventBus.off(event, handler); };
       },
     },
     exec: async () => ({ stdout: "", stderr: "", code: 0, killed: false }),
@@ -383,6 +392,7 @@ export function createRuntimeHarness(options: {
 
   function reloadExtension(): void {
     handlers.clear();
+    eventBus.removeAllListeners();
     goalExtension(pi);
   }
 

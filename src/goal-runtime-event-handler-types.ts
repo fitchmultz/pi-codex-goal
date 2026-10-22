@@ -66,6 +66,8 @@ export interface GoalRuntimeContinuationPort {
   clearPassthroughContinuationInput: () => void;
   continuationGoalIdFromRuntimePrompt: (prompt: string) => string | null;
   markContinuationQueued: (goalId: string) => void;
+  noteCompaction: () => void;
+  fullPromptForDelivery: (goalId: string) => string | null;
   maybeContinue: (ctx: ExtensionContext, duringAgentEnd?: boolean) => void;
   maybeContinueAfterCurrentEvent: (ctx: ExtensionContext) => void;
   maybeContinueAfterPostCompactFallback: (
@@ -189,6 +191,7 @@ export interface GoalRuntimeSessionHandlerContext extends StaleQueuedWorkEffectC
     | "maybeContinue"
     | "maybeContinueAfterCurrentEvent"
     | "maybeContinueAfterPostCompactFallback"
+    | "noteCompaction"
   >;
   goalAccounting: GoalAccountingPort;
   recoveryRuntime: Pick<RecoveryRuntimePort, "onSessionCompact">;

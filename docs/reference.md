@@ -83,10 +83,24 @@ While a goal is active, the extension:
 - Treats completed goals as terminal for automatic transitions while allowing `/goal <objective>` and explicit `create_goal` replacement to replace goals.
 - Marks the goal `budgetLimited` when a positive token budget is reached.
 - Sends hidden steering messages when budget is reached or when the agent is idle but the goal is still active.
-- Compacts repeated hidden goal continuations before provider context so only the latest active continuation stays runnable. Older ones become short bookkeeping markers, and auto-queued continuations use a compact prompt after `/goal` start or resume.
+- Leaves already-sent goal messages unchanged in ordinary provider requests. Stale queued work is cancelled once at delivery; new automatic continuations use a compact prompt.
 - Shows Codex-style status labels with compact token or elapsed-time usage in the Pi footer when a UI is available. The terminal UI also shows the current unfinished objective in a separate single-line widget below the editor. Paused, blocked, waiting, and budget-limited goals retain an explicit state label; completed or cleared goals hide the widget. Terminal control sequences are removed, whitespace is condensed, and long text is truncated to the available display width. Use `/goal` for the full objective.
 
 Token counts use commas and compact abbreviations, for example `123M (123,456,789) tokens`. Goal totals count only completed assistant-turn `input` plus `output` while the goal is active. Cache read/write channels are excluded because they are provider cache accounting fields rather than extra sent and received text tokens. Pi 0.81+ also folds tool, compaction, and branch-summary usage into host session totals/footer stats. Those host maintenance and nested-tool costs stay out of goal budgets, so goal tokens measure assistant turn work toward the objective rather than whole-session spend.
+
+## Cache-stable compaction
+
+Goal filters extension-owned continuation, superseded, and stale control messages from the history and split-turn prefix passed through `session_before_compact`. It preserves user messages (including pasted goal markers), initial objectives, substantive work, tool results, file tracking, and the retained-history boundary. It does not replace the selected summarizer or its result.
+
+Successful `session_compact` marks the next normally delivered Goal continuation to carry the full saved objective and current budget. The message is refreshed once at delivery, before the provider sees it; already-sent history stays unchanged. This also covers a continuation queued before compaction. Later continuations use the compact prompt. Compaction does not wake paused, waiting, blocked, or completed goals. Native retry may run before normal continuation delivery; this is not an atomic append to the compaction result.
+
+A custom summarizer must consume filtered input. It can register after Goal, or request the same synchronous filter through Pi's existing extension bus immediately before calling its summarizer:
+
+```ts
+pi.events.emit("pi-codex-goal:compaction-input", event.preparation);
+```
+
+This works even if the custom summarizer loads first. The filter registration is ready after extension loading, and uses no additional Pi API.
 
 ## Durable recovery and accounting
 

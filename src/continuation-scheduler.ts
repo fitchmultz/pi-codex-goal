@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-import { compactContinuationPrompt, continuationGoalIdFromPrompt } from "./prompts.ts";
+import { compactContinuationPrompt, continuationGoalIdFromPrompt, continuationPrompt } from "./prompts.ts";
 import {
   recoveryPhaseBlocksContinuation,
   type GoalRecoveryMachineState,
@@ -27,6 +27,7 @@ interface PostCompactContinuationOptions {
 
 export function createContinuationScheduler(deps: ContinuationSchedulerDeps) {
   let continuationQueuedFor: string | null = null;
+  let fullGoalNeededFor: string | null = null;
   let continuationScheduledFor: string | null = null;
   let continuationScheduledDelayMs: number | null = null;
   let continuationTimer: ReturnType<typeof setTimeout> | null = null;
@@ -105,6 +106,21 @@ export function createContinuationScheduler(deps: ContinuationSchedulerDeps) {
 
   const notePassthroughContinuationInput = (text: string): void => {
     passthroughContinuationInput = { text, turnIndex: null };
+  };
+
+  const noteCompaction = (): void => {
+    fullGoalNeededFor = deps.getGoal()?.goalId ?? null;
+  };
+
+  // Consume at delivery, not enqueue: compaction may occur with a continuation
+  // already queued, and a native retry must not discard the pending refresh.
+  const fullPromptForDelivery = (goalId: string): string | null => {
+    const goal = deps.getGoal();
+    if (fullGoalNeededFor !== goalId || !goal || goal.goalId !== goalId || goal.status !== "active") {
+      return null;
+    }
+    fullGoalNeededFor = null;
+    return continuationPrompt(goal);
   };
 
   const hasPendingRecoveryAttention = (): boolean => {
@@ -247,6 +263,8 @@ export function createContinuationScheduler(deps: ContinuationSchedulerDeps) {
     clearPassthroughContinuationInput,
     continuationGoalIdFromRuntimePrompt,
     markContinuationQueued,
+    noteCompaction,
+    fullPromptForDelivery,
     maybeContinue,
     maybeContinueAfterCurrentEvent,
     maybeContinueAfterPostCompactFallback,

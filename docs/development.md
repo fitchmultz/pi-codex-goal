@@ -44,6 +44,19 @@ node /tmp/pi-goal-automation/scripts/qualify.mjs --repo pi-codex-goal --source "
 
 The compatibility workflow uses this qualification tool for both Pi hosts. Qualification does not publish, install into live settings, restart active sessions, merge, or tag.
 
+## Paid compaction smoke
+
+`scripts/compaction-smoke.ts` is an explicit, bounded live check, not part of `npm test`. It requires configured Bedrock models, but no Pi changes. Select an existing installed SDK and its companion graph without replacing the development dependencies:
+
+```sh
+PI_SDK_PACKAGE="$(npm root -g)/@earendil-works/pi-coding-agent/package.json" \
+node --import ./scripts/host-sdk.ts scripts/compaction-smoke.ts --live \
+  --models global.openai.gpt-6-luna,global.anthropic.claude-haiku-5-5 \
+  --output /tmp/pi-goal-compaction-smoke
+```
+
+The script uses isolated sessions, forces one threshold compaction, checks four written/read-back artifacts, verifies one full goal in the next normal continuation, and asserts unchanged request prefixes between compactions. It lowers the local context limit only to trigger the checkpoint, then restores the model's real capacity so an indivisible retained tool result does not clamp subsequent output. The report includes provider usage and request traces; inspect it, then remove the temporary output directory. It does not modify the live Pi installation or settings.
+
 ## Interactive smoke tests
 
 These checks exercise the interactive `/goal` command, hidden continuation, bridged goal tools, filesystem verification, and final `update_goal` completion.

@@ -8,6 +8,7 @@ import type {
   SessionTreeEvent,
 } from "@earendil-works/pi-coding-agent";
 
+import { filterGoalCompactionInput } from "./goal-compaction.ts";
 import {
   clearActiveHostOverflowRecovery,
   recoveryPhaseBlocksContinuation,
@@ -88,7 +89,8 @@ export function createSessionEventHandlers(deps: GoalRuntimeSessionHandlerContex
       continuation.maybeContinue(ctx);
     }) satisfies ExtensionHandler<SessionTreeEvent>,
 
-    onSessionBeforeCompact: (async (_event, ctx) => {
+    onSessionBeforeCompact: (async (event, ctx) => {
+      filterGoalCompactionInput(event.preparation);
       if (
         runStaleQueuedWorkPlan(
           runtimeState.staleQueuedWorkGuard.planSessionBeforeCompact(),
@@ -104,6 +106,7 @@ export function createSessionEventHandlers(deps: GoalRuntimeSessionHandlerContex
     }) satisfies ExtensionHandler<SessionBeforeCompactEvent>,
 
     onSessionCompact: (async (event, ctx) => {
+      continuation.noteCompaction();
       if (runStaleQueuedWorkPlan(runtimeState.staleQueuedWorkGuard.planSessionCompact(), ctx, deps)) {
         return;
       }

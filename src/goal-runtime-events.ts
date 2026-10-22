@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
+import { registerGoalCompactionFilter } from "./goal-compaction.ts";
 import type { GoalRuntimeEventHandlers } from "./goal-runtime-event-handler-types.ts";
 
 export function registerGoalRuntimeEvents(
@@ -18,6 +19,7 @@ export function registerGoalRuntimeEvents(
   pi.on("tool_execution_end", (event, ctx) => controller.onToolExecutionEnd(event, ctx));
   pi.on("turn_end", (event, ctx) => controller.onTurnEnd(event, ctx));
   pi.on("agent_end", (event, ctx) => controller.onAgentEnd(event, ctx));
+  registerGoalCompactionFilter(pi);
   pi.on("session_before_compact", (event, ctx) =>
     controller.onSessionBeforeCompact(event, ctx),
   );
