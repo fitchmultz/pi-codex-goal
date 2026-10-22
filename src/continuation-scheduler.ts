@@ -32,7 +32,7 @@ export function createContinuationScheduler(deps: ContinuationSchedulerDeps) {
   let continuationScheduledDelayMs: number | null = null;
   let continuationTimer: ReturnType<typeof setTimeout> | null = null;
   let postCompactContinuationTimer: ReturnType<typeof setTimeout> | null = null;
-  let passthroughContinuationInput: { turnIndex: number | null } | null = null;
+  let passthroughContinuationInput: { text: string; turnIndex: number | null } | null = null;
 
   const clearContinuationTimer = (): void => {
     if (continuationTimer) {
@@ -86,8 +86,9 @@ export function createContinuationScheduler(deps: ContinuationSchedulerDeps) {
     }
   };
 
-  const isPassthroughContinuationInput = (): boolean => {
-    if (!passthroughContinuationInput) {
+  const isPassthroughContinuationInput = (text: string): boolean => {
+    if (!passthroughContinuationInput ||
+        (text !== passthroughContinuationInput.text && !text.startsWith(`${passthroughContinuationInput.text}\n\n`))) {
       return false;
     }
     const currentTurnIndex = deps.getCurrentTurnIndex();
@@ -98,16 +99,16 @@ export function createContinuationScheduler(deps: ContinuationSchedulerDeps) {
   };
 
   const continuationGoalIdFromRuntimePrompt = (prompt: string): string | null => {
-    if (isPassthroughContinuationInput()) {
+    if (isPassthroughContinuationInput(prompt)) {
       return null;
     }
     return continuationGoalIdFromPrompt(prompt);
   };
 
-  const notePassthroughContinuationInput = (): void => {
-    // Input provenance survives host-added image notes and prompt rendering.
-    // Matching the delivered text would mistake genuine input for Goal work.
-    passthroughContinuationInput = { turnIndex: null };
+  const notePassthroughContinuationInput = (text: string): void => {
+    // Protect this accepted input, not any user message delivered in its turn.
+    // Pi can append image-normalization notes separated by a blank line.
+    passthroughContinuationInput = { text, turnIndex: null };
   };
 
   const noteCompaction = (): void => {

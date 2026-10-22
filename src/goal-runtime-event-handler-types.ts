@@ -78,7 +78,7 @@ export interface GoalRuntimeContinuationPort {
       prepareContinuation?: () => boolean;
     },
   ) => void;
-  notePassthroughContinuationInput: () => void;
+  notePassthroughContinuationInput: (input: string) => void;
 }
 
 export interface GoalAccountingPort {

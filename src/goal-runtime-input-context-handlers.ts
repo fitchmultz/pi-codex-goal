@@ -41,7 +41,9 @@ export function createInputContextEventHandlers(
           ctx,
           deps,
         );
-        continuation.notePassthroughContinuationInput();
+        if (continuationGoalId !== null) {
+          continuation.notePassthroughContinuationInput(event.text);
+        }
         status.refreshUi(ctx);
         return undefined;
       }

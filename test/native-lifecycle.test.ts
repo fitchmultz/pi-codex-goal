@@ -464,6 +464,43 @@ test("native sendUserMessage normalization preserves caption and resize notes du
   assert.equal(persisted, deliveredText);
 });
 
+test("native unrelated queued input cannot exempt an earlier stale resume continuation", async (t) => {
+  const h = await fixture(t);
+  let started!: () => void;
+  const firstStarted = new Promise<void>((resolve) => { started = resolve; });
+  let release!: () => void;
+  const delivered: string[] = [];
+  let requests = 0;
+  h.session.agent.streamFunction = (model, context) => {
+    const user = context.messages.findLast((message) => message.role === "user");
+    assert.ok(user?.role === "user");
+    delivered.push(typeof user.content === "string" ? user.content : user.content.filter((part) => part.type === "text").map((part) => part.text).join("\n"));
+    const message = { ...fauxAssistantMessage("Ordinary input answered."), api: model.api, provider: model.provider, model: model.id, timestamp: Date.now() };
+    const stream = createAssistantMessageEventStream();
+    const done = () => { stream.push({ type: "done", reason: "stop", message }); stream.end(); };
+    if (requests++ === 0) { release = done; started(); }
+    else queueMicrotask(done);
+    return stream;
+  };
+  const run = h.session.prompt("Initial ordinary user input.");
+  await firstStarted;
+  await h.session.prompt("/goal pause");
+  await h.session.prompt("/goal resume");
+  const deadline = Date.now() + 5_000;
+  while (h.session.pendingMessageCount === 0) {
+    assert.ok(Date.now() < deadline, "resume must enter the native follow-up queue");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  await h.session.prompt("/goal pause");
+  await h.session.followUp("An unrelated question");
+  release();
+  await run;
+  await h.session.waitForIdle();
+  assert.equal(h.goal()?.status, "paused");
+  assert.ok(delivered.every((text) => !text.startsWith('<pi_goal_continuation goal_id="')),
+    "the paused goal's earlier queued continuation must be cancelled before the provider");
+});
+
 const waitingReason = "Explorer alpha will deliver its report as a message";
 const waitForExplorer = () => fauxAssistantMessage(fauxToolCall("update_goal", { status: "waiting", reason: waitingReason }), { stopReason: "toolUse" });
 
