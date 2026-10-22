@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
+import { crc32, deflateSync } from "node:zlib";
 import { createAssistantMessageEventStream, fauxProvider, fauxAssistantMessage, fauxToolCall, InMemoryCredentialStore } from "@earendil-works/pi-ai";
 import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager, type ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -380,6 +381,87 @@ test("custom compactor can filter Goal controls through the existing event bus w
   await h.session.compact();
   assert.equal(controlsAtConsumer, 0, "custom compactor requests the filter before consuming input");
   assert.deepEqual(h.goal(), saved);
+});
+
+function oversizedImage() {
+  const width = 3000, height = 8;
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0); header.writeUInt32BE(height, 4);
+  header[8] = 8; header[9] = 6;
+  const chunk = (name: string, data: Buffer) => {
+    const body = Buffer.concat([Buffer.from(name), data]), size = Buffer.alloc(4), checksum = Buffer.alloc(4);
+    size.writeUInt32BE(data.length); checksum.writeUInt32BE(crc32(body));
+    return Buffer.concat([size, body, checksum]);
+  };
+  const png = Buffer.concat([Buffer.from("89504e470d0a1a0a", "hex"), chunk("IHDR", header),
+    chunk("IDAT", deflateSync(Buffer.alloc((1 + width * 4) * height))), chunk("IEND", Buffer.alloc(0))]);
+  return { type: "image" as const, mimeType: "image/png", data: png.toString("base64") };
+}
+
+for (const paused of [false, true]) {
+test(`native resized-image pasted marker remains genuine user input with ${paused ? "a paused" : "an active"} goal`, async (t) => {
+  const h = await fixture(t);
+  if (paused) await h.session.prompt("/goal pause");
+  h.session.sessionManager.appendMessage({ role: "user", content: [{ type: "text", text: "Prior verified task" }], timestamp: 1 });
+  h.session.sessionManager.appendMessage(fauxAssistantMessage("Prior verified work."));
+  await h.session.compact();
+  const saved = h.goal();
+  assert.ok(saved);
+  h.faux.setResponses(paused ? [fauxAssistantMessage("User image inspected.")] : [fauxAssistantMessage("User image inspected."), complete(), fauxAssistantMessage("Goal complete.")]);
+  const prompts: string[] = [], imageCounts: number[] = [];
+  const stream = h.session.agent.streamFunction;
+  assert.ok(stream);
+  h.session.agent.streamFunction = (model, context, options) => {
+    const user = context.messages.findLast((message) => message.role === "user");
+    assert.ok(user?.role === "user");
+    prompts.push(typeof user.content === "string" ? user.content : user.content.filter((part) => part.type === "text").map((part) => part.text).join("\n"));
+    imageCounts.push(typeof user.content === "string" ? 0 : user.content.filter((part) => part.type === "image").length);
+    return stream(model, context, options);
+  };
+  const caption = "KEEP_GENUINE_IMAGE_CAPTION";
+  const prompt = compactContinuationPrompt(saved) + "\n" + caption;
+  await h.session.prompt(prompt, { images: [oversizedImage()] });
+  if (!paused) await waitForGoalCompletion(h);
+  await h.session.waitForIdle();
+  assert.ok(prompts.length > 0, "genuine input must reach the provider");
+  assert.ok(prompts[0]?.startsWith(prompt));
+  assert.match(prompts[0]!, /\[Image: original 3000x8, displayed at/);
+  assert.equal(imageCounts[0], 1);
+  assert.doesNotMatch(prompts[0]!, /<untrusted_objective>/);
+  if (paused) assert.deepEqual(h.goal(), saved);
+  else assert.match(prompts[1]!, /<untrusted_objective>/, "the actual Goal continuation still restores the full objective");
+});
+}
+
+test("native sendUserMessage normalization preserves caption and resize notes during full-goal restoration", async (t) => {
+  const h = await fixture(t);
+  h.session.sessionManager.appendMessage({ role: "user", content: [{ type: "text", text: "Prior verified task" }], timestamp: 1 });
+  h.session.sessionManager.appendMessage(fauxAssistantMessage("Prior verified work."));
+  await h.session.compact();
+  const saved = h.goal();
+  assert.ok(saved);
+  h.faux.setResponses([complete(), fauxAssistantMessage("Goal complete.")]);
+  let deliveredText = "", deliveredImages = 0;
+  const stream = h.session.agent.streamFunction;
+  assert.ok(stream);
+  h.session.agent.streamFunction = (model, context, options) => {
+    const user = context.messages.findLast((message) => message.role === "user");
+    assert.ok(user?.role === "user");
+    deliveredText = typeof user.content === "string" ? user.content : user.content.filter((part) => part.type === "text").map((part) => part.text).join("\n");
+    deliveredImages = typeof user.content === "string" ? 0 : user.content.filter((part) => part.type === "image").length;
+    return stream(model, context, options);
+  };
+  const caption = "KEEP_EXTENSION_IMAGE_CAPTION";
+  await h.session.sendUserMessage([{ type: "text", text: compactContinuationPrompt(saved) }, oversizedImage(), { type: "text", text: caption }]);
+  await waitForGoalCompletion(h);
+  assert.match(deliveredText, /<untrusted_objective>/);
+  assert.match(deliveredText, /KEEP_EXTENSION_IMAGE_CAPTION/);
+  assert.match(deliveredText, /\[Image: original 3000x8, displayed at/);
+  assert.equal(deliveredImages, 1);
+  const user = h.session.sessionManager.getBranch().findLast((entry) => entry.type === "message" && entry.message.role === "user");
+  assert.ok(user?.type === "message" && user.message.role === "user");
+  const persisted = typeof user.message.content === "string" ? user.message.content : user.message.content.filter((part) => part.type === "text").map((part) => part.text).join("\n");
+  assert.equal(persisted, deliveredText);
 });
 
 const waitingReason = "Explorer alpha will deliver its report as a message";

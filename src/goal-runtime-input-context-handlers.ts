@@ -6,7 +6,7 @@ import type {
   InputEventResult,
 } from "@earendil-works/pi-coding-agent";
 
-import { continuationGoalIdFromPrompt } from "./prompts.ts";
+import { continuationGoalIdFromPrompt, continuationPromptEnd } from "./prompts.ts";
 import { CUSTOM_ENTRY_TYPE } from "./types.ts";
 import { cancelQueuedGoalWork } from "./queued-goal-work.ts";
 import {
@@ -41,9 +41,7 @@ export function createInputContextEventHandlers(
           ctx,
           deps,
         );
-        if (continuationGoalId !== null) {
-          continuation.notePassthroughContinuationInput(event.text);
-        }
+        continuation.notePassthroughContinuationInput();
         status.refreshUi(ctx);
         return undefined;
       }
@@ -153,16 +151,23 @@ export function createInputContextEventHandlers(
       if (stateController.isCurrentActiveGoalId(queuedGoalId)) {
         // Only a newly delivered, runnable Goal message can be refreshed. Never
         // rewrite answered history, user-pasted markers, or cancelled notices.
-        const runnable = message.role === "user" ||
-          (message.role === "custom" && isActiveGoalQueuedDetails(message.details));
-        const prompt = runnable ? continuation.fullPromptForDelivery(queuedGoalId) : null;
-        if (prompt !== null) {
-          if (message.role === "custom") return { message: { ...message, content: prompt } };
-          if (message.role === "user") {
-            const firstText = typeof message.content === "string" ? -1 : message.content.findIndex((part) => part.type === "text");
-            const content = typeof message.content === "string"
-              ? [{ type: "text" as const, text: prompt }]
-              : message.content.map((part, index) => index === firstText ? { type: "text" as const, text: prompt } : part);
+        if ((message.role === "user" || message.role === "custom") &&
+            (message.role !== "custom" || isActiveGoalQueuedDetails(message.details))) {
+          const original = typeof message.content === "string"
+            ? message.content : message.content.find((part) => part.type === "text")?.text;
+          const end = original === undefined ? null : continuationPromptEnd(original);
+          const prompt = end === null ? null : continuation.fullPromptForDelivery(queuedGoalId);
+          if (prompt !== null && original !== undefined && end !== null) {
+            // Pi can merge captions and append resize notes into this text block.
+            // Replace only the control envelope, not the accompanying input.
+            const text = prompt + original.slice(end);
+            if (typeof message.content === "string") {
+              if (message.role === "custom") return { message: { ...message, content: text } };
+              return { message: { ...message, content: [{ type: "text", text }] } };
+            }
+            const firstText = message.content.findIndex((part) => part.type === "text");
+            const content = message.content.map((part, index) => index === firstText ? { type: "text" as const, text } : part);
+            if (message.role === "custom") return { message: { ...message, content } };
             return { message: { ...message, content } };
           }
         }

@@ -78,6 +78,14 @@ export function continuationGoalIdFromPrompt(prompt: string): string | null {
   return prompt.slice(CONTINUATION_MARKER_PREFIX.length, end);
 }
 
+/** End of the known control envelope; text after it belongs to attachments/input. */
+export function continuationPromptEnd(prompt: string): number | null {
+  if (continuationGoalIdFromPrompt(prompt) === null) return null;
+  const closing = "</pi_goal_continuation>";
+  const index = prompt.indexOf(closing);
+  return index < 0 ? null : index + closing.length;
+}
+
 function formatOptionalTokenBudget(goal: ThreadGoal): string {
   return goal.tokenBudget === null ? "none" : formatTokenValue(goal.tokenBudget);
 }

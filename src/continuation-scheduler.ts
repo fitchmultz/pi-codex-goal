@@ -32,7 +32,7 @@ export function createContinuationScheduler(deps: ContinuationSchedulerDeps) {
   let continuationScheduledDelayMs: number | null = null;
   let continuationTimer: ReturnType<typeof setTimeout> | null = null;
   let postCompactContinuationTimer: ReturnType<typeof setTimeout> | null = null;
-  let passthroughContinuationInput: { text: string; turnIndex: number | null } | null = null;
+  let passthroughContinuationInput: { turnIndex: number | null } | null = null;
 
   const clearContinuationTimer = (): void => {
     if (continuationTimer) {
@@ -86,8 +86,8 @@ export function createContinuationScheduler(deps: ContinuationSchedulerDeps) {
     }
   };
 
-  const isPassthroughContinuationInput = (text: string): boolean => {
-    if (!passthroughContinuationInput || passthroughContinuationInput.text !== text) {
+  const isPassthroughContinuationInput = (): boolean => {
+    if (!passthroughContinuationInput) {
       return false;
     }
     const currentTurnIndex = deps.getCurrentTurnIndex();
@@ -98,14 +98,16 @@ export function createContinuationScheduler(deps: ContinuationSchedulerDeps) {
   };
 
   const continuationGoalIdFromRuntimePrompt = (prompt: string): string | null => {
-    if (isPassthroughContinuationInput(prompt)) {
+    if (isPassthroughContinuationInput()) {
       return null;
     }
     return continuationGoalIdFromPrompt(prompt);
   };
 
-  const notePassthroughContinuationInput = (text: string): void => {
-    passthroughContinuationInput = { text, turnIndex: null };
+  const notePassthroughContinuationInput = (): void => {
+    // Input provenance survives host-added image notes and prompt rendering.
+    // Matching the delivered text would mistake genuine input for Goal work.
+    passthroughContinuationInput = { turnIndex: null };
   };
 
   const noteCompaction = (): void => {

@@ -177,6 +177,20 @@ test("replaced goals, cancelled notices, and user-pasted markers do not consume 
   assert.deepEqual(await harness.emit("message_end", { type: "message_end", message: goalMessage("continuation", compactContinuationPrompt(replacement), replacement.goalId) }), [undefined]);
 });
 
+test("normalized caption suffixes survive restoration and incomplete controls do not consume it", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("Keep accompanying input");
+  const saved = harness.snapshot().goal;
+  assert.ok(saved);
+  await harness.emit("session_compact", sessionCompactEvent());
+  const incomplete = `<pi_goal_continuation goal_id="${saved.goalId}">Unfinished control`;
+  assert.deepEqual(await harness.emit("message_end", { type: "message_end", message: goalMessage("continuation", incomplete, saved.goalId) }), [undefined]);
+  const suffix = "\nKEEP_NORMALIZED_CAPTION\n[Image coordinate note]";
+  const message = goalMessage("continuation", compactContinuationPrompt(saved) + suffix, saved.goalId);
+  const result = replacedMessage((await harness.emit("message_end", { type: "message_end", message }))[0]);
+  assert.equal(result.content, continuationPrompt(harness.snapshot().goal!) + suffix);
+});
+
 test("preparation without successful compaction does not request a full goal", async () => {
   const harness = createRuntimeHarness();
   await harness.runCommand("Compaction failed");
