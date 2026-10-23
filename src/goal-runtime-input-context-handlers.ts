@@ -166,7 +166,6 @@ export function createInputContextEventHandlers(
               }
               const firstText = message.content.findIndex((part) => part.type === "text");
               const content = message.content.map((part, index) => index === firstText ? { type: "text" as const, text } : part);
-              if (message.role === "custom") return { message: { ...message, content } };
               return { message: { ...message, content } };
             }
           }

@@ -6,7 +6,6 @@ import { test, type TestContext } from "node:test";
 import { crc32, deflateSync } from "node:zlib";
 import { createAssistantMessageEventStream, fauxProvider, fauxAssistantMessage, fauxToolCall, InMemoryCredentialStore, type UserMessage } from "@earendil-works/pi-ai";
 import { AgentSessionRuntime, createAgentSession, DefaultResourceLoader, InteractiveMode, ModelRuntime, SessionManager, SettingsManager, type ExtensionFactory } from "@earendil-works/pi-coding-agent";
-import type { Terminal } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import goalExtension from "../src/index.ts";
 import { compactContinuationPrompt, escapeXmlText } from "../src/prompts.ts";
@@ -614,11 +613,13 @@ test("native restored editor input removes every joined delivery header without 
     settingsManager: h.session.settingsManager, modelRuntime: h.session.modelRuntime,
     resourceLoader: h.session.resourceLoader, diagnostics: [],
   }, async () => { throw new Error("This test must not replace the session"); });
-  const terminal: Terminal = {
+  // Infer the adapter and check it at InteractiveMode's Terminal boundary: current
+  // hosts require program status, while older supported types do not declare it.
+  const terminal = {
     start() { assert.fail("This test must not start terminal IO"); }, stop() {},
     async drainInput() {}, write() {}, columns: 100, rows: 30, kittyProtocolActive: false,
     moveBy() {}, hideCursor() {}, showCursor() {}, clearLine() {}, clearFromCursor() {},
-    clearScreen() {}, setTitle() {}, setProgress() {},
+    clearScreen() {}, setTitle() {}, setProgress() {}, setProgramStatus() {},
   };
   // Construct the real editor/queue owner, but do not start its CLI loop, IO or
   // startup checks. Invoke the native restore method; never recreate its join logic.
