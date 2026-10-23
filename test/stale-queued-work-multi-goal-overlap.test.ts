@@ -140,7 +140,7 @@ test("back-to-back stale aborts unblock continuation when active id-less agent_e
     assert.equal(goal?.goalId, replacement?.goalId);
     assert.equal(goal?.status, "active");
     assert.equal(harness.sentMessages.length, 1);
-    assert.deepEqual(harness.sentMessages[0]?.message.details, {
+    assert.partialDeepStrictEqual(harness.sentMessages[0]?.message.details, {
       kind: "continuation",
       goalId: replacement?.goalId,
     });
@@ -210,7 +210,7 @@ test("same-goal stale abort unblocks continuation when active agent_end arrives 
     assert.equal(goal?.goalId, replacement?.goalId);
     assert.equal(goal?.status, "active");
     assert.equal(harness.sentMessages.length, 1);
-    assert.deepEqual(harness.sentMessages[0]?.message.details, {
+    assert.partialDeepStrictEqual(harness.sentMessages[0]?.message.details, {
       kind: "continuation",
       goalId: replacement?.goalId,
     });

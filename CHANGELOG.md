@@ -3,6 +3,11 @@
 ## Unreleased
 
 - Add model-declared `waiting` goals for named background work that delivers its own result, stopping hidden continuation loops and active time while waiting (#105). Reactivate on new user/steering/extension input or explicit `/goal resume`, preserve waiting reasons across sessions, and keep goal bookkeeping from waking a wait.
+- Keep sent Goal messages unchanged in provider requests so continuations and goal changes can reuse the cached prefix. New custom Goal controls for an inactive goal are cancelled once at delivery. User messages are not rewritten, and existing JSONL is not migrated.
+- Remove repeated custom Goal controls only from compaction input copies. Keep objectives, user messages (including pasted Goal markers), substantive work, and compaction boundaries. Custom summarizers opt in by loading after Goal or emitting `pi-codex-goal:compaction-input` before summarizing.
+- After compaction, the next valid normal custom continuation includes the full saved objective, status, budget, and usage once, including across reload. Later continuations stay compact; accompanying captions, images and native normalization notes are preserved.
+- Use public native custom messages with per-delivery goal/generation/lifecycle metadata for every automated Goal follow-up. Remove text-marker ownership, transport envelopes and user-follow-up workarounds; genuine literal markers remain ordinary user data. Stale, cancelled, replaced and replayed deliveries cannot inherit current ownership.
+- **Intentional behavior changes, approved by the owner:** automated Goal follow-ups are no longer editable through Alt+Up and no longer reset exhausted native overflow recovery. Genuine user queue editing/drafts/images and user recovery remain native. Goal pauses with an explanation when recovery is exhausted; use a genuine user message after reducing context or switching models, then `/goal resume`. No new host API or support-floor change.
 
 ## 0.6.1 - 2026-10-12
 

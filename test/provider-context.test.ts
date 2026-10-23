@@ -3,10 +3,9 @@ import { test } from "node:test";
 
 import {
   compactContinuationPrompt,
-  continuationGoalIdFromPrompt,
   continuationPrompt,
 } from "../src/prompts.ts";
-import { userContentFromUnknown } from "../src/queued-goal-messages.ts";
+import { type QueuedGoalContextCarrier, userContentFromUnknown } from "./support/context-messages.ts";
 import {
   assistantMessage,
   createRuntimeHarness,
@@ -15,60 +14,73 @@ import {
   emitQueuedTurnThroughContext,
   goalCustomContextMessage,
   goalUserContextMessage,
-  providerContextMessageAt,
-  requireProviderContextResult,
+  queuedCustomMessage,
 } from "./support/runtime-harness.ts";
 
-test("provider context dedupes many active continuations without refreshing the latest prompt", async () => {
+test("provider context leaves every active-goal continuation verbatim", async () => {
   const harness = createRuntimeHarness();
   await harness.runCommand("ship it");
   const goal = harness.snapshot().goal;
   assert.ok(goal);
 
-  const fullStart = continuationPrompt(goal);
-  const olderContinuation = continuationPrompt({
-    ...goal,
-    usage: { ...goal.usage, tokensUsed: 1, activeSeconds: 1 },
-  });
-  const latestContinuation = compactContinuationPrompt({
-    ...goal,
-    usage: { ...goal.usage, tokensUsed: 99, activeSeconds: 42 },
-  });
-
   const messages = [
     goalCustomContextMessage({
-      content: fullStart,
+      content: continuationPrompt(goal),
       details: { kind: "command_start", goalId: goal.goalId },
       timestamp: 1,
     }),
     goalCustomContextMessage({
-      content: olderContinuation,
+      content: compactContinuationPrompt({ ...goal, usage: { ...goal.usage, tokensUsed: 1, activeSeconds: 1 } }),
       details: { kind: "continuation", goalId: goal.goalId },
       timestamp: 2,
     }),
     goalCustomContextMessage({
-      content: latestContinuation,
+      content: compactContinuationPrompt({ ...goal, usage: { ...goal.usage, tokensUsed: 99, activeSeconds: 42 } }),
       details: { kind: "continuation", goalId: goal.goalId },
       timestamp: 3,
     }),
   ];
 
   const results = await emitProviderContext(harness, messages);
-  const result = requireProviderContextResult(results);
-  assert.equal(result.messages.length, 3);
+  assert.deepEqual(results, [undefined]);
+});
 
-  assert.match(String(providerContextMessageAt(result, 0).content), /Superseded hidden goal continuation bookkeeping/);
-  assert.deepEqual(providerContextMessageAt(result, 0).details, {
-    kind: "superseded_continuation",
-    goalId: goal.goalId,
-  });
-  assert.match(String(providerContextMessageAt(result, 1).content), /Superseded hidden goal continuation bookkeeping/);
+test("answered goal work stays verbatim as its goal pauses, resumes, completes and is replaced", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  const goal = harness.snapshot().goal;
+  assert.ok(goal);
 
-  const latestContent = String(providerContextMessageAt(result, 2).content);
-  assert.match(latestContent, /Tokens used: 99/);
-  assert.match(latestContent, /Time spent pursuing goal: 42s/);
-  assert.equal(continuationGoalIdFromPrompt(latestContent), goal.goalId);
-  assert.doesNotMatch(latestContent, /<untrusted_objective>/);
+  const pastedMarker = goalUserContextMessage(continuationPrompt(goal), 5);
+  const transcript: QueuedGoalContextCarrier[] = [
+    goalCustomContextMessage({
+      content: continuationPrompt(goal),
+      details: { kind: "command_start", goalId: goal.goalId },
+      timestamp: 1,
+    }),
+    assistantMessage("stop", { input: 1, output: 1 }),
+    goalCustomContextMessage({
+      content: compactContinuationPrompt(goal),
+      details: { kind: "continuation", goalId: goal.goalId },
+      timestamp: 3,
+    }),
+    assistantMessage("stop", { input: 1, output: 1 }),
+    pastedMarker,
+    assistantMessage("stop", { input: 1, output: 1 }),
+  ];
+
+  // Prompt caches match the request prefix exactly, so no goal transition may change sent messages.
+  for (const transition of ["pause", "resume", "complete", "replace"] as const) {
+    if (transition === "complete") {
+      await harness.runTool("update_goal", { status: "complete" });
+    } else if (transition === "replace") {
+      await harness.runCommand("ship something else");
+    } else {
+      await harness.runCommand(transition);
+    }
+    assert.deepEqual(await emitProviderContext(harness, transcript), [undefined], `after ${transition}`);
+  }
+  assert.equal(harness.snapshot().goal?.objective, "ship something else");
 });
 
 test("active provider-context user marker without passthrough binding remains verbatim", async () => {
@@ -86,53 +98,8 @@ test("active provider-context user marker without passthrough binding remains ve
   assert.match(userPrompt, /<untrusted_objective>/);
 });
 
-test("active provider-context dedupe preserves historical user marker mixed with hidden continuations", async () => {
-  const harness = createRuntimeHarness();
-  await harness.runCommand("ship it");
-  const goal = harness.snapshot().goal;
-  assert.ok(goal);
-
-  const userPrompt = continuationPrompt(goal);
-  const olderContinuation = continuationPrompt({
-    ...goal,
-    usage: { ...goal.usage, tokensUsed: 1, activeSeconds: 1 },
-  });
-  const latestContinuation = compactContinuationPrompt({
-    ...goal,
-    usage: { ...goal.usage, tokensUsed: 99, activeSeconds: 42 },
-  });
-
-  const userMessage = goalUserContextMessage(userPrompt, 2);
-  const messages = [
-    goalCustomContextMessage({
-      content: olderContinuation,
-      details: { kind: "continuation", goalId: goal.goalId },
-      timestamp: 1,
-    }),
-    userMessage,
-    goalCustomContextMessage({
-      content: latestContinuation,
-      details: { kind: "continuation", goalId: goal.goalId },
-      timestamp: 3,
-    }),
-  ];
-
-  const contextResults = await emitProviderContext(harness, messages);
-  const result = requireProviderContextResult(contextResults);
-  assert.equal(result.messages.length, 3);
-
-  assert.match(String(providerContextMessageAt(result, 0).content), /Superseded hidden goal continuation bookkeeping/);
-  assert.deepEqual(providerContextMessageAt(result, 1).content, userMessage.content);
-  assert.match(String(userContentFromUnknown(providerContextMessageAt(result, 1).content)[0]?.text), /<untrusted_objective>/);
-
-  const latestContent = String(providerContextMessageAt(result, 2).content);
-  assert.match(latestContent, /Tokens used: 99/);
-  assert.doesNotMatch(latestContent, /<untrusted_objective>/);
-  assert.equal(continuationGoalIdFromPrompt(latestContent), goal.goalId);
-});
-
 for (const source of ["interactive", "rpc"] as const) {
-  test(`active goal pasted continuation marker from ${source} survives provider-context dedupe`, async () => {
+  test(`active goal pasted continuation marker from ${source} survives provider context`, async () => {
     const harness = createRuntimeHarness();
     await harness.runCommand("ship it");
     const goal = harness.snapshot().goal;
@@ -154,27 +121,19 @@ for (const source of ["interactive", "rpc"] as const) {
     const contextResults = await emitQueuedTurnThroughContext(harness, [userMessage], 0);
 
     assert.equal(contextResults[0], undefined);
+    assert.deepEqual(userMessage, goalUserContextMessage(prompt, 1));
     assert.equal(harness.snapshot().goal?.status, "active");
     assert.match(prompt, /<untrusted_objective>/);
   });
 }
 
-test("active goal provider-context dedupe preserves pasted marker input mixed with hidden continuations", async () => {
+test("active goal provider context leaves pasted marker input mixed with hidden continuations verbatim", async () => {
   const harness = createRuntimeHarness();
   await harness.runCommand("ship it");
   const goal = harness.snapshot().goal;
   assert.ok(goal);
 
   const pastedPrompt = continuationPrompt(goal);
-  const olderContinuation = continuationPrompt({
-    ...goal,
-    usage: { ...goal.usage, tokensUsed: 1, activeSeconds: 1 },
-  });
-  const latestContinuation = compactContinuationPrompt({
-    ...goal,
-    usage: { ...goal.usage, tokensUsed: 99, activeSeconds: 42 },
-  });
-
   await harness.emit("input", {
     type: "input",
     text: pastedPrompt,
@@ -184,55 +143,37 @@ test("active goal provider-context dedupe preserves pasted marker input mixed wi
   const userMessage = goalUserContextMessage(pastedPrompt, 2);
   const messages = [
     goalCustomContextMessage({
-      content: olderContinuation,
+      content: compactContinuationPrompt(goal),
       details: { kind: "continuation", goalId: goal.goalId },
       timestamp: 1,
     }),
     userMessage,
     goalCustomContextMessage({
-      content: latestContinuation,
+      content: compactContinuationPrompt({ ...goal, usage: { ...goal.usage, tokensUsed: 99 } }),
       details: { kind: "continuation", goalId: goal.goalId },
       timestamp: 3,
     }),
   ];
 
   const contextResults = await emitQueuedTurnThroughContext(harness, messages, 0);
-  const result = requireProviderContextResult(contextResults);
-  assert.equal(result.messages.length, 3);
 
-  assert.deepEqual(providerContextMessageAt(result, 1).content, userMessage.content);
-  assert.match(String(userContentFromUnknown(providerContextMessageAt(result, 1).content)[0]?.text), /<untrusted_objective>/);
-  assert.match(String(providerContextMessageAt(result, 0).content), /Superseded hidden goal continuation bookkeeping/);
-
-  const latestContent = String(providerContextMessageAt(result, 2).content);
-  assert.match(latestContent, /Tokens used: 99/);
-  assert.doesNotMatch(latestContent, /<untrusted_objective>/);
-  assert.equal(continuationGoalIdFromPrompt(latestContent), goal.goalId);
+  assert.equal(contextResults[0], undefined);
+  assert.match(String(userContentFromUnknown(userMessage.content)[0]?.text), /<untrusted_objective>/);
 });
 
-test("latest active continuation remains runnable after provider-context dedupe", async () => {
+test("latest active continuation remains runnable", async () => {
   const harness = createRuntimeHarness();
   await harness.runCommand("ship it");
   const goal = harness.snapshot().goal;
   assert.ok(goal);
 
-  const staleInBranch = continuationPrompt(goal);
-  const latestInBranch = compactContinuationPrompt(goal);
-  const contextResults = await emitProviderContext(harness, [
-    goalCustomContextMessage({
-      content: staleInBranch,
-      details: { kind: "continuation", goalId: goal.goalId },
-      timestamp: 1,
-    }),
-    goalCustomContextMessage({
-      content: latestInBranch,
-      details: { kind: "continuation", goalId: goal.goalId },
-      timestamp: 2,
-    }),
-  ]);
-  const contextResult = requireProviderContextResult(contextResults);
-  const latestContent = String(providerContextMessageAt(contextResult, 1).content);
-  assert.equal(continuationGoalIdFromPrompt(latestContent), goal.goalId);
+  const queued = harness.sentMessages[0];
+  assert.ok(queued);
+  const latest = queuedCustomMessage(queued, 2);
+  const contextResults = await emitQueuedTurnThroughContext(harness, [latest], 0);
+  assert.equal(contextResults[0], undefined);
+  const latestContent = String(latest.content);
+  assert.match(latestContent, /<untrusted_objective>/);
 
   harness.sentMessages.length = 0;
   await harness.emit("before_agent_start", userBeforeAgentStartEvent(latestContent));
@@ -243,35 +184,49 @@ test("latest active continuation remains runnable after provider-context dedupe"
 
   assert.equal(harness.snapshot().goal?.status, "active");
   assert.equal(harness.sentMessages.length, 1);
-  assert.deepEqual(harness.sentMessages[0]?.message.details, {
+  assert.partialDeepStrictEqual(harness.sentMessages[0]?.message.details, {
     kind: "continuation",
     goalId: goal.goalId,
   });
 });
 
-test("completed goals are not treated as active during continuation dedupe", async () => {
+test("queued work delivered after its goal completed is cancelled at delivery", async () => {
   const harness = createRuntimeHarness();
   await harness.runCommand("ship it");
-  const goalId = harness.snapshot().goal?.goalId;
-  assert.ok(goalId);
-  const prompt = continuationPrompt(harness.snapshot().goal!);
+  const goal = harness.snapshot().goal;
+  assert.ok(goal);
 
   await harness.runTool("update_goal", { status: "complete" });
-  const results = await emitProviderContext(harness, [
-    goalCustomContextMessage({
-      content: prompt,
-      details: { kind: "continuation", goalId },
-      timestamp: 1,
-    }),
-    goalCustomContextMessage({
-      content: prompt,
-      details: { kind: "continuation", goalId },
-      timestamp: 2,
-    }),
-  ]);
+  const queued = harness.sentMessages[0];
+  assert.ok(queued);
+  const delivered = [1, 2].map((timestamp) => queuedCustomMessage(queued, timestamp));
+  const contextResults = await emitQueuedTurnThroughContext(harness, delivered, 0);
 
-  const result = requireProviderContextResult(results);
-  assert.match(String(providerContextMessageAt(result, 0).content), /queued hidden goal continuation was stale/);
-  assert.match(String(providerContextMessageAt(result, 1).content), /queued hidden goal continuation was stale/);
+  assert.equal(contextResults[0], undefined);
+  for (const message of delivered) {
+    assert.match(String(message.content), /queued Goal follow-up was cancelled/);
+    assert.partialDeepStrictEqual(message.details, { kind: "stale_continuation", lifecycle: "cancelled", goalId: goal.goalId });
+  }
   assert.equal(harness.snapshot().goal?.status, "complete");
+});
+
+test("a cancellation recorded while the goal was paused is kept after it resumes", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("ship it");
+  const goal = harness.snapshot().goal;
+  assert.ok(goal);
+
+  await harness.runCommand("pause");
+  const queued = harness.sentMessages[0];
+  assert.ok(queued);
+  const delivered = queuedCustomMessage(queued);
+  await emitQueuedTurnThroughContext(harness, [delivered], 0);
+  assert.equal(harness.abortCount, 1);
+  assert.match(String(delivered.content), /cancelled before running/);
+  const cancelled = structuredClone(delivered);
+
+  await harness.runCommand("resume");
+  assert.equal(harness.snapshot().goal?.status, "active");
+  assert.deepEqual(await emitProviderContext(harness, [delivered, assistantMessage("aborted", { input: 1, output: 1 })]), [undefined]);
+  assert.deepEqual(delivered, cancelled);
 });

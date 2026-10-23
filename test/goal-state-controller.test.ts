@@ -45,6 +45,7 @@ function createStateControllerTestHarness(goal: ThreadGoal | null = activeGoal) 
   const stateController = createGoalStateController({
     pi,
     persistence,
+    invalidateDeliveries() {},
     getRecoveryState: () => recoveryState,
     transitionEffectHandlers: {
       clearContinuation: () => {},

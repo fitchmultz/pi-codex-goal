@@ -69,7 +69,7 @@ test("abortingTurn: late stale turn 0 agent_end during turn 1 abort is skipped",
     {
       role: "custom",
       customType: CUSTOM_ENTRY_TYPE,
-      details: { kind: "continuation", goalId: "goal-0" },
+      details: { kind: "continuation", goalId: "shared-goal", generation: "activation", deliveryId: "goal-0", lifecycle: "queued" },
     },
     abortedAssistant,
   ]);
@@ -91,12 +91,12 @@ test("abortingTurn: combined older and active agent_end with aborted finishes ac
     {
       role: "custom",
       customType: CUSTOM_ENTRY_TYPE,
-      details: { kind: "continuation", goalId: "goal-0" },
+      details: { kind: "continuation", goalId: "shared-goal", generation: "activation", deliveryId: "goal-0", lifecycle: "queued" },
     },
     {
       role: "custom",
       customType: CUSTOM_ENTRY_TYPE,
-      details: { kind: "continuation", goalId: "goal-1" },
+      details: { kind: "continuation", goalId: "shared-goal", generation: "activation", deliveryId: "goal-1", lifecycle: "queued" },
     },
     abortedAssistant,
   ]);
@@ -119,12 +119,12 @@ test("abortingTurn: combined older and active agent_end with stop finishes activ
     {
       role: "custom",
       customType: CUSTOM_ENTRY_TYPE,
-      details: { kind: "continuation", goalId: "goal-0" },
+      details: { kind: "continuation", goalId: "shared-goal", generation: "activation", deliveryId: "goal-0", lifecycle: "queued" },
     },
     {
       role: "custom",
       customType: CUSTOM_ENTRY_TYPE,
-      details: { kind: "continuation", goalId: "goal-1" },
+      details: { kind: "continuation", goalId: "shared-goal", generation: "activation", deliveryId: "goal-1", lifecycle: "queued" },
     },
     stoppedAssistant,
   ]);
@@ -185,7 +185,7 @@ test("abortingTurn: older id-less agent_end error during newer active abort stay
     {
       role: "custom",
       customType: CUSTOM_ENTRY_TYPE,
-      details: { kind: "continuation", goalId: "goal-1" },
+      details: { kind: "continuation", goalId: "shared-goal", generation: "activation", deliveryId: "goal-1", lifecycle: "queued" },
     },
     abortedAssistant,
   ]);
@@ -210,12 +210,12 @@ test("abortingTurn: older multi-goal obligation with active overlap stays aborti
     {
       role: "custom",
       customType: CUSTOM_ENTRY_TYPE,
-      details: { kind: "continuation", goalId: "goal-0" },
+      details: { kind: "continuation", goalId: "shared-goal", generation: "activation", deliveryId: "goal-0", lifecycle: "queued" },
     },
     {
       role: "custom",
       customType: CUSTOM_ENTRY_TYPE,
-      details: { kind: "continuation", goalId: "goal-1" },
+      details: { kind: "continuation", goalId: "shared-goal", generation: "activation", deliveryId: "goal-1", lifecycle: "queued" },
     },
     abortedAssistant,
   ]);
@@ -228,7 +228,7 @@ test("abortingTurn: older multi-goal obligation with active overlap stays aborti
     {
       role: "custom",
       customType: CUSTOM_ENTRY_TYPE,
-      details: { kind: "continuation", goalId: "goal-1" },
+      details: { kind: "continuation", goalId: "shared-goal", generation: "activation", deliveryId: "goal-1", lifecycle: "queued" },
     },
     abortedAssistant,
   ]);
@@ -252,7 +252,7 @@ test("abortingTurn: duplicate same-goal stale aborts consume older agent_end fir
     {
       role: "custom",
       customType: CUSTOM_ENTRY_TYPE,
-      details: { kind: "continuation", goalId: "goal-shared" },
+      details: { kind: "continuation", goalId: "shared-goal", generation: "activation", deliveryId: "goal-shared", lifecycle: "queued" },
     },
     abortedAssistant,
   ]);
@@ -265,7 +265,7 @@ test("abortingTurn: duplicate same-goal stale aborts consume older agent_end fir
     {
       role: "custom",
       customType: CUSTOM_ENTRY_TYPE,
-      details: { kind: "continuation", goalId: "goal-shared" },
+      details: { kind: "continuation", goalId: "shared-goal", generation: "activation", deliveryId: "goal-shared", lifecycle: "queued" },
     },
     abortedAssistant,
   ]);
@@ -280,7 +280,7 @@ test("abortingTurn: duplicate same-goal matches in one active agent_end consume 
   const sharedGoalMessage = {
     role: "custom" as const,
     customType: CUSTOM_ENTRY_TYPE,
-    details: { kind: "continuation" as const, goalId: "goal-shared" },
+    details: { kind: "continuation", goalId: "shared-goal", generation: "activation", deliveryId: "goal-shared", lifecycle: "queued" },
   };
 
   guard.noteStaleWorkStarted("goal-shared");
@@ -313,7 +313,7 @@ test("abortingTurn: same-goal active agent_end after active turn_end finishes wi
   const sharedGoalMessage = {
     role: "custom" as const,
     customType: CUSTOM_ENTRY_TYPE,
-    details: { kind: "continuation" as const, goalId: "goal-shared" },
+    details: { kind: "continuation", goalId: "shared-goal", generation: "activation", deliveryId: "goal-shared", lifecycle: "queued" },
   };
 
   guard.noteStaleWorkStarted("goal-shared");
@@ -362,7 +362,7 @@ test("abortingTurn: goal-bearing agent_end clears active obligation without anon
     {
       role: "custom",
       customType: CUSTOM_ENTRY_TYPE,
-      details: { kind: "continuation", goalId: "goal-1" },
+      details: { kind: "continuation", goalId: "shared-goal", generation: "activation", deliveryId: "goal-1", lifecycle: "queued" },
     },
     abortedAssistant,
   ]);
@@ -388,7 +388,7 @@ test("abortingTurn: active turn 1 agent_end preserves awaiting cleanup for turn 
     {
       role: "custom",
       customType: CUSTOM_ENTRY_TYPE,
-      details: { kind: "continuation", goalId: "goal-1" },
+      details: { kind: "continuation", goalId: "shared-goal", generation: "activation", deliveryId: "goal-1", lifecycle: "queued" },
     },
     abortedAssistant,
   ]);

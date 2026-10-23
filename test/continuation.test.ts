@@ -9,6 +9,8 @@ import { CUSTOM_ENTRY_TYPE } from "../src/types.ts";
 import {
   assistantMessage,
   createRuntimeHarness,
+  deliverQueuedMessage,
+  emitMessageEnd,
   userBeforeAgentStartEvent,
   emitPersistentAssistantError,
   emitToolExecutionEnd,
@@ -137,17 +139,17 @@ test("session resume prompt can reactivate a paused goal", async () => {
   await harness.emit("session_start", { type: "session_start", reason: "resume" });
 
   assert.equal(harness.snapshot().goal?.status, "active");
-  assert.equal(harness.sentMessages.length, 0);
-  assert.equal(harness.sentUserMessages.length, 1);
-  const sentUserMessage = harness.sentUserMessages[0];
+  assert.equal(harness.sentMessages.length, 1);
+  assert.equal(harness.sentUserMessages.length, 0);
+  const sentUserMessage = harness.sentMessages[0];
   assert.ok(sentUserMessage);
-  assert.deepEqual(sentUserMessage.options, { deliverAs: "followUp" });
-  const content = sentUserMessage.content;
+  assert.deepEqual(sentUserMessage.options, { triggerTurn: true, deliverAs: "followUp" });
+  const content = sentUserMessage.message.content;
   if (typeof content !== "string") {
     assert.fail("Expected session resume to send a user continuation prompt.");
   }
-  assert.doesNotMatch(content, /<untrusted_objective>/);
-  assert.match(content, /<pi_goal_continuation goal_id="/);
+  assert.match(content, /<untrusted_objective>/);
+  assert.doesNotMatch(content, /pi_goal_delivery|pi_goal_continuation/);
 });
 
 test("completed turns count input plus output and continue active goals", async () => {
@@ -163,6 +165,7 @@ test("completed turns count input plus output and continue active goals", async 
     type: "message_start",
     message: queuedMessage,
   });
+  await emitMessageEnd(harness, queuedMessage);
   await harness.emit("turn_end", {
     type: "turn_end",
     turnIndex: 0,
@@ -181,7 +184,7 @@ test("completed turns count input plus output and continue active goals", async 
   assert.equal(goal?.usage.tokensUsed, 42);
   assert.equal(harness.sentMessages.length, 1);
   assert.equal(harness.sentMessages[0]?.message.customType, CUSTOM_ENTRY_TYPE);
-  assert.deepEqual(harness.sentMessages[0]?.message.details, {
+  assert.partialDeepStrictEqual(harness.sentMessages[0]?.message.details, {
     kind: "continuation",
     goalId: goal?.goalId,
   });
@@ -416,7 +419,7 @@ test("budget crossing sends one hidden budget-limit steering message", async () 
   assert.equal(goal?.status, "budgetLimited");
   assert.equal(goal?.usage.tokensUsed, 500_001);
   assert.equal(harness.sentMessages.length, 1);
-  assert.deepEqual(harness.sentMessages[0]?.message.details, {
+  assert.partialDeepStrictEqual(harness.sentMessages[0]?.message.details, {
     kind: "budget_limit",
     goalId: goal?.goalId,
   });
@@ -561,10 +564,7 @@ test("agent_end queues continuation while the host is still running", async () =
   await harness.runCommand("ship it");
   const queued = harness.sentMessages[0];
   assert.ok(queued);
-  await harness.emit("message_start", {
-    type: "message_start",
-    message: queuedCustomMessage(queued),
-  });
+  await deliverQueuedMessage(harness, queued);
   harness.sentMessages.length = 0;
 
   await harness.emit("agent_settled", { type: "agent_settled" });
@@ -592,6 +592,7 @@ test("agent end waits for idle before continuing active goals", async () => {
       type: "message_start",
       message: queuedMessage,
     });
+  await emitMessageEnd(harness, queuedMessage);
     await harness.emit("agent_end", {
       type: "agent_end",
       messages: [assistantMessage("stop", { input: 30, output: 12 })],
@@ -605,7 +606,7 @@ test("agent end waits for idle before continuing active goals", async () => {
     const goal = harness.snapshot().goal;
     assert.equal(goal?.status, "active");
     assert.equal(harness.sentMessages.length, 1);
-    assert.deepEqual(harness.sentMessages[0]?.message.details, {
+    assert.partialDeepStrictEqual(harness.sentMessages[0]?.message.details, {
       kind: "continuation",
       goalId: goal?.goalId,
     });
@@ -676,6 +677,7 @@ test("goal follow-up guard resets when custom-message continuations start", asyn
     type: "message_start",
     message: queuedMessage,
   });
+  await emitMessageEnd(harness, queuedMessage);
   assert.equal(harness.abortCount, 0);
   await harness.emit("agent_end", {
     type: "agent_end",
@@ -685,7 +687,7 @@ test("goal follow-up guard resets when custom-message continuations start", asyn
   const goal = harness.snapshot().goal;
   assert.equal(goal?.status, "active");
   assert.equal(harness.sentMessages.length, 1);
-  assert.deepEqual(harness.sentMessages[0]?.message.details, {
+  assert.partialDeepStrictEqual(harness.sentMessages[0]?.message.details, {
     kind: "continuation",
     goalId: goal?.goalId,
   });
@@ -709,32 +711,9 @@ test("auto-queued continuations use the compact prompt", async () => {
   const continuation = harness.sentMessages[0];
   assert.ok(continuation);
   const content = String(continuation.message.content);
-  assert.match(content, /<pi_goal_continuation goal_id="/);
+  assert.doesNotMatch(content, /pi_goal_continuation|pi_goal_delivery/);
   assert.doesNotMatch(content, /<untrusted_objective>/);
   assert.match(content, /get_goal/);
-});
-
-test("extension user continuation accepted before compaction suppresses duplicate compaction continuation", async () => {
-  const harness = createRuntimeHarness();
-  await harness.runCommand("ship it");
-  const queued = harness.sentMessages[0];
-  assert.ok(queued);
-  const content = String(queued.message.content);
-  harness.sentMessages.length = 0;
-
-  const results = await harness.emit("input", {
-    type: "input",
-    text: content,
-    source: "extension",
-    streamingBehavior: "followUp",
-  });
-
-  assert.deepEqual(results, [{ action: "continue" }]);
-  await harness.emit("session_compact", sessionCompactEvent());
-
-  const goal = harness.snapshot().goal;
-  assert.equal(goal?.status, "active");
-  assert.equal(harness.sentMessages.length, 0);
 });
 
 test("session compaction queues continuation for active goals after the compaction event unwinds", async () => {
@@ -747,7 +726,7 @@ test("session compaction queues continuation for active goals after the compacti
     const content = String(queued.message.content);
     harness.sentMessages.length = 0;
 
-    await harness.emit("before_agent_start", userBeforeAgentStartEvent(content));
+    await deliverQueuedMessage(harness, queued);
     await harness.emit("session_compact", sessionCompactEvent());
 
     const goal = harness.snapshot().goal;
@@ -756,7 +735,7 @@ test("session compaction queues continuation for active goals after the compacti
 
     mock.timers.tick(1);
     assert.equal(harness.sentMessages.length, 1);
-    assert.deepEqual(harness.sentMessages[0]?.message.details, {
+    assert.partialDeepStrictEqual(harness.sentMessages[0]?.message.details, {
       kind: "continuation",
       goalId: goal?.goalId,
     });
@@ -780,6 +759,7 @@ test("session compaction accelerates an existing idle retry after length stops",
       type: "message_start",
       message: queuedMessage,
     });
+  await emitMessageEnd(harness, queuedMessage);
     await harness.emit("turn_end", {
       type: "turn_end",
       turnIndex: 0,
@@ -796,7 +776,7 @@ test("session compaction accelerates an existing idle retry after length stops",
     const goal = harness.snapshot().goal;
     assert.equal(goal?.status, "active");
     assert.equal(harness.sentMessages.length, 1);
-    assert.deepEqual(harness.sentMessages[0]?.message.details, {
+    assert.partialDeepStrictEqual(harness.sentMessages[0]?.message.details, {
       kind: "continuation",
       goalId: goal?.goalId,
     });
@@ -815,11 +795,13 @@ test("session compaction continuation is cancelled if a host retry starts before
     const content = String(queued.message.content);
     harness.sentMessages.length = 0;
 
-    await harness.emit("before_agent_start", userBeforeAgentStartEvent(content));
+    await deliverQueuedMessage(harness, queued);
     await harness.emit("session_compact", sessionCompactEvent());
     assert.equal(harness.sentMessages.length, 0);
 
     await harness.emit("before_agent_start", userBeforeAgentStartEvent("host compact-and-retry prompt"));
+    await harness.emit("agent_start", { type: "agent_start" });
+    harness.setIdle(false);
     mock.timers.tick(1);
     assert.equal(harness.sentMessages.length, 0);
 
@@ -830,7 +812,7 @@ test("session compaction continuation is cancelled if a host retry starts before
     const goal = harness.snapshot().goal;
     assert.equal(goal?.status, "active");
     assert.equal(harness.sentMessages.length, 1);
-    assert.deepEqual(harness.sentMessages[0]?.message.details, {
+    assert.partialDeepStrictEqual(harness.sentMessages[0]?.message.details, {
       kind: "continuation",
       goalId: goal?.goalId,
     });
@@ -849,7 +831,7 @@ test("repeated session_compact events before the deferred check queue at most on
     const content = String(queued.message.content);
     harness.sentMessages.length = 0;
 
-    await harness.emit("before_agent_start", userBeforeAgentStartEvent(content));
+    await deliverQueuedMessage(harness, queued);
     for (let index = 0; index < 3; index += 1) {
       await harness.emit("session_compact", sessionCompactEvent({
         summary: `compact summary ${index}`,
@@ -861,7 +843,7 @@ test("repeated session_compact events before the deferred check queue at most on
     const goal = harness.snapshot().goal;
     assert.equal(goal?.status, "active");
     assert.equal(harness.sentMessages.length, 1);
-    assert.deepEqual(harness.sentMessages[0]?.message.details, {
+    assert.partialDeepStrictEqual(harness.sentMessages[0]?.message.details, {
       kind: "continuation",
       goalId: goal?.goalId,
     });
@@ -880,7 +862,7 @@ test("session shutdown cancels deferred session_compact continuations", async ()
     const content = String(queued.message.content);
     harness.sentMessages.length = 0;
 
-    await harness.emit("before_agent_start", userBeforeAgentStartEvent(content));
+    await deliverQueuedMessage(harness, queued);
     await harness.emit("session_compact", sessionCompactEvent());
     await harness.emit("session_shutdown", sessionShutdownEvent());
 
@@ -911,11 +893,11 @@ test("provider-limit pauses schedule auto-resume", async () => {
     const resumed = harness.snapshot().goal;
     assert.equal(resumed?.goalId, paused?.goalId);
     assert.equal(resumed?.status, "active");
-    assert.equal(harness.sentUserMessages.length, 1);
-    const content = harness.sentUserMessages[0]?.content;
+    assert.equal(harness.sentMessages.length, 1);
+    const content = harness.sentMessages[0]?.message.content;
     assert.equal(typeof content, "string");
-    assert.match(String(content), /<pi_goal_continuation goal_id="/);
-    assert.doesNotMatch(String(content), /<untrusted_objective>/);
+    assert.doesNotMatch(String(content), /pi_goal_continuation|pi_goal_delivery/);
+    assert.match(String(content), /<untrusted_objective>/);
   } finally {
     mock.timers.reset();
   }
@@ -941,7 +923,7 @@ test("provider-limit auto-resume retries instead of resuming while busy", async 
     flushContinuationScheduler();
 
     assert.equal(harness.snapshot().goal?.status, "active");
-    assert.equal(harness.sentUserMessages.length, 1);
+    assert.equal(harness.sentMessages.length, 1);
   } finally {
     mock.timers.reset();
   }
@@ -976,10 +958,10 @@ test("manual resume clears provider-limit auto-resume", async () => {
     await emitPersistentAssistantError(harness, 0, "insufficient_quota 429");
     await harness.runCommand("resume");
     assert.equal(harness.snapshot().goal?.status, "active");
-    assert.equal(harness.sentUserMessages.length, 1);
+    assert.equal(harness.sentMessages.length, 1);
 
     fireProviderLimitAutoResume();
-    assert.equal(harness.sentUserMessages.length, 1);
+    assert.equal(harness.sentMessages.length, 1);
   } finally {
     mock.timers.reset();
   }
@@ -1045,16 +1027,16 @@ test("a second provider-limit failure after auto-resume schedules one new retry"
     await emitPersistentAssistantError(harness, 0, "FreeUsageLimitError");
     fireProviderLimitAutoResume();
     assert.equal(harness.snapshot().goal?.status, "active");
-    assert.equal(harness.sentUserMessages.length, 1);
+    assert.equal(harness.sentMessages.length, 1);
 
-    harness.sentUserMessages.length = 0;
+    harness.sentMessages.length = 0;
     await emitPersistentAssistantError(harness, 1, "FreeUsageLimitError");
     assert.equal(harness.snapshot().goal?.status, "paused");
     assert.equal(harness.sentUserMessages.length, 0);
     fireProviderLimitAutoResume();
 
     assert.equal(harness.snapshot().goal?.status, "active");
-    assert.equal(harness.sentUserMessages.length, 1);
+    assert.equal(harness.sentMessages.length, 1);
   } finally {
     mock.timers.reset();
   }
@@ -1073,6 +1055,7 @@ test("assistant error turns do not immediately queue continuation", async () => 
     type: "message_start",
     message: queuedMessage,
   });
+  await emitMessageEnd(harness, queuedMessage);
   await harness.emit("turn_end", {
     type: "turn_end",
     turnIndex: 0,
@@ -1093,15 +1076,13 @@ async function finishQueuedCustomRun(
 ): Promise<void> {
   await harness.emit("agent_start", { type: "agent_start" });
 
+  harness.setIdle(false);
   const runMessages: object[] = [];
   let turnIndex = 0;
 
   // Pi emits turn_start before the initial custom message_start for triggerTurn custom prompts.
   await harness.emit("turn_start", { type: "turn_start", turnIndex, timestamp: turnIndex + 1 });
-  await harness.emit("message_start", {
-    type: "message_start",
-    message: queuedCustomMessage(queued),
-  });
+  await deliverQueuedMessage(harness, queued);
 
   if (toolNames.length > 0) {
     const toolUseMessage = {
@@ -1160,7 +1141,7 @@ async function queueHiddenContinuation(
   await finishQueuedCustomRun(harness, commandStart, ["bash"]);
   const continuation = harness.sentMessages[0];
   assert.ok(continuation);
-  assert.deepEqual(continuation.message.details, {
+  assert.partialDeepStrictEqual(continuation.message.details, {
     kind: "continuation",
     goalId: harness.snapshot().goal?.goalId,
   });
@@ -1193,14 +1174,14 @@ test("hidden custom continuation with actionable tools still queues continuation
   const goal = harness.snapshot().goal;
   assert.equal(goal?.status, "active");
   assert.equal(harness.sentMessages.length, 1);
-  assert.deepEqual(harness.sentMessages[0]?.message.details, {
+  assert.partialDeepStrictEqual(harness.sentMessages[0]?.message.details, {
     kind: "continuation",
     goalId: goal?.goalId,
   });
 });
 
 test("user-driven get_goal-only run stays active and can continue", async () => {
-  const harness = createRuntimeHarness();
+  const harness = createRuntimeHarness({ idle: false });
   await harness.runCommand("ship it");
   harness.sentMessages.length = 0;
 
@@ -1240,7 +1221,7 @@ test("user-driven get_goal-only run stays active and can continue", async () => 
   const goal = harness.snapshot().goal;
   assert.equal(goal?.status, "active");
   assert.equal(harness.sentMessages.length, 1);
-  assert.deepEqual(harness.sentMessages[0]?.message.details, {
+  assert.partialDeepStrictEqual(harness.sentMessages[0]?.message.details, {
     kind: "continuation",
     goalId: goal?.goalId,
   });

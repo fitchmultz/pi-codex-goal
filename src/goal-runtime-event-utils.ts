@@ -1,13 +1,9 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import type {
-  GoalRuntimeContinuationPort,
   GoalRuntimeOverflowRecoveryContext,
-  QueuedGoalWorkMessage,
-  QueuedGoalWorkMessageIdResolver,
   StaleQueuedWorkEffectContext,
 } from "./goal-runtime-event-handler-types.ts";
-import { extensionQueuedGoalWorkMessageIdForRuntime } from "./queued-goal-work.ts";
 import {
   isAssistantContextOverflow,
   isContextOverflowError,
@@ -49,16 +45,6 @@ export function runStaleQueuedWorkPlan(
   return plan.skip;
 }
 
-export function createQueuedGoalWorkMessageIdResolver(
-  continuation: GoalRuntimeContinuationPort,
-): QueuedGoalWorkMessageIdResolver {
-  return (message: QueuedGoalWorkMessage): string | null =>
-    extensionQueuedGoalWorkMessageIdForRuntime(
-      message,
-      continuation.continuationGoalIdFromRuntimePrompt,
-    );
-}
-
 export function getContextWindow(ctx: ExtensionContext): number {
   return ctx.model?.contextWindow ?? 0;
 }
@@ -91,7 +77,7 @@ export function recordAssistantContextOverflow(
     return false;
   }
 
-  context.stateController.beginOverflowRecovery(ctx);
+  context.stateController.beginOverflowRecovery(ctx, message.stopReason !== "stop");
   if (isErrorAssistantMessage(message)) {
     context.recoveryRuntime.handlePersistentAssistantError(message, ctx);
   } else {

@@ -3,17 +3,16 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 import { copyTextToClipboard, type ClipboardCopyResult } from "./clipboard.ts";
 import { formatGoalSummary } from "./format.ts";
 import type { StatusContext } from "./goal-runtime-status.ts";
-import type { GoalStartTurnStrategy } from "./recovery-machine.ts";
-import { compactContinuationPrompt, continuationPrompt } from "./prompts.ts";
+import type { GoalDeliveryKind } from "./goal-delivery.ts";
 import { replaceGoal, updateGoalStatus } from "./state.ts";
-import { CUSTOM_ENTRY_TYPE, type GoalEntrySource, type ThreadGoal } from "./types.ts";
+import { type GoalEntrySource, type GoalResult, type ThreadGoal } from "./types.ts";
 
 export interface CommandHost {
   getGoal(): ThreadGoal | null;
   setGoal(goal: ThreadGoal, source: GoalEntrySource, ctx: GoalCommandContext): void;
   clearGoal(source: GoalEntrySource, ctx: GoalCommandContext): void;
   cancelProviderLimitAutoResume(goalId: string, ctx: GoalCommandContext): void;
-  getGoalStartTurnStrategy(): GoalStartTurnStrategy;
+  queueGoalTurn(goal: ThreadGoal, kind: GoalDeliveryKind, ctx: GoalCommandContext): GoalResult;
   resumeGoalWithContinuation(
     goalId: string,
     source: GoalEntrySource,
@@ -25,7 +24,7 @@ const COMMANDS = ["pause", "resume", "resume cancel", "clear", "copy"] as const;
 
 type CopyText = (text: string) => Promise<ClipboardCopyResult>;
 
-export type GoalCommandPi = Pick<ExtensionAPI, "registerCommand" | "sendMessage" | "sendUserMessage">;
+export type GoalCommandPi = Pick<ExtensionAPI, "registerCommand">;
 
 export interface GoalCommandContext extends StatusContext {
   hasUI: boolean;
@@ -40,24 +39,7 @@ function completions(prefix: string) {
   }));
 }
 
-function queueGoalTurn(pi: GoalCommandPi, goal: ThreadGoal, kind: "command_start" | "command_resume"): void {
-  pi.sendMessage(
-    {
-      customType: CUSTOM_ENTRY_TYPE,
-      content: continuationPrompt(goal),
-      display: false,
-      details: { kind, goalId: goal.goalId },
-    },
-    { triggerTurn: true, deliverAs: "followUp" },
-  );
-}
-
-function queueGoalUserTurn(pi: GoalCommandPi, goal: ThreadGoal): void {
-  pi.sendUserMessage(compactContinuationPrompt(goal), { deliverAs: "followUp" });
-}
-
 export async function handleGoalCommand(
-  pi: GoalCommandPi,
   host: CommandHost,
   args: string,
   ctx: GoalCommandContext,
@@ -111,16 +93,6 @@ export async function handleGoalCommand(
 
   if (trimmed === "pause" || trimmed === "resume") {
     const current = host.getGoal();
-    if (
-      trimmed === "resume" &&
-      current?.status === "active" &&
-      host.getGoalStartTurnStrategy() === "userFollowUp"
-    ) {
-      queueGoalUserTurn(pi, current);
-      ctx.ui.notify("Goal already active; queued a continuation.");
-      return;
-    }
-
     if (trimmed === "resume" && (current?.status === "paused" || current?.status === "blocked" || current?.status === "waiting")) {
       const result = host.resumeGoalWithContinuation(current.goalId, "command", ctx);
       ctx.ui.notify(result.message, result.ok ? undefined : "warning");
@@ -159,12 +131,8 @@ export async function handleGoalCommand(
     return;
   }
   host.setGoal(result.goal, "command", ctx);
-  ctx.ui.notify(result.message);
-  if (host.getGoalStartTurnStrategy() === "userFollowUp") {
-    queueGoalUserTurn(pi, result.goal);
-  } else {
-    queueGoalTurn(pi, result.goal, "command_start");
-  }
+  const queued = host.queueGoalTurn(result.goal, "command_start", ctx);
+  ctx.ui.notify(queued.ok ? result.message : queued.message, queued.ok ? undefined : "warning");
 }
 
 export function registerGoalCommand(pi: GoalCommandPi, host: CommandHost): void {
@@ -174,7 +142,7 @@ export function registerGoalCommand(pi: GoalCommandPi, host: CommandHost): void 
       return completions(argumentPrefix.trim());
     },
     async handler(args: string, ctx: ExtensionCommandContext) {
-      await handleGoalCommand(pi, host, args, ctx);
+      await handleGoalCommand(host, args, ctx);
     },
   });
 }

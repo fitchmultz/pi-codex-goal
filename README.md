@@ -35,6 +35,8 @@ Run `/reload` if Pi is already open. Enter a task in the Pi editor:
 
 Press Esc to stop the current assistant turn and pause its active goal.
 
+Goal-generated follow-ups are hidden custom messages, not editable user input. Alt+Up restores only genuine queued user text, never automated Goal instructions. Use the commands above to pause, resume or replace automated work. Genuine input, image attachments and existing editor drafts keep Pi's native editing behavior.
+
 A blocked goal needs input or external work. Run `/goal` to read the reason. Resolve the dependency. Run `/goal resume`.
 
 For background jobs that deliver their own result messages, the agent can set the goal to `waiting` with a reason naming the work. Waiting stops hidden continuations and active-time accounting without polling. New user input, steering, or another extension's result automatically reactivates the goal; `/goal resume` also works. `/goal pause` keeps it paused even when a result arrives.
@@ -54,6 +56,8 @@ Goal tokens count assistant input and output. This count excludes provider cache
 The goal survives resume, reload, fork, tree navigation, and compaction. The Pi footer shows goal status and usage when a UI is available. In the terminal UI, a separate line below the editor shows the unfinished goal's status and objective. Long or multiline objectives are condensed to one truncated line; run `/goal` for the full text. Completing or clearing the goal hides this line.
 
 Pi controls compaction. The extension uses bounded retries for transient provider errors. Recognized provider usage limits can schedule an automatic retry.
+
+Automated Goal follow-ups do not reset exhausted native context-overflow recovery. Goal pauses with an explanation instead of forcing another attempt. Reduce context or switch models, send a genuine user message to get native user recovery, then run `/goal resume`.
 
 ## Headless use
 

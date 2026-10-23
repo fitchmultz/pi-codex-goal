@@ -290,7 +290,7 @@ test("SDK runtime emits a continuation after willRetry compaction when no retry 
     assert.equal(continuationMessages.length, 1);
     const continuationMessage = continuationMessages[0];
     assert.ok(continuationMessage && "details" in continuationMessage);
-    assert.deepEqual(continuationMessage.details, { kind: "continuation", goalId });
+    assert.partialDeepStrictEqual(continuationMessage.details, { kind: "continuation", goalId });
   } finally {
     session.dispose();
   }

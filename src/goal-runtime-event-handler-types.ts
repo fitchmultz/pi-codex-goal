@@ -9,8 +9,11 @@ import type {
   ExtensionHandler,
   InputEvent,
   InputEventResult,
+  MessageEndEventResult,
   SessionBeforeCompactEvent,
   SessionCompactEvent,
+  SessionCompactFailedEvent,
+  SessionEntry,
   SessionShutdownEvent,
   SessionStartEvent,
   SessionTreeEvent,
@@ -18,30 +21,34 @@ import type {
   TurnStartEvent,
 } from "@earendil-works/pi-coding-agent";
 
+import type { GoalDeliveries } from "./goal-delivery.ts";
 import type { GoalRuntimeState } from "./goal-runtime-state.ts";
 import type { StatusContext } from "./goal-runtime-status.ts";
 import type { GoalStateController } from "./goal-state-controller.ts";
 import type { AssistantErrorMessage } from "./recovery.ts";
 import type { GoalEntrySource, GoalResult } from "./types.ts";
 
-export type ContextEventResult = { messages?: ContextEvent["messages"] };
+export type { MessageEndEventResult };
 export type MessageStartEvent = Extract<ExtensionEvent, { type: "message_start" }>;
+export type MessageEndEvent = Extract<ExtensionEvent, { type: "message_end" }>;
 export type ToolExecutionEndEvent = Extract<ExtensionEvent, { type: "tool_execution_end" }>;
 
 export interface GoalRuntimeEventHandlers {
   onInput: ExtensionHandler<InputEvent, InputEventResult>;
-  onContext: ExtensionHandler<ContextEvent, ContextEventResult | undefined>;
+  onContext: ExtensionHandler<ContextEvent, undefined>;
   onSessionStart: ExtensionHandler<SessionStartEvent>;
   onSessionTree: ExtensionHandler<SessionTreeEvent>;
   onBeforeAgentStart: ExtensionHandler<BeforeAgentStartEvent, undefined>;
   onAgentStart: ExtensionHandler<AgentStartEvent>;
   onMessageStart: ExtensionHandler<MessageStartEvent>;
+  onMessageEnd: ExtensionHandler<MessageEndEvent, MessageEndEventResult | undefined>;
   onTurnStart: ExtensionHandler<TurnStartEvent>;
   onToolExecutionEnd: ExtensionHandler<ToolExecutionEndEvent>;
   onTurnEnd: ExtensionHandler<TurnEndEvent>;
   onAgentEnd: ExtensionHandler<AgentEndEvent>;
   onSessionBeforeCompact: ExtensionHandler<SessionBeforeCompactEvent>;
   onSessionCompact: ExtensionHandler<SessionCompactEvent>;
+  onSessionCompactFailed: ExtensionHandler<SessionCompactFailedEvent>;
   onSessionShutdown: ExtensionHandler<SessionShutdownEvent>;
 }
 
@@ -55,14 +62,14 @@ export interface ProviderLimitAutoResumePort {
 }
 
 export interface GoalRuntimeContinuationPort {
-  bindPassthroughContinuationInputToTurn: (turnIndex: number) => void;
   clearContinuationState: () => void;
   clearContinuationStateFor: (goalId: string) => void;
   clearContinuationTimer: () => void;
   clearPostCompactContinuationFallback: () => void;
-  clearPassthroughContinuationInput: () => void;
-  continuationGoalIdFromRuntimePrompt: (prompt: string) => string | null;
   markContinuationQueued: (goalId: string) => void;
+  requireFullGoal: () => void;
+  restoreCompactionRefresh: (branch: readonly SessionEntry[]) => void;
+  fullPromptForDelivery: (goalId: string) => string | null;
   maybeContinue: (ctx: ExtensionContext, duringAgentEnd?: boolean) => void;
   maybeContinueAfterCurrentEvent: (ctx: ExtensionContext) => void;
   maybeContinueAfterPostCompactFallback: (
@@ -73,7 +80,6 @@ export interface GoalRuntimeContinuationPort {
       prepareContinuation?: () => boolean;
     },
   ) => void;
-  notePassthroughContinuationInput: (input: string) => void;
 }
 
 export interface GoalAccountingPort {
@@ -105,6 +111,7 @@ export interface StaleQueuedWorkEffectContext {
 }
 
 export interface GoalRuntimeInputContextHandlerContext extends StaleQueuedWorkEffectContext {
+  deliveries: GoalDeliveries;
   runtimeState: Pick<
     GoalRuntimeState,
     "agentRunFromContinuation" | "currentTurnIndex" | "staleQueuedWorkGuard"
@@ -136,13 +143,14 @@ export interface GoalRuntimeTurnHandlerContext extends StaleQueuedWorkEffectCont
     | "getGoal"
     | "maybeFlushRuntimePersistence"
     | "pauseForAbort"
+    | "persistHostOverflowUserReset"
   >;
-  continuation: Pick<GoalRuntimeContinuationPort, "bindPassthroughContinuationInputToTurn">;
   goalAccounting: GoalAccountingPort;
   recoveryRuntime: Pick<RecoveryRuntimePort, "finishSuccessfulAssistantTurn">;
 }
 
 export interface GoalRuntimeAgentHandlerContext extends StaleQueuedWorkEffectContext {
+  deliveries: GoalDeliveries;
   runtimeState: Pick<
     GoalRuntimeState,
     | "agentRunFromContinuation"
@@ -156,7 +164,7 @@ export interface GoalRuntimeAgentHandlerContext extends StaleQueuedWorkEffectCon
   >;
   continuation: Pick<
     GoalRuntimeContinuationPort,
-    "clearPassthroughContinuationInput" | "maybeContinue"
+    "maybeContinue" | "clearContinuationState" | "maybeContinueAfterCurrentEvent" | "requireFullGoal"
   >;
   goalAccounting: Pick<GoalAccountingPort, "accountProgress">;
   recoveryRuntime: Pick<
@@ -167,6 +175,7 @@ export interface GoalRuntimeAgentHandlerContext extends StaleQueuedWorkEffectCon
 }
 
 export interface GoalRuntimeSessionHandlerContext extends StaleQueuedWorkEffectContext {
+  deliveries: GoalDeliveries;
   runtimeState: Pick<
     GoalRuntimeState,
     | "agentRunSequence"
@@ -176,16 +185,17 @@ export interface GoalRuntimeSessionHandlerContext extends StaleQueuedWorkEffectC
   >;
   stateController: Pick<
     GoalStateController,
-    "applyGoalTransition" | "flushGoalPersistence" | "getGoal" | "reloadFromSession"
+    "applyGoalTransition" | "flushGoalPersistence" | "getGoal" | "reloadFromSession" | "pauseForRecovery"
   >;
   continuation: Pick<
     GoalRuntimeContinuationPort,
     | "clearContinuationTimer"
     | "clearPostCompactContinuationFallback"
-    | "clearPassthroughContinuationInput"
     | "maybeContinue"
     | "maybeContinueAfterCurrentEvent"
     | "maybeContinueAfterPostCompactFallback"
+    | "requireFullGoal"
+    | "restoreCompactionRefresh"
   >;
   goalAccounting: GoalAccountingPort;
   recoveryRuntime: Pick<RecoveryRuntimePort, "onSessionCompact">;
@@ -202,6 +212,7 @@ export interface GoalRuntimeOverflowRecoveryContext {
 }
 
 export interface GoalRuntimeEventContext {
+  deliveries: GoalDeliveries;
   pi: ExtensionAPI;
   runtimeState: GoalRuntimeState;
   stateController: GoalStateController;
@@ -214,12 +225,3 @@ export interface GoalRuntimeEventContext {
   resetErrorRecovery: () => void;
   resumeGoalWithContinuation: (goalId: string, source: GoalEntrySource, ctx: StatusContext) => GoalResult;
 }
-
-export type QueuedGoalWorkMessage = {
-  role: string;
-  customType?: string;
-  details?: unknown;
-  content?: unknown;
-};
-
-export type QueuedGoalWorkMessageIdResolver = (message: QueuedGoalWorkMessage) => string | null;

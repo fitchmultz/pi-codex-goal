@@ -3,6 +3,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { registerGoalCommand } from "./commands.ts";
 import { createContinuationScheduler } from "./continuation-scheduler.ts";
 import { assistantTurnTokensForToolCall, createGoalAccounting } from "./goal-accounting.ts";
+import { createGoalDeliveries, type GoalDeliveryKind } from "./goal-delivery.ts";
 import { createGoalPersistence } from "./goal-persistence.ts";
 import {
   createGoalRuntimeEventHandlers,
@@ -13,14 +14,12 @@ import { createGoalRuntimeState } from "./goal-runtime-state.ts";
 import { createGoalRuntimeStatus, type StatusContext } from "./goal-runtime-status.ts";
 import { createGoalStateController } from "./goal-state-controller.ts";
 import { createProviderLimitAutoResumeScheduler } from "./provider-limit-auto-resume.ts";
-import { compactContinuationPrompt } from "./prompts.ts";
 import { createGoalRecoveryRuntime } from "./recovery-runtime.ts";
 import {
   clearActiveHostOverflowRecovery,
-  goalStartTurnStrategy,
+  recoveryPhaseNeedsUserStartTurn,
   resetRecoveryMachine,
   setRecoveryPausedAttention,
-  type GoalStartTurnStrategy,
 } from "./recovery-machine.ts";
 import { goalWithLiveUsage, updateGoalStatus } from "./state.ts";
 import { registerGoalTools } from "./tools.ts";
@@ -28,7 +27,7 @@ import type { GoalEntrySource, GoalResult, ThreadGoal } from "./types.ts";
 
 export interface GoalRuntimeController extends GoalRuntimeEventHandlers {
   getGoalForDisplay(): ThreadGoal | null;
-  getGoalStartTurnStrategy(): GoalStartTurnStrategy;
+  queueGoalTurn(goal: ThreadGoal, kind: GoalDeliveryKind, ctx: StatusContext): GoalResult;
   setGoal(goal: ThreadGoal, source: GoalEntrySource, ctx: ExtensionContext): void;
   clearGoal(source: GoalEntrySource, ctx: ExtensionContext): void;
   updateGoal(source: GoalEntrySource, ctx: ExtensionContext, toolCallId: string, status: "complete" | "blocked" | "waiting", reason?: string): GoalResult;
@@ -39,6 +38,7 @@ export interface GoalRuntimeController extends GoalRuntimeEventHandlers {
 export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeController {
   const runtimeState = createGoalRuntimeState();
   const persistence = createGoalPersistence({ pi });
+  const deliveries = createGoalDeliveries(pi, persistence.getGoal);
 
   const clearActiveAccounting = (): void => {
     runtimeState.accounting.activeGoalId = null;
@@ -76,7 +76,7 @@ export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeContro
   });
 
   const continuation = createContinuationScheduler({
-    pi,
+    deliveries,
     getGoal: () => persistence.getGoal(),
     getRecoveryState: () => runtimeState.recoveryState,
     staleQueuedWorkGuard: runtimeState.staleQueuedWorkGuard,
@@ -87,6 +87,7 @@ export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeContro
   const stateController = createGoalStateController({
     pi,
     persistence,
+    invalidateDeliveries: deliveries.invalidate,
     getRecoveryState: () => runtimeState.recoveryState,
     transitionEffectHandlers: {
       clearContinuation: continuation.clearContinuationState,
@@ -132,6 +133,17 @@ export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeContro
     },
   });
 
+  const queueGoalTurn = (goal: ThreadGoal, kind: GoalDeliveryKind, ctx: StatusContext): GoalResult => {
+    if (recoveryPhaseNeedsUserStartTurn(runtimeState.recoveryState.phase)) {
+      const message = "Goal cannot restart native overflow recovery. Reduce context or switch models, then send a genuine user message before /goal resume.";
+      stateController.pauseForRecovery(ctx, message);
+      return { ok: false, message, goal: stateController.getGoal() };
+    }
+    continuation.markContinuationQueued(goal.goalId);
+    deliveries.send(goal, kind);
+    return { ok: true, message: "Goal follow-up queued.", goal };
+  };
+
   const resumeGoalWithContinuation = (
     goalId: string,
     source: GoalEntrySource,
@@ -140,6 +152,9 @@ export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeContro
     const current = stateController.getGoal();
     if (current?.status === "blocked" && source !== "command") {
       return { ok: false, message: "Blocked goals require explicit /goal resume.", goal: current };
+    }
+    if (current?.goalId === goalId && recoveryPhaseNeedsUserStartTurn(runtimeState.recoveryState.phase)) {
+      return queueGoalTurn(current, "command_resume", ctx);
     }
     const result = updateGoalStatus(current, "active");
     if (!result.ok || !result.goal || result.goal.goalId !== goalId) {
@@ -155,13 +170,14 @@ export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeContro
     }
     const resumedGoal = stateController.getGoal();
     if (resumedGoal?.status === "active" && resumedGoal.goalId === goalId) {
-      pi.sendUserMessage(compactContinuationPrompt(resumedGoal), { deliverAs: "followUp" });
+      return queueGoalTurn(resumedGoal, "command_resume", ctx);
     }
     return result;
   };
 
   const eventHandlers = createGoalRuntimeEventHandlers({
     pi,
+    deliveries,
     runtimeState,
     stateController,
     continuation,
@@ -206,7 +222,7 @@ export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeContro
 
   return {
     getGoalForDisplay: goalForDisplay,
-    getGoalStartTurnStrategy: () => goalStartTurnStrategy(runtimeState.recoveryState.phase),
+    queueGoalTurn,
     setGoal(nextGoal, source, ctx) {
       providerLimitAutoResume.clear();
       stateController.applyGoalTransition({ kind: "set", nextGoal, source }, ctx);
@@ -238,7 +254,7 @@ export function registerGoalRuntimeController(pi: ExtensionAPI): void {
   });
   registerGoalCommand(pi, {
     getGoal: () => controller.getGoalForDisplay(),
-    getGoalStartTurnStrategy: controller.getGoalStartTurnStrategy.bind(controller),
+    queueGoalTurn: controller.queueGoalTurn.bind(controller),
     setGoal: controller.setGoal.bind(controller),
     clearGoal: controller.clearGoal.bind(controller),
     cancelProviderLimitAutoResume: controller.cancelProviderLimitAutoResume.bind(controller),

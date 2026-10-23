@@ -76,7 +76,7 @@ test("awaitingTerminalCleanup: late agent_end for pending stale goal is skipped"
     {
       role: "custom",
       customType: CUSTOM_ENTRY_TYPE,
-      details: { kind: "continuation", goalId: "goal-1" },
+      details: { kind: "continuation", goalId: "shared-goal", generation: "activation", deliveryId: "goal-1", lifecycle: "queued" },
     },
     abortedAssistant,
   ]);
@@ -94,7 +94,7 @@ test("awaitingTerminalCleanup: late agent_end for pending stale goal with stop i
     {
       role: "custom",
       customType: CUSTOM_ENTRY_TYPE,
-      details: { kind: "continuation", goalId: "goal-1" },
+      details: { kind: "continuation", goalId: "shared-goal", generation: "activation", deliveryId: "goal-1", lifecycle: "queued" },
     },
     stoppedAssistant,
   ]);
@@ -151,7 +151,7 @@ test("awaitingTerminalCleanup: goal-bearing agent_end clears obligation without 
     {
       role: "custom",
       customType: CUSTOM_ENTRY_TYPE,
-      details: { kind: "continuation", goalId: "goal-1" },
+      details: { kind: "continuation", goalId: "shared-goal", generation: "activation", deliveryId: "goal-1", lifecycle: "queued" },
     },
     abortedAssistant,
   ]);
@@ -216,7 +216,7 @@ test("observingTurn with pending cleanup: late stale agent_end is skipped", () =
     {
       role: "custom",
       customType: CUSTOM_ENTRY_TYPE,
-      details: { kind: "continuation", goalId: "goal-1" },
+      details: { kind: "continuation", goalId: "shared-goal", generation: "activation", deliveryId: "goal-1", lifecycle: "queued" },
     },
     abortedAssistant,
   ]);
@@ -237,7 +237,7 @@ test("observingTurn with pending cleanup: late stale agent_end with stop is skip
     {
       role: "custom",
       customType: CUSTOM_ENTRY_TYPE,
-      details: { kind: "continuation", goalId: "goal-1" },
+      details: { kind: "continuation", goalId: "shared-goal", generation: "activation", deliveryId: "goal-1", lifecycle: "queued" },
     },
     stoppedAssistant,
   ]);
@@ -300,7 +300,7 @@ test("observingTurn with pending cleanup: current agent_end with continuation is
     {
       role: "custom",
       customType: CUSTOM_ENTRY_TYPE,
-      details: { kind: "continuation", goalId: "goal-2" },
+      details: { kind: "continuation", goalId: "shared-goal", generation: "activation", deliveryId: "goal-2", lifecycle: "queued" },
     },
     stoppedAssistant,
   ]);
@@ -334,7 +334,7 @@ test("observingTurn with pending cleanup: after current context accepted, goal-b
     {
       role: "custom",
       customType: CUSTOM_ENTRY_TYPE,
-      details: { kind: "continuation", goalId: "goal-1" },
+      details: { kind: "continuation", goalId: "shared-goal", generation: "activation", deliveryId: "goal-1", lifecycle: "queued" },
     },
     errorAssistant,
   ]);

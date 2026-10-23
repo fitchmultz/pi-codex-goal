@@ -4,6 +4,7 @@ import { mock, test } from "node:test";
 import {
   assistantMessage,
   createRuntimeHarness,
+  deliverQueuedMessage,
   userBeforeAgentStartEvent,
   flushContinuationScheduler,
   sessionBeforeCompactEvent,
@@ -39,7 +40,7 @@ async function startGoal(harness: RuntimeHarness): Promise<void> {
   const queued = harness.sentMessages[0];
   assert.ok(queued);
   harness.sentMessages.length = 0;
-  await harness.emit("before_agent_start", userBeforeAgentStartEvent(String(queued.message.content)));
+  await deliverQueuedMessage(harness, queued);
 }
 
 test("Pi owns compaction decisions at the configured host threshold", async () => {

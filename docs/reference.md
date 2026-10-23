@@ -83,10 +83,30 @@ While a goal is active, the extension:
 - Treats completed goals as terminal for automatic transitions while allowing `/goal <objective>` and explicit `create_goal` replacement to replace goals.
 - Marks the goal `budgetLimited` when a positive token budget is reached.
 - Sends hidden steering messages when budget is reached or when the agent is idle but the goal is still active.
-- Compacts repeated hidden goal continuations before provider context so only the latest active continuation stays runnable. Older ones become short bookkeeping markers, and auto-queued continuations use a compact prompt after `/goal` start or resume.
+- Leaves sent Goal messages unchanged in provider requests. New custom Goal controls for an inactive goal are cancelled once at delivery. User messages keep their existing handling and are not rewritten. Automatic continuations use a compact prompt.
 - Shows Codex-style status labels with compact token or elapsed-time usage in the Pi footer when a UI is available. The terminal UI also shows the current unfinished objective in a separate single-line widget below the editor. Paused, blocked, waiting, and budget-limited goals retain an explicit state label; completed or cleared goals hide the widget. Terminal control sequences are removed, whitespace is condensed, and long text is truncated to the available display width. Use `/goal` for the full objective.
 
 Token counts use commas and compact abbreviations, for example `123M (123,456,789) tokens`. Goal totals count only completed assistant-turn `input` plus `output` while the goal is active. Cache read/write channels are excluded because they are provider cache accounting fields rather than extra sent and received text tokens. Pi 0.81+ also folds tool, compaction, and branch-summary usage into host session totals/footer stats. Those host maintenance and nested-tool costs stay out of goal budgets, so goal tokens measure assistant turn work toward the objective rather than whole-session spend.
+
+## Cache-stable compaction
+
+Goal filters metadata-owned custom continuation, superseded, and stale filler from copies of the history and split-turn prefix passed through `session_before_compact`. It preserves user messages (including pasted goal markers), initial objectives, substantive work, tool results, file tracking, and the retained-history boundary. It does not edit the transcript or replace the selected summarizer or its result.
+
+After successful `session_compact`, the next normal custom Goal message with `details.kind: "continuation"` carries the full saved objective, status, budget, and current usage. Goal refreshes it once in `message_end`, before its first provider request, even if it was queued before compaction. Accompanying text and images are kept. Later continuations return to the compact prompt. Compaction does not wake inactive goals or change scheduling. A native retry may run before that normal continuation.
+
+Start/resume controls and genuine user messages do not consume this refresh. Pending and consumed refresh intent survives reload through native compaction entries and delivered custom details. Already-sent messages remain verbatim after pause, completion, or replacement; stored JSONL is not migrated.
+
+All Goal-generated automated follow-ups use public custom messages with per-delivery goal, activation-generation and lifecycle metadata. No transport envelope or ownership marker is added to content, and genuine user text is never parsed to decide ownership. Stale and duplicate custom deliveries are finalized once as inert cancellations. Automation is not restored into Alt+Up or shown as a native user follow-up row; change it with `/goal pause`, `/goal resume` or objective replacement instead. Genuine queued user text, editor drafts and image inputs keep native semantics. If native queue editing discards a hidden Goal delivery, an active goal can schedule fresh valid work; it never reclassifies restored text as automation.
+
+Automated custom messages do not reset exhausted native context-overflow recovery. Goal pauses with a clear explanation rather than forcing another user-like retry. Reduce context or switch models, send a genuine user message for native user recovery, then `/goal resume`. These two editing/recovery changes were explicitly approved by the owner; they require no new host API or support-floor change. See the [accepted delivery contract](delivery-ownership-proposal.md).
+
+A custom summarizer must consume filtered input. It can register after Goal, or request the same synchronous filter through Pi's existing extension bus immediately before calling its summarizer:
+
+```ts
+pi.events.emit("pi-codex-goal:compaction-input", event.preparation);
+```
+
+This works even if the custom summarizer loads first. The filter registration is ready after extension loading, and uses no additional Pi API.
 
 ## Durable recovery and accounting
 

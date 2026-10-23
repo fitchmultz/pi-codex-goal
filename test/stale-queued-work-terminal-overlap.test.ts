@@ -7,9 +7,7 @@ import {
   emitProviderContext,
   emitQueuedTurnThroughContext,
   goalUserContextMessage,
-  providerContextMessageAt,
   queuedCustomMessage,
-  requireProviderContextResult,
   sessionBeforeCompactEvent,
   sessionCompactEvent,
 } from "./support/runtime-harness.ts";
@@ -394,7 +392,7 @@ test("compaction between stale context abort and cleanup does not persist, accou
     assert.equal(goal?.usage.tokensUsed, 10);
     assert.equal(goal?.usage.activeSeconds, 2);
     assert.equal(harness.sentMessages.length, 1);
-    assert.deepEqual(harness.sentMessages[0]?.message.details, {
+    assert.partialDeepStrictEqual(harness.sentMessages[0]?.message.details, {
       kind: "continuation",
       goalId: replacement?.goalId,
     });
@@ -404,7 +402,7 @@ test("compaction between stale context abort and cleanup does not persist, accou
 });
 
 test("mixed stale and current follow-up batch neutralizes stale work without aborting current goal", async () => {
-  const harness = createRuntimeHarness();
+  const harness = createRuntimeHarness({ idle: false });
   await harness.runCommand("old goal");
   const oldQueued = harness.sentMessages[0];
   assert.ok(oldQueued);
@@ -420,19 +418,18 @@ test("mixed stale and current follow-up batch neutralizes stale work without abo
   const currentMessage = queuedCustomMessage(currentQueued, 2);
   harness.sentMessages.length = 0;
 
+  const currentDelivered = structuredClone(currentMessage);
   const contextResults = await emitQueuedTurnThroughContext(harness, [oldMessage, currentMessage]);
-  const contextResult = requireProviderContextResult(contextResults);
 
   assert.equal(harness.abortCount, 0);
-  assert.equal(contextResult.messages.length, 2);
-  assert.match(String(providerContextMessageAt(contextResult, 0).content), /queued hidden goal continuation was stale/);
-  assert.deepEqual(providerContextMessageAt(contextResult, 0).details, {
+  assert.equal(contextResults[0], undefined);
+  assert.match(String(oldMessage.content), /queued Goal follow-up was cancelled/);
+  assert.partialDeepStrictEqual(oldMessage.details, {
     kind: "stale_continuation",
     goalId: oldGoalId,
-    currentGoalId: replacement?.goalId,
-    currentStatus: "active",
+    lifecycle: "cancelled",
   });
-  assert.deepEqual(providerContextMessageAt(contextResult, 1).details, currentMessage.details);
+  assert.deepEqual(currentMessage, { ...currentDelivered, details: { ...currentDelivered.details as Record<string, unknown>, lifecycle: "delivered" } });
 
   await harness.emit("turn_end", {
     type: "turn_end",
@@ -450,7 +447,7 @@ test("mixed stale and current follow-up batch neutralizes stale work without abo
   assert.equal(goal?.status, "active");
   assert.equal(goal?.usage.tokensUsed, 10);
   assert.equal(harness.sentMessages.length, 1);
-  assert.deepEqual(harness.sentMessages[0]?.message.details, {
+  assert.partialDeepStrictEqual(harness.sentMessages[0]?.message.details, {
     kind: "continuation",
     goalId: replacement?.goalId,
   });

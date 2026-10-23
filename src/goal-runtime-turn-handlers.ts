@@ -13,13 +13,12 @@ import type {
 } from "./goal-runtime-event-handler-types.ts";
 
 export function createTurnEventHandlers(deps: GoalRuntimeTurnHandlerContext) {
-  const { runtimeState, stateController, continuation, goalAccounting, recoveryRuntime, status } = deps;
+  const { runtimeState, stateController, goalAccounting, recoveryRuntime, status } = deps;
 
   return {
     onTurnStart: (async (event, ctx) => {
       runtimeState.currentTurnIndex = event.turnIndex;
       runtimeState.completionGoalId = stateController.getGoal()?.goalId ?? null;
-      continuation.bindPassthroughContinuationInputToTurn(event.turnIndex);
       runStaleQueuedWorkPlan(runtimeState.staleQueuedWorkGuard.planTurnStart(), ctx, deps);
       goalAccounting.beginAccounting();
       status.refreshUi(ctx);
@@ -58,9 +57,10 @@ export function createTurnEventHandlers(deps: GoalRuntimeTurnHandlerContext) {
         return;
       }
       if (isAssistantContextOverflow(event.message, getContextWindow(ctx))) {
-        stateController.beginOverflowRecovery(ctx);
+        stateController.beginOverflowRecovery(ctx, event.message.role !== "assistant" || event.message.stopReason !== "stop");
         return;
       }
+      if (event.message.role === "assistant" && event.message.stopReason !== "length") stateController.persistHostOverflowUserReset(false);
       const suppressContinuation = shouldPauseStatusInspectionOnlyContinuation(
         runtimeState.agentRunFromContinuation,
         runtimeState.agentRunToolNames,

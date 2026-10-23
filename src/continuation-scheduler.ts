@@ -1,6 +1,8 @@
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext, SessionEntry } from "@earendil-works/pi-coding-agent";
 
-import { compactContinuationPrompt, continuationGoalIdFromPrompt } from "./prompts.ts";
+import { continuationPrompt } from "./prompts.ts";
+import { goalDeliveryDetails, type GoalDeliveries } from "./goal-delivery.ts";
+import { reconstructGoal } from "./state.ts";
 import {
   recoveryPhaseBlocksContinuation,
   type GoalRecoveryMachineState,
@@ -8,10 +10,10 @@ import {
 import { isRecoveryPendingAttention } from "./recovery.ts";
 import { CONTINUATION_RETRY_MS } from "./runtime-config.ts";
 import type { StaleQueuedWorkGuard } from "./stale-queued-work-guard.ts";
-import { CUSTOM_ENTRY_TYPE, type ThreadGoal } from "./types.ts";
+import type { ThreadGoal } from "./types.ts";
 
 interface ContinuationSchedulerDeps {
-  pi: Pick<ExtensionAPI, "sendMessage">;
+  deliveries: Pick<GoalDeliveries, "send">;
   getGoal: () => ThreadGoal | null;
   getRecoveryState: () => GoalRecoveryMachineState;
   staleQueuedWorkGuard: StaleQueuedWorkGuard;
@@ -27,11 +29,11 @@ interface PostCompactContinuationOptions {
 
 export function createContinuationScheduler(deps: ContinuationSchedulerDeps) {
   let continuationQueuedFor: string | null = null;
+  let fullGoalNeededFor: string | null = null;
   let continuationScheduledFor: string | null = null;
   let continuationScheduledDelayMs: number | null = null;
   let continuationTimer: ReturnType<typeof setTimeout> | null = null;
   let postCompactContinuationTimer: ReturnType<typeof setTimeout> | null = null;
-  let passthroughContinuationInput: { text: string; turnIndex: number | null } | null = null;
 
   const clearContinuationTimer = (): void => {
     if (continuationTimer) {
@@ -68,43 +70,34 @@ export function createContinuationScheduler(deps: ContinuationSchedulerDeps) {
     continuationQueuedFor = goalId;
   };
 
-  const clearPassthroughContinuationInput = (): void => {
-    passthroughContinuationInput = null;
+  const requireFullGoal = (): void => {
+    fullGoalNeededFor = deps.getGoal()?.goalId ?? null;
   };
 
-  const bindPassthroughContinuationInputToTurn = (turnIndex: number): void => {
-    if (!passthroughContinuationInput) {
-      return;
-    }
-    if (passthroughContinuationInput.turnIndex === null) {
-      passthroughContinuationInput = { ...passthroughContinuationInput, turnIndex };
-      return;
-    }
-    if (passthroughContinuationInput.turnIndex !== turnIndex) {
-      clearPassthroughContinuationInput();
+  const restoreCompactionRefresh = (branch: readonly SessionEntry[]): void => {
+    const compactIndex = branch.findLastIndex((entry) => entry.type === "compaction");
+    fullGoalNeededFor = compactIndex < 0 ? null : reconstructGoal(branch.slice(0, compactIndex)).goal?.goalId ?? null;
+    if (fullGoalNeededFor === null) return;
+    for (const entry of branch.slice(compactIndex + 1)) {
+      if (entry.type !== "custom_message") continue;
+      const details = goalDeliveryDetails({ role: "custom", customType: entry.customType, details: entry.details });
+      if (details?.kind === "continuation" && details.lifecycle === "delivered" &&
+          details.goalId === fullGoalNeededFor && details.objectiveRefresh === true) {
+        fullGoalNeededFor = null;
+        return;
+      }
     }
   };
 
-  const isPassthroughContinuationInput = (text: string): boolean => {
-    if (!passthroughContinuationInput || passthroughContinuationInput.text !== text) {
-      return false;
-    }
-    const currentTurnIndex = deps.getCurrentTurnIndex();
-    return (
-      passthroughContinuationInput.turnIndex === null ||
-      passthroughContinuationInput.turnIndex === currentTurnIndex
-    );
-  };
-
-  const continuationGoalIdFromRuntimePrompt = (prompt: string): string | null => {
-    if (isPassthroughContinuationInput(prompt)) {
+  // Consume at delivery, not enqueue: compaction may occur with a continuation
+  // already queued, and a native retry must not discard the pending refresh.
+  const fullPromptForDelivery = (goalId: string): string | null => {
+    const goal = deps.getGoal();
+    if (fullGoalNeededFor !== goalId || !goal || goal.goalId !== goalId || goal.status !== "active") {
       return null;
     }
-    return continuationGoalIdFromPrompt(prompt);
-  };
-
-  const notePassthroughContinuationInput = (text: string): void => {
-    passthroughContinuationInput = { text, turnIndex: null };
+    fullGoalNeededFor = null;
+    return continuationPrompt(goal);
   };
 
   const hasPendingRecoveryAttention = (): boolean => {
@@ -114,15 +107,7 @@ export function createContinuationScheduler(deps: ContinuationSchedulerDeps) {
 
   const sendContinuation = (goalToContinue: ThreadGoal): void => {
     continuationQueuedFor = goalToContinue.goalId;
-    deps.pi.sendMessage(
-      {
-        customType: CUSTOM_ENTRY_TYPE,
-        content: compactContinuationPrompt(goalToContinue),
-        display: false,
-        details: { kind: "continuation", goalId: goalToContinue.goalId },
-      },
-      { triggerTurn: true, deliverAs: "followUp" },
-    );
+    deps.deliveries.send(goalToContinue, "continuation");
   };
 
   const canPlanContinuationFor = (goal: ThreadGoal | null): goal is ThreadGoal => {
@@ -239,17 +224,16 @@ export function createContinuationScheduler(deps: ContinuationSchedulerDeps) {
   };
 
   return {
-    bindPassthroughContinuationInputToTurn,
     clearContinuationState,
     clearContinuationStateFor,
     clearContinuationTimer,
     clearPostCompactContinuationFallback,
-    clearPassthroughContinuationInput,
-    continuationGoalIdFromRuntimePrompt,
     markContinuationQueued,
+    requireFullGoal,
+    restoreCompactionRefresh,
+    fullPromptForDelivery,
     maybeContinue,
     maybeContinueAfterCurrentEvent,
     maybeContinueAfterPostCompactFallback,
-    notePassthroughContinuationInput,
   };
 }

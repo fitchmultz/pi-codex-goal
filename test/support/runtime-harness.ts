@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import { mock } from "node:test";
 
 import type { AssistantMessage } from "@earendil-works/pi-ai";
@@ -14,13 +15,7 @@ import type {
 import goalExtension from "../../src/index.ts";
 import { CONTINUATION_RETRY_MS, PROVIDER_LIMIT_AUTO_RESUME_MS } from "../../src/runtime-config.ts";
 import { isGoalCustomEntry, reconstructGoal } from "../../src/state.ts";
-import {
-  toQueuedGoalContextCarrier,
-  type ActiveGoalQueuedDetails,
-  type QueuedGoalContextCarrier,
-  type QueuedGoalContextInput,
-  type QueuedGoalUserContent,
-} from "../../src/queued-goal-messages.ts";
+import type { QueuedGoalContextCarrier } from "./context-messages.ts";
 import { CUSTOM_ENTRY_TYPE } from "../../src/types.ts";
 
 type EventHandler = (event: object, ctx: ExtensionContext) => unknown | Promise<unknown>;
@@ -61,7 +56,15 @@ interface CompactionEventOptions {
 export function sessionBeforeCompactEvent(options: CompactionEventOptions = {}): object {
   return {
     type: "session_before_compact",
-    preparation: {},
+    preparation: {
+      messagesToSummarize: [],
+      turnPrefixMessages: [],
+      firstKeptEntryId: "entry-1",
+      isSplitTurn: false,
+      tokensBefore: 100,
+      fileOps: { read: new Set(), written: new Set(), edited: new Set() },
+      settings: { enabled: true, reserveTokens: 16_384, keepRecentTokens: 20_000 },
+    },
     branchEntries: [],
     reason: options.reason ?? "manual",
     willRetry: options.willRetry ?? false,
@@ -106,6 +109,7 @@ export function createRuntimeHarness(options: {
 } = {}) {
   const entries: ReturnType<ExtensionCommandContext["sessionManager"]["getBranch"]> = [];
   const handlers = new Map<string, EventHandler[]>();
+  const eventBus = new EventEmitter();
   const sentMessages: SentMessage[] = [];
   const sentUserMessages: SentUserMessage[] = [];
   const tools = new Map<string, (toolCallId: string, params: Record<string, unknown>) => Promise<unknown>>();
@@ -172,11 +176,10 @@ export function createRuntimeHarness(options: {
       });
     },
     events: {
-      emit() {
-        unsupportedHarnessMethod("pi.events.emit");
-      },
-      on() {
-        unsupportedHarnessMethod("pi.events.on");
+      emit(event, data) { eventBus.emit(event, data); },
+      on(event, handler) {
+        eventBus.on(event, handler);
+        return () => { eventBus.off(event, handler); };
       },
     },
     exec: async () => ({ stdout: "", stderr: "", code: 0, killed: false }),
@@ -383,6 +386,7 @@ export function createRuntimeHarness(options: {
 
   function reloadExtension(): void {
     handlers.clear();
+    eventBus.removeAllListeners();
     goalExtension(pi);
   }
 
@@ -525,9 +529,16 @@ export function queuedCustomMessage(sent: SentMessage, timestamp = 1): QueuedGoa
   };
 }
 
+export async function deliverQueuedMessage(harness: RuntimeHarness, sent: SentMessage): Promise<QueuedGoalContextCarrier> {
+  const message = queuedCustomMessage(sent);
+  await harness.emit("message_start", { type: "message_start", message });
+  await emitMessageEnd(harness, message);
+  return message;
+}
+
 export function goalCustomContextMessage(options: {
   content: string;
-  details: ActiveGoalQueuedDetails | Record<string, unknown>;
+  details: Record<string, unknown>;
   display?: boolean;
   timestamp: number;
 }): QueuedGoalContextCarrier {
@@ -558,35 +569,15 @@ function parseProviderContextHandlerResult(result: unknown): ProviderContextHand
 
   const messages: QueuedGoalContextCarrier[] = [];
   for (const [index, message] of candidate.messages.entries()) {
-    const carrier = toQueuedGoalContextCarrier(message as QueuedGoalContextInput);
-    assert.ok(carrier, `Expected provider context message ${index} to include a numeric timestamp.`);
-    messages.push(carrier);
+    assert.ok(message && typeof message === "object" && typeof message.timestamp === "number", `Expected provider context message ${index} to include a numeric timestamp.`);
+    messages.push(message as QueuedGoalContextCarrier);
   }
 
   return { messages };
 }
 
-export function requireProviderContextResult(
-  results: ProviderContextHandlerResult[],
-): ProviderContextResult {
-  const result = results[0];
-  if (result === undefined) {
-    assert.fail("Expected provider context handler to return rewritten messages.");
-  }
-  return result;
-}
-
-export function providerContextMessageAt(
-  result: ProviderContextResult,
-  index: number,
-): QueuedGoalContextCarrier {
-  const message = result.messages[index];
-  assert.ok(message, `Expected provider context message at index ${index}.`);
-  return message;
-}
-
 export function goalUserContextMessage(text: string, timestamp = 1): QueuedGoalContextCarrier {
-  const content: QueuedGoalUserContent = [{ type: "text", text }];
+  const content = [{ type: "text", text }];
   return {
     role: "user",
     content,
@@ -612,10 +603,27 @@ export async function emitQueuedTurnThroughContext(
   await harness.emit("turn_start", { type: "turn_start", turnIndex, timestamp: turnIndex + 1 });
   for (const message of messages) {
     await harness.emit("message_start", { type: "message_start", message });
-    await harness.emit("message_end", { type: "message_end", message });
+    await emitMessageEnd(harness, message);
   }
   const results = await harness.emit("context", { type: "context", messages });
   return results.map(parseProviderContextHandlerResult);
+}
+
+/** Emits `message_end` and, like Pi, replaces the delivered message in place with any handler replacement. */
+export async function emitMessageEnd(harness: RuntimeHarness, message: QueuedGoalContextCarrier): Promise<void> {
+  const results = await harness.emit("message_end", { type: "message_end", message });
+  for (const result of results) {
+    if (result === undefined) {
+      continue;
+    }
+    assert.ok(result && typeof result === "object" && "message" in result, "Expected a message_end replacement result.");
+    const replacement = result.message;
+    assert.ok(replacement && typeof replacement === "object", "Expected a replacement message.");
+    for (const key of Object.keys(message)) {
+      Reflect.deleteProperty(message, key);
+    }
+    Object.assign(message, replacement);
+  }
 }
 
 export function assistantMessage(

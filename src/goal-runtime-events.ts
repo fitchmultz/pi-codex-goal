@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
+import { registerGoalCompactionFilter } from "./goal-compaction.ts";
 import type { GoalRuntimeEventHandlers } from "./goal-runtime-event-handler-types.ts";
 
 export function registerGoalRuntimeEvents(
@@ -13,13 +14,16 @@ export function registerGoalRuntimeEvents(
   pi.on("before_agent_start", (event, ctx) => controller.onBeforeAgentStart(event, ctx));
   pi.on("agent_start", (event, ctx) => controller.onAgentStart(event, ctx));
   pi.on("message_start", (event, ctx) => controller.onMessageStart(event, ctx));
+  pi.on("message_end", (event, ctx) => controller.onMessageEnd(event, ctx));
   pi.on("turn_start", (event, ctx) => controller.onTurnStart(event, ctx));
   pi.on("tool_execution_end", (event, ctx) => controller.onToolExecutionEnd(event, ctx));
   pi.on("turn_end", (event, ctx) => controller.onTurnEnd(event, ctx));
   pi.on("agent_end", (event, ctx) => controller.onAgentEnd(event, ctx));
+  registerGoalCompactionFilter(pi);
   pi.on("session_before_compact", (event, ctx) =>
     controller.onSessionBeforeCompact(event, ctx),
   );
   pi.on("session_compact", (event, ctx) => controller.onSessionCompact(event, ctx));
+  pi.on("session_compact_failed", (event, ctx) => controller.onSessionCompactFailed(event, ctx));
   pi.on("session_shutdown", (event, ctx) => controller.onSessionShutdown(event, ctx));
 }
