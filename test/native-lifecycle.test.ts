@@ -253,24 +253,33 @@ test("native exhausted overflow pauses automation and only genuine user input gr
   assert.equal(h.session.sessionManager.getEntries().filter((e) => e.type === "message" && e.message.role === "user").length, 2, "automated commands never become native user input");
 });
 
-for (const route of ["startup", "resume", "tree"] as const) {
+for (const route of ["startup", "resume", "tree", "paused resume"] as const) {
 test(`native ${route} restores unfinished overflow recovery as a truthful pause, not an active stall`, async (t) => {
   let snapshot: SessionManager | undefined;
   const h = await fixture(t, true, [(pi) => {
-    if (route !== "tree") pi.on("session_compact", (_event, ctx) => {
+    if (route !== "tree" && route !== "paused resume") pi.on("session_compact", (_event, ctx) => {
       const file = ctx.sessionManager.getSessionFile();
       assert.ok(file);
       snapshot = SessionManager.forkFrom(file, ctx.cwd, join(ctx.cwd, "interrupted-recovery"));
     });
   }]);
+  const overflow = () => fauxAssistantMessage("", { stopReason: "error", errorMessage: "prompt is too long: 300000 tokens > 100000 maximum" });
   h.faux.setResponses([
-    fauxAssistantMessage("", { stopReason: "error", errorMessage: "prompt is too long: 300000 tokens > 100000 maximum" }),
-    fauxAssistantMessage(fauxToolCall("update_goal", { status: "waiting", reason: "Explorer recovery-check will deliver its report" }), { stopReason: "toolUse" }),
-    fauxAssistantMessage("Waiting for explorer recovery-check."),
+    overflow(),
+    ...(route === "paused resume" ? [overflow()] : [
+      fauxAssistantMessage(fauxToolCall("update_goal", { status: "waiting", reason: "Explorer recovery-check will deliver its report" }), { stopReason: "toolUse" }),
+      fauxAssistantMessage("Waiting for explorer recovery-check."),
+    ]),
   ]);
   await h.session.prompt("Recover native overflow, then wait for the explorer.");
   await h.session.waitForIdle();
-  assert.equal(h.goal()?.status, "waiting");
+  assert.equal(h.goal()?.status, route === "paused resume" ? "paused" : "waiting");
+  if (route === "paused resume") {
+    const file = h.session.sessionManager.getSessionFile();
+    assert.ok(file);
+    snapshot = SessionManager.forkFrom(file, h.session.sessionManager.getCwd(),
+      join(h.session.sessionManager.getCwd(), "paused-recovery"));
+  }
   const goalId = h.goal()?.goalId;
   const calls = h.faux.state.callCount;
   const statuses: string[] = [];
@@ -292,14 +301,21 @@ test(`native ${route} restores unfinished overflow recovery as a truthful pause,
       const result = await restored.navigateTree(compact.id, { summarize: false });
       assert.equal(result.cancelled, false);
     } else {
-      assert.ok(snapshot, "capture native persisted state at compaction, before the retry or any graceful shutdown");
-      assert.equal(reconstructGoal(snapshot.getBranch()).goal?.status, "active");
+      assert.ok(snapshot, "restore actual native compaction-time or exhausted-cap persistence");
+      assert.equal(reconstructGoal(snapshot.getBranch()).goal?.status, route === "paused resume" ? "paused" : "active");
       assert.equal(reconstructHostOverflowCapNeedsUserReset(snapshot.getBranch()), true);
+      const cwd = snapshot.getCwd(), agentDir = join(cwd, "restored-agent");
+      const loader = new DefaultResourceLoader({
+        cwd, agentDir, settingsManager: h.session.settingsManager,
+        noExtensions: true, noSkills: true, noThemes: true, noPromptTemplates: true, noContextFiles: true,
+        extensionFactories: [goalExtension, (pi) => { pi.registerProvider(h.faux.provider); }],
+      });
+      await loader.reload();
+      assert.deepEqual(loader.getExtensions().errors, []);
       ({ session: restored } = await createAgentSession({
-        cwd: snapshot.getCwd(), agentDir: join(snapshot.getCwd(), "restored-agent"),
-        resourceLoader: h.session.resourceLoader, modelRuntime: h.session.modelRuntime,
+        cwd, agentDir, resourceLoader: loader, modelRuntime: h.session.modelRuntime,
         model: h.faux.getModel(), settingsManager: h.session.settingsManager,
-        sessionManager: snapshot, noTools: "builtin", sessionStartEvent: { type: "session_start", reason: route },
+        sessionManager: snapshot, noTools: "builtin", sessionStartEvent: { type: "session_start", reason: route === "startup" ? "startup" : "resume" },
       }));
       await restored.bindExtensions({ mode: "tui", uiContext: ui, onError(error) { throw new Error(error.error); } });
     }

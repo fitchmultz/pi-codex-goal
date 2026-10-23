@@ -34,7 +34,8 @@ export function createSessionEventHandlers(deps: GoalRuntimeSessionHandlerContex
   } = deps;
 
   const pauseRestoredOverflow = (ctx: ExtensionContext): boolean => {
-    if (stateController.getGoal()?.status !== "active" ||
+    const goal = stateController.getGoal();
+    if ((goal?.status !== "active" && goal?.status !== "paused") ||
         runtimeState.recoveryState.phase.kind !== "hostOverflowNeedsUserStart") return false;
     stateController.pauseForRecovery(ctx,
       "Restored overflow recovery is paused. Reduce context or switch models, then send a genuine user message before /goal resume.");
