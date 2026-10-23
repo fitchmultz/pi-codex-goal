@@ -448,7 +448,7 @@ test(`native ${customCompactor ? "custom" : "default"} compaction refreshes only
   assert.equal(deliveries[0]?.content, deliveries[0]?.full, "custom continuation is finalized with the full current goal before its first request");
   assert.equal(deliveries[1]?.content, deliveries[1]?.compact, "later automatic continuations return to the compact prompt");
   assert.ok(String(deliveries[0]?.content).includes(escapeXmlText(saved.objective)));
-  assert.ok(JSON.stringify(requests[1]).includes(escapeXmlText(objective)), "the provider receives the saved replacement-token literals verbatim");
+  assert.ok(JSON.stringify(requests[1]?.at(-1)).includes("Preserve $$HOME, $&amp;, $` and $' literally &lt;&amp;&gt;."), "the current provider delivery receives the saved replacement-token literals verbatim");
   assert.equal(requests.length, 4, "resume, two continuations, and completion receipt");
   for (let index = 1; index < requests.length; index += 1) {
     const previous = requests[index - 1]!;
