@@ -3,6 +3,7 @@ import type {
   ExtensionHandler,
   SessionBeforeCompactEvent,
   SessionCompactEvent,
+  SessionCompactFailedEvent,
   SessionShutdownEvent,
   SessionStartEvent,
   SessionTreeEvent,
@@ -12,6 +13,7 @@ import { filterGoalCompactionInput } from "./goal-compaction.ts";
 import {
   clearActiveHostOverflowRecovery,
   recoveryPhaseBlocksContinuation,
+  recoveryPhaseNeedsUserStartTurn,
 } from "./recovery-machine.ts";
 import { isRecoveryPendingAttention, reasonFromRecoveryPendingAttention } from "./recovery.ts";
 import { applyStaleQueuedWorkEffects, runStaleQueuedWorkPlan } from "./goal-runtime-event-utils.ts";
@@ -49,6 +51,11 @@ export function createSessionEventHandlers(deps: GoalRuntimeSessionHandlerContex
                 return false;
               }
               clearActiveHostOverflowRecovery(runtimeState.recoveryState);
+              if (recoveryPhaseNeedsUserStartTurn(runtimeState.recoveryState.phase)) {
+                stateController.pauseForRecovery(ctx,
+                  "Native overflow retry did not start. Goal cannot reset its allowance; send a genuine user message after reducing context or switching models, then /goal resume.");
+                return false;
+              }
               status.refreshUi(ctx);
               return true;
             },
@@ -63,6 +70,7 @@ export function createSessionEventHandlers(deps: GoalRuntimeSessionHandlerContex
       deps.providerLimitAutoResume.clear();
       deps.clearActiveAccounting();
       stateController.reloadFromSession(ctx);
+      continuation.restoreCompactionRefresh(ctx.sessionManager.getBranch());
       goalAccounting.beginAccounting();
       const goal = stateController.getGoal();
       const pausedGoal = goal?.status === "paused" ? goal : null;
@@ -85,6 +93,7 @@ export function createSessionEventHandlers(deps: GoalRuntimeSessionHandlerContex
       deps.providerLimitAutoResume.clear();
       deps.clearActiveAccounting();
       stateController.reloadFromSession(ctx);
+      continuation.restoreCompactionRefresh(ctx.sessionManager.getBranch());
       goalAccounting.beginAccounting();
       continuation.maybeContinue(ctx);
     }) satisfies ExtensionHandler<SessionTreeEvent>,
@@ -106,7 +115,7 @@ export function createSessionEventHandlers(deps: GoalRuntimeSessionHandlerContex
     }) satisfies ExtensionHandler<SessionBeforeCompactEvent>,
 
     onSessionCompact: (async (event, ctx) => {
-      continuation.noteCompaction();
+      continuation.requireFullGoal();
       if (runStaleQueuedWorkPlan(runtimeState.staleQueuedWorkGuard.planSessionCompact(), ctx, deps)) {
         return;
       }
@@ -130,10 +139,18 @@ export function createSessionEventHandlers(deps: GoalRuntimeSessionHandlerContex
       }
     }) satisfies ExtensionHandler<SessionCompactEvent>,
 
+    onSessionCompactFailed: (async (event, ctx) => {
+      if (event.reason !== "overflow") return;
+      continuation.clearPostCompactContinuationFallback();
+      continuation.clearContinuationTimer();
+      stateController.pauseForRecovery(ctx,
+        "Native context overflow recovery stopped. Goal follow-ups cannot reset its allowance; reduce context or switch models, then send a genuine user message before /goal resume.");
+    }) satisfies ExtensionHandler<SessionCompactFailedEvent>,
+
     onSessionShutdown: (async (_event, ctx) => {
+      deps.deliveries.invalidate();
       continuation.clearPostCompactContinuationFallback();
       deps.providerLimitAutoResume.clear();
-      continuation.clearPassthroughContinuationInput();
       continuation.clearContinuationTimer();
       applyStaleQueuedWorkEffects(runtimeState.staleQueuedWorkGuard.planSessionShutdown().effects, ctx, deps);
 

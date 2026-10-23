@@ -12,9 +12,9 @@ import {
   queuedCustomMessage,
   sessionShutdownEvent,
 } from "./support/runtime-harness.ts";
-import { userContentFromUnknown } from "../src/queued-goal-messages.ts";
+import { userContentFromUnknown } from "./support/context-messages.ts";
 
-test("stale prompt continuation input is handled before agent start", async () => {
+test("extension user text is never swallowed as Goal automation", async () => {
   const harness = createRuntimeHarness();
   await harness.runCommand("ship it");
   const queued = harness.sentMessages[0];
@@ -31,7 +31,7 @@ test("stale prompt continuation input is handled before agent start", async () =
     source: "extension",
   });
 
-  assert.deepEqual(results[0], { action: "handled" });
+  assert.equal(results[0], undefined);
   assert.equal(harness.snapshot().goal?.status, "complete");
   assert.equal(harness.abortCount, 0);
 });
@@ -78,7 +78,7 @@ for (const source of ["interactive", "rpc"] as const) {
     const laterContextResults = await emitQueuedTurnThroughContext(harness, [laterUserMessage], 1);
     assert.equal(laterContextResults[0], undefined);
     assert.equal(userContentFromUnknown(laterUserMessage.content)[0]?.text, prompt);
-    assert.equal(harness.abortCount, 1, "the existing passthrough exemption expires at the next turn");
+    assert.equal(harness.abortCount, 0, "genuine user ownership never expires based on text or turn index");
   });
 }
 
@@ -92,7 +92,7 @@ test("stale queued continuation aborts if the goal became complete before launch
     assert.fail("Expected queued goal message content to be a string.");
   }
 
-  const queuedMessage = goalUserContextMessage(prompt, 1);
+  const queuedMessage = queuedCustomMessage(queued, 1);
   await harness.runTool("update_goal", { status: "complete" });
   const results = await harness.emit("before_agent_start", userBeforeAgentStartEvent(String(userContentFromUnknown(queuedMessage.content)[0]?.text), "base prompt"));
 
@@ -101,7 +101,7 @@ test("stale queued continuation aborts if the goal became complete before launch
 
   const contextResults = await emitQueuedTurnThroughContext(harness, [queuedMessage]);
   assert.equal(contextResults[0], undefined);
-  assert.deepEqual(queuedMessage, goalUserContextMessage(prompt, 1), "the legacy guard aborts without rewriting USER delivery");
+  assert.partialDeepStrictEqual(queuedMessage.details, { kind: "stale_continuation", lifecycle: "cancelled" });
 
   assert.equal(harness.snapshot().goal?.status, "complete");
   assert.equal(harness.abortCount, 1);
@@ -125,12 +125,11 @@ test("goal work delivered while active stays verbatim; work delivered after comp
   assert.deepEqual(await emitQueuedTurnThroughContext(harness, [late], 1), [undefined]);
   assert.equal(late.display, false);
   assert.equal(typeof late.content, "string");
-  assert.match(String(late.content), /queued hidden goal continuation was stale and has been cancelled/);
-  assert.deepEqual(late.details, {
+  assert.match(String(late.content), /queued Goal follow-up was cancelled/);
+  assert.partialDeepStrictEqual(late.details, {
     kind: "stale_continuation",
     goalId: harness.snapshot().goal?.goalId,
-    currentGoalId: harness.snapshot().goal?.goalId,
-    currentStatus: "complete",
+    lifecycle: "cancelled",
   });
 });
 
@@ -151,17 +150,17 @@ test("delivery cancellation covers metadata-owned custom controls, not text-only
   const staleMessages = [
     goalCustomContextMessage({
       content: "queued by details",
-      details: { kind: "continuation", goalId: queuedGoalId },
+      details: { ...queued.message.details as Record<string, unknown>, kind: "continuation" },
       timestamp: 1,
     }),
     goalCustomContextMessage({
       content: "queued by details",
-      details: { kind: "command_start", goalId: queuedGoalId },
+      details: { ...queued.message.details as Record<string, unknown>, kind: "command_start" },
       timestamp: 1,
     }),
     goalCustomContextMessage({
       content: "queued by details",
-      details: { kind: "command_resume", goalId: queuedGoalId },
+      details: { ...queued.message.details as Record<string, unknown>, kind: "command_resume" },
       timestamp: 1,
     }),
     goalCustomContextMessage({
@@ -177,16 +176,15 @@ test("delivery cancellation covers metadata-owned custom controls, not text-only
   for (const [index, message] of staleMessages.entries()) {
     if (index < 3) {
       assert.equal(typeof message.content, "string", `custom message ${index} should use string content`);
-      assert.match(String(message.content), /do not perform work for the queued goal id above/);
-      assert.deepEqual(message.details, {
+      assert.match(String(message.content), /do not perform its work/);
+      assert.partialDeepStrictEqual(message.details, {
         kind: "stale_continuation",
         goalId: queuedGoalId,
-        currentGoalId: queuedGoalId,
-        currentStatus: "complete",
+        lifecycle: "cancelled",
       });
     } else if (message.role === "custom") {
       assert.equal(message.content, prompt);
-      assert.deepEqual(message.details, { kind: "other", goalId: queuedGoalId });
+      assert.partialDeepStrictEqual(message.details, { kind: "other", goalId: queuedGoalId });
     } else {
       assert.deepEqual(message, goalUserContextMessage(prompt, 1));
     }
@@ -202,7 +200,7 @@ test("stale prompt-based queued work does not pause or charge a replacement goal
   if (typeof oldPrompt !== "string") {
     assert.fail("Expected queued goal message content to be a string.");
   }
-  const oldMessage = goalUserContextMessage(oldPrompt, 1);
+  const oldMessage = queuedCustomMessage(oldQueued, 1);
 
   await harness.runCommand("new goal");
   const replacement = harness.snapshot().goal;
@@ -240,7 +238,7 @@ test("stale prompt-based queued work with stop terminal does not corrupt replace
   if (typeof oldPrompt !== "string") {
     assert.fail("Expected queued goal message content to be a string.");
   }
-  const oldMessage = goalUserContextMessage(oldPrompt, 1);
+  const oldMessage = queuedCustomMessage(oldQueued, 1);
 
   await harness.runCommand("new goal");
   const replacement = harness.snapshot().goal;
@@ -361,7 +359,7 @@ test("stale custom abort without agent_end does not suppress the next current fo
     assert.equal(goal?.usage.tokensUsed, 42);
     assert.equal(goal?.usage.activeSeconds, 2);
     assert.equal(harness.sentMessages.length, 1);
-    assert.deepEqual(harness.sentMessages[0]?.message.details, {
+    assert.partialDeepStrictEqual(harness.sentMessages[0]?.message.details, {
       kind: "continuation",
       goalId: replacement?.goalId,
     });
@@ -391,7 +389,7 @@ test("goal follow-up guard resets when the queued prompt-based agent turn starts
   const goal = harness.snapshot().goal;
   assert.equal(goal?.status, "active");
   assert.equal(harness.sentMessages.length, 1);
-  assert.deepEqual(harness.sentMessages[0]?.message.details, {
+  assert.partialDeepStrictEqual(harness.sentMessages[0]?.message.details, {
     kind: "continuation",
     goalId: goal?.goalId,
   });

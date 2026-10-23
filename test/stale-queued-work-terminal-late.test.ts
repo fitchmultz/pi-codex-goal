@@ -62,7 +62,7 @@ test("late stale turn_end after the next current follow-up starts is ignored", a
     assert.equal(goal?.usage.tokensUsed, 42);
     assert.equal(goal?.usage.activeSeconds, 2);
     assert.equal(harness.sentMessages.length, 1);
-    assert.deepEqual(harness.sentMessages[0]?.message.details, {
+    assert.partialDeepStrictEqual(harness.sentMessages[0]?.message.details, {
       kind: "continuation",
       goalId: replacement?.goalId,
     });
@@ -125,7 +125,7 @@ test("late stale turn_end with stop before next current context event is ignored
     assert.equal(goal?.usage.tokensUsed, 42);
     assert.equal(goal?.usage.activeSeconds, 2);
     assert.equal(harness.sentMessages.length, 1);
-    assert.deepEqual(harness.sentMessages[0]?.message.details, {
+    assert.partialDeepStrictEqual(harness.sentMessages[0]?.message.details, {
       kind: "continuation",
       goalId: replacement?.goalId,
     });
@@ -188,7 +188,7 @@ test("late stale turn_end before next current context event is ignored", async (
     assert.equal(goal?.usage.tokensUsed, 42);
     assert.equal(goal?.usage.activeSeconds, 2);
     assert.equal(harness.sentMessages.length, 1);
-    assert.deepEqual(harness.sentMessages[0]?.message.details, {
+    assert.partialDeepStrictEqual(harness.sentMessages[0]?.message.details, {
       kind: "continuation",
       goalId: replacement?.goalId,
     });
@@ -258,7 +258,7 @@ test("late stale agent_end with stop before next current context event is ignore
     assert.equal(goal?.usage.tokensUsed, 42);
     assert.equal(goal?.usage.activeSeconds, 2);
     assert.equal(harness.sentMessages.length, 1);
-    assert.deepEqual(harness.sentMessages[0]?.message.details, {
+    assert.partialDeepStrictEqual(harness.sentMessages[0]?.message.details, {
       kind: "continuation",
       goalId: replacement?.goalId,
     });
@@ -331,7 +331,7 @@ for (const stopReason of ["aborted", "stop", "error"] as const) {
       assert.equal(goal?.usage.tokensUsed, 42);
       assert.equal(goal?.usage.activeSeconds, 2);
       assert.equal(harness.sentMessages.length, 1);
-      assert.deepEqual(harness.sentMessages[0]?.message.details, {
+      assert.partialDeepStrictEqual(harness.sentMessages[0]?.message.details, {
         kind: "continuation",
         goalId: replacement?.goalId,
       });
@@ -402,7 +402,7 @@ test("late stale agent_end before next current context event is ignored", async 
     assert.equal(goal?.usage.tokensUsed, 42);
     assert.equal(goal?.usage.activeSeconds, 2);
     assert.equal(harness.sentMessages.length, 1);
-    assert.deepEqual(harness.sentMessages[0]?.message.details, {
+    assert.partialDeepStrictEqual(harness.sentMessages[0]?.message.details, {
       kind: "continuation",
       goalId: replacement?.goalId,
     });

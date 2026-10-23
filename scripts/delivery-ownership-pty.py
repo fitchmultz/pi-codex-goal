@@ -94,9 +94,14 @@ try:
     capture("working")
     send("/goal pause")
     send("/goal resume")
-    wait_for(lambda: b"Follow-up:" in raw, "native follow-up row")
+    capture("queued-control")
+    # Queue real input using native Alt+Enter. Goal controls must not share its row.
+    os.write(fd, b"KEEP_QUEUED_NATIVE_USER\x1b[13;3u")
+    wait_for(lambda: b"Follow-up: KEEP_QUEUED_NATIVE_USER" in raw, "native genuine follow-up row")
     capture("queued")
     if args.restore:
+        os.write(fd, b"KEEP_EXISTING_EDITOR_DRAFT")
+        pump(0.2)
         os.write(fd, b"\x1b[1;3A")  # native Alt+Up, not a call to a private restore method
         pump(0.5)
         os.write(fd, b"\x1b[121;6u")  # supported extension shortcut: ctrl+shift+y
@@ -120,12 +125,29 @@ finally:
     (out / "process-result.json").write_text(json.dumps({"exitCode": os.waitstatus_to_exitcode(status)}) + "\n")
 
 ansi = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\))")
+queued_control = ansi.sub("", (out / "queued-control.ansi").read_text())
 queued = ansi.sub("", (out / "queued.ansi").read_text())
 delivered = ansi.sub("", (out / "delivered.ansi").read_text())
 editor = [e["text"] for e in events() if e["type"] == "editor-snapshot"]
-report = {"queuedHeader": 'Follow-up: <pi_goal_delivery id="' in queued,
-          "deliveredOutputHeader": '<pi_goal_delivery id="' in delivered,
-          "restoredEditorHeader": any('<pi_goal_delivery id="' in text for text in editor),
+providers = [e["messages"] for e in events() if e["type"] == "provider"]
+provider_text = json.dumps(providers)
+forbidden = re.compile(r"<pi_goal_(?:delivery|continuation)\b")
+journals = [json.loads(line) for path in (out / "sessions").glob("*.jsonl") for line in path.read_text().splitlines()]
+content = [entry.get("content", entry.get("message", {}).get("content")) for entry in journals if entry["type"] in ("message", "custom_message")]
+report = {"automatedFollowUpRow": "Follow-up:" in queued_control,
+          "genuineFollowUpRow": "Follow-up: KEEP_QUEUED_NATIVE_USER" in queued,
+          "opaqueTerminalText": bool(forbidden.search(ansi.sub("", raw.decode(errors="replace")))),
+          "opaqueProviderText": bool(forbidden.search(provider_text)),
+          "opaqueSavedContent": bool(forbidden.search(json.dumps(content))),
+          "genuineInputReachedProvider": "KEEP_QUEUED_NATIVE_USER" in provider_text,
+          "restoredEditor": editor,
           "restorationAttempted": args.restore, "exitCode": os.waitstatus_to_exitcode(status)}
+report["acceptancePassed"] = (not report["automatedFollowUpRow"] and report["genuineFollowUpRow"] and
+    not report["opaqueTerminalText"] and not report["opaqueProviderText"] and not report["opaqueSavedContent"] and
+    report["genuineInputReachedProvider"] and report["exitCode"] == 0 and
+    (not args.restore or (len(editor) == 1 and "KEEP_QUEUED_NATIVE_USER" in editor[0] and
+     "KEEP_EXISTING_EDITOR_DRAFT" in editor[0] and "untrusted_objective" not in editor[0])))
 (out / "report.json").write_text(json.dumps(report, indent=2) + "\n")
 print(json.dumps(report, indent=2))
+if not report["acceptancePassed"]:
+    raise SystemExit(1)

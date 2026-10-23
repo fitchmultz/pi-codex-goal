@@ -3,6 +3,7 @@ import { mock, test } from "node:test";
 
 import {
   createRuntimeHarness,
+  deliverQueuedMessage,
   userBeforeAgentStartEvent,
   flushContinuationScheduler,
   sessionCompactEvent,
@@ -15,7 +16,7 @@ async function startQueuedContinuation(harness: RuntimeHarness): Promise<void> {
   assert.ok(queued);
   harness.sentMessages.length = 0;
 
-  await harness.emit("before_agent_start", userBeforeAgentStartEvent(String(queued.message.content)));
+  await deliverQueuedMessage(harness, queued);
 }
 
 test("willRetry session compaction falls back after grace when host retry never starts", async () => {
@@ -32,7 +33,7 @@ test("willRetry session compaction falls back after grace when host retry never 
 
     flushContinuationScheduler();
     assert.equal(harness.sentMessages.length, 1);
-    assert.deepEqual(harness.sentMessages[0]?.message.details, {
+    assert.partialDeepStrictEqual(harness.sentMessages[0]?.message.details, {
       kind: "continuation",
       goalId: goal?.goalId,
     });

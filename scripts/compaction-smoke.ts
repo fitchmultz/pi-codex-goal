@@ -9,7 +9,6 @@ import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager
 import type { ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import goalExtension from "../src/index.ts";
 import { compactContinuationPrompt, escapeXmlText } from "../src/prompts.ts";
-import { userContentFromUnknown } from "../src/queued-goal-messages.ts";
 import { reconstructGoal } from "../src/state.ts";
 import { CUSTOM_ENTRY_TYPE } from "../src/types.ts";
 
@@ -26,7 +25,9 @@ const results: object[] = [];
 
 function textOf(message: { content?: unknown }): string {
   if (typeof message.content === "string") return message.content;
-  return userContentFromUnknown(message.content).map((part) => part.text).join("\n");
+  return Array.isArray(message.content) ? message.content.filter((part): part is { type: "text"; text: string } =>
+    part !== null && typeof part === "object" && part.type === "text" && typeof part.text === "string")
+    .map((part) => part.text).join("\n") : "";
 }
 
 for (const id of values.models.split(",")) {

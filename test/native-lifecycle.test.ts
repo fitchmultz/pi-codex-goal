@@ -4,8 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { crc32, deflateSync } from "node:zlib";
-import { createAssistantMessageEventStream, fauxProvider, fauxAssistantMessage, fauxToolCall, InMemoryCredentialStore } from "@earendil-works/pi-ai";
-import { AgentSessionRuntime, createAgentSession, DefaultResourceLoader, InteractiveMode, ModelRuntime, SessionManager, SettingsManager, UserMessageComponent, initTheme, type ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import { type Context, createAssistantMessageEventStream, fauxProvider, fauxAssistantMessage, fauxToolCall, InMemoryCredentialStore } from "@earendil-works/pi-ai";
+import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager, type ExtensionFactory } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import goalExtension from "../src/index.ts";
 import { compactContinuationPrompt, continuationPrompt, escapeXmlText } from "../src/prompts.ts";
@@ -41,52 +41,25 @@ async function fixture(t: TestContext, recover = false, extraFactories: Extensio
   const create = runner.getToolDefinition("create_goal"); assert.ok(create);
   await create.execute("create", { objective: "Verify native lifecycle" }, undefined, undefined, runner.createToolContext("create", undefined));
   const goal = () => reconstructGoal(session.sessionManager.getBranch()).goal;
-  return { session, faux, goal, agentDir };
+  return { session, faux, goal };
 }
 
 const complete = () => fauxAssistantMessage(fauxToolCall("update_goal", { status: "complete" }), { stopReason: "toolUse" });
 
-// Older sessions may contain these notices; new requests no longer generate them.
-const legacySupersededContinuation = (goalId: string) => [
-  "Superseded hidden goal continuation bookkeeping.",
-  `Goal id: ${goalId}.`,
-  "A newer continuation for this active goal appears later in context.",
-  "Ignore this message; do not perform work for it or mention it to the user.",
-].join("\n");
-
-for (const kind of ["continuation", "superseded_continuation", "stale_continuation"] as const) {
-test(`native idle ${kind} preserves goal bookkeeping and subsequent user input`, async (t) => {
+test("native automatic status-only continuation pauses and genuine input remains runnable", async (t) => {
   const h = await fixture(t);
-  const goal = h.goal();
-  assert.ok(goal);
-  if (kind === "stale_continuation") {
-    const runner = h.session.extensionRunner;
-    const update = runner.getToolDefinition("update_goal");
-    assert.ok(update);
-    await update.execute("complete", { status: "complete" }, undefined, undefined, runner.createToolContext("complete", undefined));
-  }
-  h.faux.setResponses(kind === "continuation"
-    ? [fauxAssistantMessage(fauxToolCall("get_goal", {}), { stopReason: "toolUse" }), fauxAssistantMessage("Only inspected status.")]
-    : [complete(), fauxAssistantMessage("Goal complete.")]);
-  await h.session.sendCustomMessage({
-    customType: CUSTOM_ENTRY_TYPE,
-    content: kind === "superseded_continuation" ? legacySupersededContinuation(goal.goalId) : compactContinuationPrompt(goal),
-    display: false,
-    details: { kind: kind === "stale_continuation" ? "continuation" : kind, goalId: goal.goalId },
-  }, { triggerTurn: true });
+  h.faux.setResponses([fauxAssistantMessage("Work advanced."), fauxAssistantMessage(fauxToolCall("get_goal", {}), { stopReason: "toolUse" }), fauxAssistantMessage("Only inspected status.")]);
+  await h.session.prompt("Advance the work.");
   await h.session.waitForIdle();
-  assert.equal(h.goal()?.status, kind === "continuation" ? "paused" : "complete");
-  assert.equal(h.faux.state.callCount, kind === "stale_continuation" ? 0 : 2,
-    "stale work is aborted before the provider; active or superseded work runs without duplicate continuation");
+  assert.equal(h.goal()?.status, "paused");
+  assert.equal(h.faux.state.callCount, 3);
   const saved = h.goal();
-  const calls = h.faux.state.callCount;
-  h.faux.setResponses([fauxAssistantMessage("Ordinary user input still works.")]);
+  h.faux.setResponses([fauxAssistantMessage("Ordinary user input answered.")]);
   await h.session.prompt("Answer an unrelated user question.");
   await h.session.waitForIdle();
-  assert.deepEqual(h.goal(), saved, "user input must not reactivate a stopped goal or inherit a stale abort");
-  assert.equal(h.faux.state.callCount, calls + 1);
+  assert.equal(h.faux.state.callCount, 4);
+  assert.deepEqual(h.goal(), saved);
 });
-}
 
 test("native budget notification can start an idle run without reactivating the goal", async (t) => {
   const h = await fixture(t);
@@ -251,82 +224,33 @@ test("headless cancellation persists a paused goal through native reload and exp
   assert.equal(h.faux.state.callCount, 3);
 });
 
-test("native userFollowUp start after overflow uses unchanged public USER text and options", async (t) => {
-  // Print-mode fixtures do not initialize the theme used by the real TUI bubble.
-  initTheme("dark", false);
-  const inputs: string[] = [];
-  const starts: Array<{ role: string; content?: unknown }> = [];
-  const h = await fixture(t, true, [(pi) => {
-    pi.on("input", (event) => {
-      if (event.source === "extension") inputs.push(event.text);
-    });
-    pi.on("message_start", (event) => {
-      if (event.message.role !== "user") return;
-      starts.push(structuredClone(event.message));
-      const text = typeof event.message.content === "string" ? event.message.content
-        : event.message.content.filter((part) => part.type === "text").map((part) => part.text).join("\n");
-      const bubble = new UserMessageComponent(text);
-      assert.doesNotMatch(bubble.render(100).join("\n"), /pi_goal_delivery/, "the live native user bubble has no transport header");
-    });
-  }]);
+test("native exhausted overflow pauses automation and only genuine user input grants another recovery", async (t) => {
+  const h = await fixture(t, true);
   const overflow = () => fauxAssistantMessage("", { stopReason: "error", errorMessage: "prompt is too long: 300000 tokens > 100000 maximum" });
   h.faux.setResponses([overflow(), overflow()]);
   await h.session.prompt("Reach the native overflow retry cap.");
   await h.session.waitForIdle();
   assert.equal(h.goal()?.status, "paused");
-  assert.equal(h.faux.state.callCount, 2, "exercise real host compaction and retry exhaustion");
+  assert.equal(h.faux.state.callCount, 2);
+  assert.equal(h.session.sessionManager.getEntries().filter((e) => e.type === "compaction").length, 1);
+  await h.session.prompt("/goal resume");
+  assert.equal(h.goal()?.status, "paused");
   await h.session.prompt("/goal clear");
-  inputs.length = 0;
-  starts.length = 0;
-  const sends: Array<Parameters<typeof h.session.sendUserMessage>> = [];
-  const sendUserMessage = h.session.sendUserMessage.bind(h.session);
-  h.session.sendUserMessage = async (content, options) => {
-    sends.push([content, options]);
-    await sendUserMessage(content, options);
-  };
-  h.faux.setResponses([complete(), fauxAssistantMessage("Replacement complete.")]);
-  const nativeStream = h.session.agent.streamFunction;
-  assert.ok(nativeStream);
-  let started!: () => void, release = () => {};
-  const firstStarted = new Promise<void>((resolve) => { started = resolve; });
-  let requests = 0;
-  h.session.agent.streamFunction = (model, context, options) => {
-    if (requests++ > 0) return nativeStream(model, context, options);
-    const stream = createAssistantMessageEventStream();
-    const message = { ...fauxAssistantMessage("Background result recorded."), api: model.api, provider: model.provider, model: model.id };
-    release = () => { release = () => {}; stream.push({ type: "done", reason: "stop", message }); stream.end(); };
-    started();
-    return stream;
-  };
-  // A real custom background run leaves the native overflow user-reset cap intact.
-  const background = h.session.sendCustomMessage({ customType: "background-result", content: "Verified background result", display: true }, { triggerTurn: true });
-  await firstStarted;
-  let text = "";
-  try {
-    await h.session.prompt("/goal Verify the replacement after overflow");
-    const deadline = Date.now() + 5_000;
-    while (h.session.pendingMessageCount === 0) {
-      assert.ok(Date.now() < deadline, "userFollowUp start must enter the native queue");
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-    assert.equal(inputs.length, 1);
-    text = inputs[0]!;
-    const current = h.goal();
-    assert.ok(current);
-    assert.equal(text, compactContinuationPrompt(current));
-    assert.deepEqual(sends, [[text, { deliverAs: "followUp" }]], "use the same public sendUserMessage call as upstream");
-    assert.deepEqual(h.session.getFollowUpMessages(), [text], "no transport text in the native start queue");
-    assert.doesNotMatch(text, /pi_goal_delivery|<untrusted_objective>/);
-  } finally {
-    release();
-    await background;
-  }
-  await waitForGoalCompletion(h);
-  assert.equal(starts.length, 1);
-  assert.deepEqual(starts[0]?.content, [{ type: "text", text }]);
-  const stored = h.session.sessionManager.getBranch().findLast((entry) => entry.type === "message" && entry.message.role === "user");
-  assert.ok(stored?.type === "message" && stored.message.role === "user");
-  assert.deepEqual(stored.message.content, [{ type: "text", text }], "no custom conversion or message_end rewrite");
+  await h.session.prompt("/goal Verify replacement without impersonating user input");
+  assert.equal(h.goal()?.status, "paused");
+  await h.session.reload();
+  await h.session.prompt("/goal resume");
+  await h.session.waitForIdle();
+  assert.equal(h.faux.state.callCount, 2, "commands and reload must not manufacture native recovery");
+  h.faux.setResponses([overflow(), fauxAssistantMessage("Real user recovery succeeded.")]);
+  await h.session.prompt("I reduced the context; retry this genuine user request.");
+  await h.session.waitForIdle();
+  assert.equal(h.faux.state.callCount, 4);
+  assert.equal(h.session.sessionManager.getEntries().filter((e) => e.type === "compaction").length, 2, "the genuine user gets a fresh native compact-and-retry");
+  h.faux.setResponses([complete(), fauxAssistantMessage("Replacement verified.")]);
+  await resumeAndComplete(h);
+  assert.equal(h.faux.state.callCount, 6);
+  assert.equal(h.session.sessionManager.getEntries().filter((e) => e.type === "message" && e.message.role === "user").length, 2, "automated commands never become native user input");
 });
 
 for (const route of ["direct", "nested"] as const) {
@@ -438,6 +362,8 @@ test(`native ${customCompactor ? "custom" : "default"} compaction refreshes only
   await h.session.compact();
   assert.equal(h.faux.state.callCount, callsBeforeCompaction + (customCompactor ? 0 : 1));
   assert.deepEqual(h.goal(), saved, "compaction alone cannot reactivate a paused goal");
+  await h.session.reload();
+  assert.deepEqual(h.goal(), saved, "reload must retain the pending objective refresh without waking a paused goal");
   const requests: unknown[][] = [];
   const nativeStream = h.session.agent.streamFunction;
   assert.ok(nativeStream);
@@ -446,11 +372,9 @@ test(`native ${customCompactor ? "custom" : "default"} compaction refreshes only
     return nativeStream(model, context, options);
   };
   await resumeAndComplete(h);
-  const resumed = h.session.sessionManager.getBranch().findLast((entry) => entry.type === "message" && entry.message.role === "user");
-  assert.ok(resumed?.type === "message" && resumed.message.role === "user");
-  const text = typeof resumed.message.content === "string" ? resumed.message.content
-    : resumed.message.content.filter((part) => part.type === "text").map((part) => part.text).join("\n");
-  assert.equal(text, compactContinuationPrompt({ ...saved, status: "active" }), "resume stays a native compact USER delivery");
+  const resumed = h.session.sessionManager.getEntries().findLast((entry) => entry.type === "custom_message" && (entry.details as { kind?: string })?.kind === "command_resume");
+  assert.ok(resumed?.type === "custom_message");
+  assert.equal(resumed.content, continuationPrompt({ ...saved, status: "active" }), "resume stays a public custom delivery with the saved objective");
   assert.equal(deliveries.length, 2, "two normal continuations; compaction adds no passive snapshot or extra scheduled work");
   assert.equal(deliveries[0]?.content, deliveries[0]?.full, "custom continuation is finalized with the full current goal before its first request");
   assert.equal(deliveries[1]?.content, deliveries[1]?.compact, "later automatic continuations return to the compact prompt");
@@ -516,14 +440,14 @@ test(`native ordinary image input and literal marker data stay unchanged with ${
   const stream = h.session.agent.streamFunction;
   assert.ok(stream);
   h.session.agent.streamFunction = (model, context, options) => {
-    const user = context.messages.findLast((message) => message.role === "user");
-    assert.ok(user?.role === "user");
+    const user = context.messages.find((message) => message.role === "user" && JSON.stringify(message.content).includes("KEEP_GENUINE_IMAGE_CAPTION"));
+    if (!user || user.role !== "user") return stream(model, context, options);
     prompts.push(typeof user.content === "string" ? user.content : user.content.filter((part) => part.type === "text").map((part) => part.text).join("\n"));
     imageCounts.push(typeof user.content === "string" ? 0 : user.content.filter((part) => part.type === "image").length);
     return stream(model, context, options);
   };
   const caption = "KEEP_GENUINE_IMAGE_CAPTION";
-  const prompt = "Inspect the image; preserve this literal data:\n" + compactContinuationPrompt(saved) + "\n" + caption;
+  const prompt = `<pi_goal_continuation goal_id="${saved.goalId}">\n` + compactContinuationPrompt(saved) + "\n</pi_goal_continuation>\n" + caption;
   await h.session.prompt(prompt, { images: [oversizedImage()] });
   if (!paused) await waitForGoalCompletion(h);
   await h.session.waitForIdle();
@@ -533,7 +457,6 @@ test(`native ordinary image input and literal marker data stay unchanged with ${
   assert.equal(imageCounts[0], 1);
   assert.doesNotMatch(prompts[0]!, /<untrusted_objective>/);
   if (paused) assert.deepEqual(h.goal(), saved);
-  else assert.match(prompts[1]!, /<untrusted_objective>/, "the actual Goal continuation still restores the full objective");
 });
 }
 
@@ -549,8 +472,8 @@ test("native sendUserMessage keeps its compact control, caption and resize notes
   const stream = h.session.agent.streamFunction;
   assert.ok(stream);
   h.session.agent.streamFunction = (model, context, options) => {
-    const user = context.messages.findLast((message) => message.role === "user");
-    assert.ok(user?.role === "user");
+    const user = context.messages.find((message) => message.role === "user" && JSON.stringify(message.content).includes("KEEP_EXTENSION_IMAGE_CAPTION"));
+    if (!user || user.role !== "user") return stream(model, context, options);
     deliveries.push({
       text: typeof user.content === "string" ? user.content : user.content.filter((part) => part.type === "text").map((part) => part.text).join("\n"),
       images: typeof user.content === "string" ? 0 : user.content.filter((part) => part.type === "image").length,
@@ -567,100 +490,232 @@ test("native sendUserMessage keeps its compact control, caption and resize notes
   assert.match(first.text, /KEEP_EXTENSION_IMAGE_CAPTION/);
   assert.match(first.text, /\[Image: original 3000x8, displayed at/);
   assert.equal(first.images, 1);
-  assert.match(deliveries[1]?.text ?? "", /<untrusted_objective>/, "only the later custom continuation gets the full goal");
   const user = h.session.sessionManager.getBranch().findLast((entry) => entry.type === "message" && entry.message.role === "user");
   assert.ok(user?.type === "message" && user.message.role === "user");
   const persisted = typeof user.message.content === "string" ? user.message.content : user.message.content.filter((part) => part.type === "text").map((part) => part.text).join("\n");
   assert.equal(persisted, first.text);
 });
 
-test("native resume queue and restored editor use unchanged public USER delivery without transport text", async (t) => {
+for (const pauseBeforeRestore of [true, false]) {
+test(`native queue discard exposes only genuine input; automation ${pauseBeforeRestore ? "stays paused" : "recovers with fresh ownership"}`, async (t) => {
   const h = await fixture(t);
-  const runtime = new AgentSessionRuntime(h.session, {
-    cwd: h.session.sessionManager.getCwd(), agentDir: h.agentDir,
-    settingsManager: h.session.settingsManager, modelRuntime: h.session.modelRuntime,
-    resourceLoader: h.session.resourceLoader, diagnostics: [],
-  }, async () => { throw new Error("This test must not replace the session"); });
-  // Infer the adapter and check it at InteractiveMode's Terminal boundary: current
-  // hosts require program status, while older supported types do not declare it.
-  const terminal = {
-    start() { assert.fail("This test must not start terminal IO"); }, stop() {},
-    async drainInput() {}, write() {}, columns: 100, rows: 30, kittyProtocolActive: false,
-    moveBy() {}, hideCursor() {}, showCursor() {}, clearLine() {}, clearFromCursor() {},
-    clearScreen() {}, setTitle() {}, setProgress() {}, setProgramStatus() {},
-  };
-  // Construct the real editor/queue owner, but do not start its CLI loop, IO or
-  // startup checks. Invoke the native restore method; never recreate its join logic.
-  const mode = new InteractiveMode(runtime, { terminal, tuiMode: "regular" });
-  const editor: unknown = Reflect.get(mode, "editor");
-  const restoreToEditor: unknown = Reflect.get(mode, "restoreQueuedMessagesToEditor");
-  assert.ok(editor && typeof editor === "object" &&
-    "getText" in editor && typeof editor.getText === "function" &&
-    "setText" in editor && typeof editor.setText === "function");
-  assert.ok(typeof restoreToEditor === "function");
   let started!: () => void, release = () => {};
   const firstStarted = new Promise<void>((resolve) => { started = resolve; });
-  const delivered: string[] = [], providerContexts: string[] = [];
-  h.session.agent.streamFunction = (model, context) => {
+  const providerContexts: string[] = [], sends: unknown[] = [];
+  const nativeSend = h.session.sendCustomMessage.bind(h.session);
+  h.session.sendCustomMessage = async (message, options) => { sends.push(structuredClone(message)); return nativeSend(message, options); };
+  const nativeStream = h.session.agent.streamFunction;
+  assert.ok(nativeStream);
+  let requests = 0;
+  h.session.agent.streamFunction = (model, context, options) => {
     providerContexts.push(JSON.stringify(context.messages));
-    const user = context.messages.findLast((message) => message.role === "user");
-    assert.ok(user?.role === "user");
-    delivered.push(typeof user.content === "string" ? user.content : user.content.filter((part) => part.type === "text").map((part) => part.text).join("\n"));
-    const message = { ...fauxAssistantMessage("Ordinary input answered."), api: model.api, provider: model.provider, model: model.id, timestamp: Date.now() };
+    if (requests++ > 0) return nativeStream(model, context, options);
     const stream = createAssistantMessageEventStream();
-    const done = () => { stream.push({ type: "done", reason: "stop", message }); stream.end(); };
-    if (delivered.length === 1) { release = () => { release = () => {}; done(); }; started(); }
-    else queueMicrotask(done);
+    const message = { ...fauxAssistantMessage("Initial work recorded."), api: model.api, provider: model.provider, model: model.id };
+    release = () => { release = () => {}; stream.push({ type: "done", reason: "stop", message }); stream.end(); };
+    started();
     return stream;
   };
+  h.faux.setResponses([complete(), fauxAssistantMessage("Goal complete.")]);
   const run = h.session.prompt("Initial ordinary input.");
   await firstStarted;
   try {
-    const saved = h.goal();
-    assert.ok(saved);
-    const genuine = "KEEP_GENUINE_QUEUED_INPUT";
-    await h.session.followUp(genuine);
+    await h.session.followUp("KEEP_GENUINE_QUEUED_INPUT");
     await h.session.prompt("/goal pause");
     await h.session.prompt("/goal resume");
-    const deadline = Date.now() + 5_000;
-    while (h.session.pendingMessageCount < 2) {
-      assert.ok(Date.now() < deadline, "resume must enter the native follow-up queue");
-      await new Promise((resolve) => setTimeout(resolve, 0));
-    }
-    const resumed = h.goal();
-    assert.ok(resumed);
-    const control = compactContinuationPrompt(resumed);
-    assert.deepEqual(h.session.getFollowUpMessages(), [genuine, control], "resume uses the original public sendUserMessage text");
-    await h.session.prompt("/goal pause");
-    editor.setText("KEEP_EDITOR_DRAFT");
-    assert.equal(restoreToEditor.call(mode), 2);
-    const restored: unknown = editor.getText();
-    assert.ok(typeof restored === "string");
-    const expected = [genuine, control, "KEEP_EDITOR_DRAFT"].join("\n\n");
-    assert.equal(restored, expected, "Goal adds no transport text to native editor restoration");
-    assert.equal(h.session.pendingMessageCount, 0);
+    assert.equal(sends.length, 1, "the real custom delivery entered the native queue");
+    assert.deepEqual(h.session.getFollowUpMessages(), ["KEEP_GENUINE_QUEUED_INPUT"]);
+    if (pauseBeforeRestore) await h.session.prompt("/goal pause");
+    const restored = h.session.clearQueue();
+    assert.deepEqual(restored, { steering: [], followUp: ["KEEP_GENUINE_QUEUED_INPUT"] });
+    const expected = restored.followUp[0]; assert.ok(expected);
+    assert.equal(h.session.pendingMessageCount, 0, "the public native owner clears queues, but exposes only real user text");
     release();
     await run;
+    if (!pauseBeforeRestore) await waitForGoalCompletion(h);
     await h.session.waitForIdle();
-    await h.session.prompt(restored);
+    assert.equal(h.goal()?.status, pauseBeforeRestore ? "paused" : "complete");
+    h.faux.setResponses([fauxAssistantMessage("Restored genuine input answered.")]);
+    await h.session.prompt(expected);
     await h.session.waitForIdle();
-    assert.deepEqual({
-      headerInProvider: /pi_goal_delivery/.test(providerContexts.join("\n")),
-      headerStored: /pi_goal_delivery/.test(JSON.stringify(h.session.sessionManager.getEntries())),
-    }, { headerInProvider: false, headerStored: false });
-    assert.deepEqual(delivered, ["Initial ordinary input.", expected]);
-    const users = h.session.messages.filter((message) => message.role === "user");
-    assert.equal(users.length, 2, "restored input is one new delivery, not the discarded Goal work");
-    assert.equal(h.goal()?.status, "paused");
-  } finally {
-    release();
-    await run;
-    mode.stop();
-  }
+    assert.doesNotMatch(providerContexts.join("\n"), /pi_goal_delivery|pi_goal_continuation|deliveryId|generation/);
+    const entries = h.session.sessionManager.getEntries();
+    const users = entries.filter((entry) => entry.type === "message" && entry.message.role === "user");
+    assert.equal(users.length, 2);
+    assert.ok(users.some((entry) => entry.type === "message" && JSON.stringify(entry.message).includes(expected.replaceAll("\n", "\\n"))));
+    assert.doesNotMatch(JSON.stringify(entries.filter((entry) => entry.type === "message")), /pi_goal_delivery|pi_goal_continuation/);
+  } finally { release(); await run; }
 });
+}
+
+test("native owned refresh preserves normalized image captions and its consumed intent survives reload", async (t) => {
+  let attached = false;
+  let normalized: Array<{ type: string }> = [];
+  const h = await fixture(t, false, [(pi) => {
+    pi.on("message_end", (event, ctx) => {
+      if (attached || event.message.role !== "custom" || event.message.customType !== CUSTOM_ENTRY_TYPE ||
+          (event.message.details as { kind?: string })?.kind !== "continuation") return;
+      const user = ctx.sessionManager.getBranch().findLast((entry) => entry.type === "message" && entry.message.role === "user");
+      assert.ok(user?.type === "message" && user.message.role === "user" && Array.isArray(user.message.content));
+      const content = user.message.content;
+      normalized = structuredClone(content);
+      attached = true;
+      assert.equal(typeof event.message.content, "string");
+      return { message: { ...event.message, content: [{ type: "text", text: String(event.message.content) }, ...content] } };
+    });
+  }], true, true);
+  await h.session.prompt("/goal pause");
+  h.faux.setResponses([fauxAssistantMessage("Image recorded.")]);
+  await h.session.prompt("KEEP_NORMALIZED_OWNED_CAPTION", { images: [oversizedImage()] });
+  await h.session.compact();
+  h.faux.setResponses([
+    fauxAssistantMessage("Resumed work; ask the explorer to finish verification."),
+    fauxAssistantMessage(fauxToolCall("update_goal", { status: "waiting", reason: "Explorer beta will deliver its verification report" }), { stopReason: "toolUse" }),
+    fauxAssistantMessage("Waiting for explorer beta."),
+  ]);
+  await h.session.prompt("/goal resume");
+  const deadline = Date.now() + 5_000;
+  while (h.goal()?.status !== "waiting") {
+    assert.ok(Date.now() < deadline);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  await h.session.waitForIdle();
+  const first = h.session.sessionManager.getEntries().find((entry) => entry.type === "custom_message" &&
+    (entry.details as { objectiveRefresh?: boolean })?.objectiveRefresh === true);
+  assert.ok(first?.type === "custom_message" && Array.isArray(first.content));
+  assert.deepEqual(first.content.slice(1), normalized, "Goal leaves native caption, resized image bytes and coordinate note untouched");
+  assert.match(JSON.stringify(first.content), /KEEP_NORMALIZED_OWNED_CAPTION/);
+  assert.match(JSON.stringify(first.content), /Image: original 3000x8, displayed at/);
+  assert.match(JSON.stringify(first.content[0]), /untrusted_objective/);
+  await h.session.reload();
+  h.faux.setResponses([fauxAssistantMessage("Explorer verification integrated; finish the audit."), complete(), fauxAssistantMessage("Goal complete.")]);
+  await h.session.sendCustomMessage({ customType: "explorer-beta", content: "Explorer beta verified every requirement.", display: true }, { triggerTurn: true });
+  await waitForGoalCompletion(h);
+  const controls = h.session.sessionManager.getEntries().filter((entry) => entry.type === "custom_message" &&
+    (entry.details as { kind?: string })?.kind === "continuation");
+  assert.equal(controls.length, 2);
+  assert.equal(controls.filter((entry) => entry.type === "custom_message" && (entry.details as { objectiveRefresh?: boolean })?.objectiveRefresh === true).length, 1);
+  const last = controls.at(-1);
+  assert.ok(last?.type === "custom_message");
+  assert.doesNotMatch(JSON.stringify(last.content), /untrusted_objective|KEEP_NORMALIZED_OWNED_CAPTION/);
+});
+
+for (const pendingGenuine of [true, false]) {
+test(`native same-goal generations and duplicates settle with ${pendingGenuine ? "genuine input queued" : "only custom input queued"}`, async (t) => {
+  const finalized: Array<{ content: unknown; details: unknown }> = [];
+  const h = await fixture(t, false, [(pi) => {
+    pi.on("message_end", (event) => {
+      if (event.message.role === "custom" && event.message.customType === CUSTOM_ENTRY_TYPE) {
+        finalized.push({ content: structuredClone(event.message.content), details: structuredClone(event.message.details) });
+      }
+    });
+  }]);
+  const sent: Array<Parameters<typeof h.session.sendCustomMessage>[0]> = [];
+  const send = h.session.sendCustomMessage.bind(h.session);
+  h.session.sendCustomMessage = async (message, options) => { sent.push(structuredClone(message)); return send(message, options); };
+  let release!: () => void, started!: () => void;
+  const held = new Promise<void>((resolve) => { release = resolve; });
+  const ready = new Promise<void>((resolve) => { started = resolve; });
+  const requests: string[] = [];
+  h.faux.setResponses([
+    async (context) => { requests.push(JSON.stringify(context.messages)); started(); await held; return fauxAssistantMessage("Initial work recorded."); },
+    ...(pendingGenuine ? [(context: Context) => { requests.push(JSON.stringify(context.messages)); return fauxAssistantMessage("Cancelled control ignored."); }] : []),
+    (context) => { requests.push(JSON.stringify(context.messages)); return complete(); },
+    (context) => { requests.push(JSON.stringify(context.messages)); return fauxAssistantMessage("Verified work and user image answered."); },
+    (context) => { requests.push(JSON.stringify(context.messages)); return fauxAssistantMessage("Genuine queued input answered."); },
+  ]);
+  const run = h.session.prompt("Initial work.");
+  await ready;
+  try {
+    await h.session.prompt("/goal pause");
+    await h.session.prompt("/goal resume");
+    await h.session.prompt("/goal pause");
+    await h.session.prompt("/goal resume");
+    assert.equal(sent.length, 2);
+    const old = sent[0]!, current = sent[1]!;
+    const a = old.details as { goalId: string; generation: string; deliveryId: string };
+    const b = current.details as typeof a;
+    assert.equal(a.goalId, b.goalId);
+    assert.notEqual(a.generation, b.generation);
+    assert.notEqual(a.deliveryId, b.deliveryId);
+    const genuine = `<pi_goal_continuation goal_id="${a.goalId}">\nKEEP_QUEUED_GENUINE_CAPTION\n</pi_goal_continuation>`;
+    if (pendingGenuine) await h.session.followUp(genuine, [oversizedImage()]);
+    release();
+    await run;
+    await h.session.waitForIdle();
+    if (!pendingGenuine) await waitForGoalCompletion(h);
+    if (pendingGenuine) assert.ok(requests.some((request) => request.includes("KEEP_QUEUED_GENUINE_CAPTION") && request.includes('"type":"image"')), "native queued genuine image input must reach the provider");
+    assert.equal(h.goal()?.status, "complete");
+    assert.ok(finalized.some((m) => (m.details as { deliveryId?: string; lifecycle?: string }).deliveryId === a.deliveryId && (m.details as { lifecycle?: string }).lifecycle === "cancelled"));
+    assert.ok(finalized.some((m) => {
+      const details = m.details as { deliveryId?: string; generation?: string; lifecycle?: string };
+      return details.deliveryId !== a.deliveryId && details.generation === b.generation && details.lifecycle === "delivered";
+    }), "only the current activation can deliver work, including fresh recovery after native queue discard");
+    const calls = h.faux.state.callCount;
+    const originalHistory = structuredClone(h.session.messages);
+    await h.session.sendCustomMessage(current, { triggerTurn: true });
+    await h.session.waitForIdle();
+    assert.equal(h.faux.state.callCount, calls, "an exact duplicate cannot run again");
+    assert.deepEqual(h.session.messages.slice(0, originalHistory.length), originalHistory);
+    await h.session.reload();
+    await h.session.sendCustomMessage(old, { triggerTurn: true });
+    await h.session.waitForIdle();
+    assert.equal(h.faux.state.callCount, calls, "a new runtime cannot revive old ownership");
+    h.faux.setResponses([fauxAssistantMessage("New genuine request answered.")]);
+    await h.session.prompt(genuine, { images: [oversizedImage()] });
+    await h.session.waitForIdle();
+    assert.equal(h.faux.state.callCount, calls + 1);
+  } finally { release(); await run; }
+});
+}
 
 const waitingReason = "Explorer alpha will deliver its report as a message";
 const waitForExplorer = () => fauxAssistantMessage(fauxToolCall("update_goal", { status: "waiting", reason: waitingReason }), { stopReason: "toolUse" });
+
+for (const transition of ["complete", "clear", "replace"] as const) {
+test(`native ${transition} retires queued ownership without losing genuine image input`, async (t) => {
+  const h = await fixture(t);
+  let release!: () => void;
+  let held!: () => void;
+  const ready = new Promise<void>((resolve) => { held = resolve; });
+  const requests: string[] = [];
+  const respond = (context: Context) => {
+    const request = JSON.stringify(context.messages);
+    requests.push(request);
+    return transition === "replace" && request.includes("KEEP_CANCELLED_GENERATION_INPUT") && h.goal()?.status === "active" ?
+      complete() : fauxAssistantMessage("Only current work and genuine input are runnable.");
+  };
+  h.faux.setResponses([
+    async () => { held(); await new Promise<void>((resolve) => { release = resolve; }); return fauxAssistantMessage("Original work finished."); },
+    respond, respond, respond,
+  ]);
+  const run = h.session.prompt("Advance original work.");
+  await ready;
+  try {
+    await h.session.prompt("/goal pause");
+    await h.session.prompt("/goal resume");
+    const runner = h.session.extensionRunner;
+    if (transition === "clear") await h.session.prompt("/goal clear");
+    else {
+      const name = transition === "replace" ? "create_goal" : "update_goal";
+      const tool = runner.getToolDefinition(name); assert.ok(tool);
+      const params = transition === "replace" ? { objective: "Replacement goal only", replace_existing: true } : { status: "complete" };
+      await tool.execute("transition", params, undefined, undefined, runner.createToolContext("transition", undefined));
+    }
+    await h.session.followUp("KEEP_CANCELLED_GENERATION_INPUT", [oversizedImage()]);
+    release();
+    await run;
+    if (transition === "replace") await waitForGoalCompletion(h);
+    await h.session.waitForIdle();
+    assert.ok(requests.some((request) => request.includes("KEEP_CANCELLED_GENERATION_INPUT") && request.includes('"type":"image"')));
+    assert.ok(requests.every((request) => !request.includes("untrusted_objective")), "retired original command prompt never reaches the provider");
+    const cancelled = h.session.sessionManager.getEntries().filter((entry) => entry.type === "custom_message" &&
+      (entry.details as { lifecycle?: string })?.lifecycle === "cancelled");
+    assert.equal(cancelled.length, 1, "the stale delivery is cancelled and persisted exactly once");
+    assert.equal(h.goal()?.status ?? null, transition === "clear" ? null : "complete");
+  } finally { release(); await run; }
+});
+}
 
 test("native hidden continuation can declare waiting, survive maintenance, and finish on a background result", async (t) => {
   const h = await fixture(t);
@@ -741,7 +796,7 @@ test(`native ${route} input steered during the waiting tool wakes its next turn`
 
 test("native idle notifications and goal bookkeeping cannot reactivate a waiting goal", async (t) => {
   const h = await fixture(t);
-  h.faux.setResponses([waitForExplorer(), fauxAssistantMessage("Waiting for the report.")]);
+  h.faux.setResponses([fauxAssistantMessage("Work advanced."), waitForExplorer(), fauxAssistantMessage("Waiting for the report.")]);
   await h.session.prompt("Work until the explorer is needed.");
   await h.session.waitForIdle();
   const saved = h.goal();
@@ -757,7 +812,9 @@ test("native idle notifications and goal bookkeeping cannot reactivate a waiting
   await h.session.waitForIdle();
   assert.deepEqual(h.goal(), saved);
   const calls = h.faux.state.callCount;
-  await h.session.sendCustomMessage({ customType: CUSTOM_ENTRY_TYPE, content: compactContinuationPrompt(saved), display: false, details: { kind: "continuation", goalId: saved.goalId } }, { triggerTurn: true });
+  const previous = h.session.messages.find((m) => m.role === "custom" && (m.details as { kind?: string })?.kind === "continuation");
+  assert.ok(previous?.role === "custom");
+  await h.session.sendCustomMessage(previous, { triggerTurn: true });
   await h.session.waitForIdle();
   assert.deepEqual(h.goal(), saved);
   assert.equal(h.faux.state.callCount, calls, "a stale goal continuation is cancelled before the provider");

@@ -19,7 +19,14 @@ export default function (pi: ExtensionAPI) {
       note({ type: "provider", phase: "resumed", messages: context.messages });
       return fauxAssistantMessage(fauxToolCall("update_goal", { status: "complete" }), { stopReason: "toolUse" });
     },
-    fauxAssistantMessage("Offline goal completed."),
+    (context) => {
+      note({ type: "provider", phase: "final", messages: context.messages });
+      return fauxAssistantMessage("Offline goal completed.");
+    },
+    (context) => {
+      note({ type: "provider", phase: "genuine-follow-up", messages: context.messages });
+      return fauxAssistantMessage("Genuine user data answered.");
+    },
   ]);
   pi.registerProvider(faux.provider);
   pi.registerCommand("proof-release", { description: "Release the isolated offline response", async handler() { release?.(); } });
@@ -29,6 +36,6 @@ export default function (pi: ExtensionAPI) {
   });
   pi.on("session_start", () => note({ type: "ready" }));
   pi.on("input", (event) => { note(event); });
-  pi.on("message_start", (event) => { if (event.message.role === "user") note(event); });
+  pi.on("message_start", (event) => { if (event.message.role === "user" || event.message.role === "custom") note(event); });
   pi.on("agent_settled", () => note({ type: "settled" }));
 }

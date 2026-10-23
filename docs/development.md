@@ -11,7 +11,7 @@ npm ci --ignore-scripts
 npm run check
 ```
 
-`npm run check` type-checks with TypeScript 7 and runs the Node test suite with native type stripping, including source, Git-production, and packed-artifact loading, tool persistence, and SDK compaction/continuation tests. It also runs an `npm pack` dry run. Run it with an empty HOME/agent profile and a short TMPDIR outside your real home ancestry, with no project markers in its ancestors. The selected host must be installed in this checkout's dependency graph; changing only a CLI on PATH does not select its SDK types. No live model is called.
+`npm run check` type-checks source, tests and all TypeScript probes with TypeScript 7 and runs the Node test suite with native type stripping, including source, Git-production, and packed-artifact loading, tool persistence, and SDK compaction/continuation tests. It also runs an `npm pack` dry run. Run it with an empty HOME/agent profile and a short TMPDIR outside your real home ancestry, with no project markers in its ancestors. The selected host must be installed in this checkout's dependency graph; changing only a CLI on PATH does not select its SDK types. No live model is called.
 
 To load a development checkout in Pi:
 
@@ -48,11 +48,13 @@ The compatibility workflow uses this qualification tool for both Pi hosts. Quali
 
 `test/provider-context.test.ts` and `test/native-lifecycle.test.ts` check unchanged provider prefixes across normal continuations and goal transitions. Old sent controls must remain verbatim, not be rewritten or deduplicated to satisfy older tests. `test/goal-compaction.test.ts` checks copy-only filtering, custom summarizer opt-in, and one full saved goal on the first normal metadata-owned custom automatic continuation after successful compaction. User deliveries and custom command start/resume must not consume that refresh.
 
-Native tests also check recovery user-follow-up start, resume queues/editor restoration without transport text, and host-normalized images/captions. Keep the original public delivery calls and legacy marker/passthrough guards; no new user-text delivery tracking or generalized user provenance is part of this work. The inferred Terminal adapter includes `setProgramStatus` so current and older supported hosts can check it at the same public boundary.
+Native tests also check public custom-message start/resume, exhausted recovery without a manufactured user reset, native queue/editor restoration, same-goal stale generations and pending genuine images, duplicates/reload, and host-normalized image/caption blocks on an owned refresh. All automated sends go through `goal-delivery.ts`; genuine user text has no ownership semantics. Do not reintroduce marker/passthrough matching or private queue/renderer access. The inferred Terminal adapter includes `setProgramStatus` so current and older supported hosts can check it at the same public boundary.
 
-## Delivery-ownership hold
+## Delivery ownership and native evidence
 
-PR #109's ownership acceptance is not satisfied by a green normal test suite. See the [supported-host contract proposal and native reproductions](delivery-ownership-proposal.md) before changing user delivery, queue editing, or overflow recovery. The standalone `scripts/delivery-identity-proof.ts` currently exits 1 on both pinned hosts because genuine leading-marker input with a resized image is aborted as stale work; it is an explicit failing acceptance probe, not part of `npm run check`. The PTY and role probes use offline providers and isolated sessions, never the live installation.
+The owner [accepted public custom-message automation](delivery-ownership-proposal.md), with two intentional changes: automated follow-ups are not Alt+Up editable and cannot reset exhausted native overflow recovery. The PR's merge hold remains until exact-head independent review and required CI pass; contract approval alone is not implementation approval.
+
+`test/native-lifecycle.test.ts` owns native delivery/normalization/reload/overflow acceptance in the regular suite. In addition, run `scripts/delivery-identity-proof.ts` against the selected exact host graph: its original leading-envelope + real resized-image failure must now pass without changing the input or expected provider count. Run `scripts/delivery-ownership-pty.py` for real regular/fullscreen bubble, queue, draft restoration and resubmission evidence. Both probes assert acceptance, not just process completion. `scripts/delivery-role-proof.ts` independently retains the native custom/user overflow distinction. All probes use offline providers and isolated sessions; none touches the live install. Commands and the evidence manifest are linked in the [accepted contract](delivery-ownership-proposal.md#reproduce-without-changing-the-live-installation).
 
 ## Paid compaction smoke
 

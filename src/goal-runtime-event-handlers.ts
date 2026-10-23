@@ -2,7 +2,6 @@ import { createAgentEventHandlers } from "./goal-runtime-agent-handlers.ts";
 import { createInputContextEventHandlers } from "./goal-runtime-input-context-handlers.ts";
 import { createSessionEventHandlers } from "./goal-runtime-session-handlers.ts";
 import { createTurnEventHandlers } from "./goal-runtime-turn-handlers.ts";
-import { createQueuedGoalWorkMessageIdResolver } from "./goal-runtime-event-utils.ts";
 import type {
   GoalRuntimeEventContext,
   GoalRuntimeEventHandlers,
@@ -18,12 +17,8 @@ export type {
 export function createGoalRuntimeEventHandlers(
   context: GoalRuntimeEventContext,
 ): GoalRuntimeEventHandlers {
-  const queuedGoalWorkMessageIdForRuntime = createQueuedGoalWorkMessageIdResolver(
-    context.continuation,
-  );
-
   return {
-    ...createInputContextEventHandlers(context, queuedGoalWorkMessageIdForRuntime),
+    ...createInputContextEventHandlers(context),
     ...createTurnEventHandlers(context),
     ...createAgentEventHandlers(context),
     ...createSessionEventHandlers(context),

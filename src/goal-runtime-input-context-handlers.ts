@@ -1,176 +1,97 @@
 import type {
-  BeforeAgentStartEvent,
-  ContextEvent,
-  ExtensionHandler,
-  InputEvent,
-  InputEventResult,
+  BeforeAgentStartEvent, ContextEvent, ExtensionHandler, InputEvent, InputEventResult,
 } from "@earendil-works/pi-coding-agent";
 
-import { continuationGoalIdFromPrompt, continuationPromptEnd } from "./prompts.ts";
+import { goalDeliveryDetails } from "./goal-delivery.ts";
 import { CUSTOM_ENTRY_TYPE } from "./types.ts";
 import { cancelQueuedGoalWork } from "./queued-goal-work.ts";
-import {
-  isActiveGoalQueuedDetails,
-  isCommandResumeQueuedGoalMessage,
-} from "./queued-goal-messages.ts";
 import { applyStaleQueuedWorkEffects } from "./goal-runtime-event-utils.ts";
 import type {
-  GoalRuntimeInputContextHandlerContext,
-  MessageEndEvent,
-  MessageEndEventResult,
-  MessageStartEvent,
-  QueuedGoalWorkMessageIdResolver,
+  GoalRuntimeInputContextHandlerContext, MessageEndEvent, MessageEndEventResult, MessageStartEvent,
 } from "./goal-runtime-event-handler-types.ts";
 
-export function createInputContextEventHandlers(
-  deps: GoalRuntimeInputContextHandlerContext,
-  queuedGoalWorkMessageIdForRuntime: QueuedGoalWorkMessageIdResolver,
-) {
-  const { runtimeState, stateController, continuation, recoveryRuntime, status, resetErrorRecovery } = deps;
+export function createInputContextEventHandlers(deps: GoalRuntimeInputContextHandlerContext) {
+  const { runtimeState, stateController, continuation, recoveryRuntime, status, resetErrorRecovery, deliveries } = deps;
 
   return {
     onInput: (async (event, ctx) => {
-      continuation.clearPassthroughContinuationInput();
-      const continuationGoalId = continuationGoalIdFromPrompt(event.text);
-
+      // Input text has no ownership semantics, including literal old Goal envelopes.
       if (event.source !== "extension") {
         deps.providerLimitAutoResume.clear();
         recoveryRuntime.onUserInput();
-        applyStaleQueuedWorkEffects(
-          runtimeState.staleQueuedWorkGuard.planUserInputClearAbort().effects,
-          ctx,
-          deps,
-        );
-        if (continuationGoalId !== null) {
-          continuation.notePassthroughContinuationInput(event.text);
-        }
+        applyStaleQueuedWorkEffects(runtimeState.staleQueuedWorkGuard.planUserInputClearAbort().effects, ctx, deps);
         status.refreshUi(ctx);
-        return undefined;
       }
-
-      if (continuationGoalId === null) {
-        return undefined;
-      }
-
-      applyStaleQueuedWorkEffects(
-        runtimeState.staleQueuedWorkGuard.planExtensionContinuationClearAbort().effects,
-        ctx,
-        deps,
-      );
-      if (stateController.isCurrentActiveGoalId(continuationGoalId)) {
-        continuation.markContinuationQueued(continuationGoalId);
-        return { action: "continue" } as const;
-      }
-
-      continuation.clearContinuationStateFor(continuationGoalId);
-      status.refreshUi(ctx);
-      return { action: "handled" } as const;
+      return undefined;
     }) satisfies ExtensionHandler<InputEvent, InputEventResult>,
 
-    // Provider context is left exactly as the transcript has it. Prompt caches match the request
-    // prefix, so any message rewritten here from current goal state after the provider has seen it
-    // re-caches everything from that message on. Fresh metadata-owned custom controls
-    // can be cancelled at delivery instead; old sent controls stay verbatim.
+    // Historical provider prefixes remain append-only, including cancellations.
     onContext: (async (_event, ctx) => {
-      const contextAbortPlan = runtimeState.staleQueuedWorkGuard.planContextAbort(
-        runtimeState.currentTurnIndex,
-      );
-      if (contextAbortPlan !== null) {
-        applyStaleQueuedWorkEffects(contextAbortPlan.effects, ctx, deps);
-      }
-
+      // Native abort can discard later queued user input. A finalized cancellation
+      // is inert; let the native loop drain genuine pending work instead.
+      if (ctx.hasPendingMessages()) runtimeState.staleQueuedWorkGuard.noteRunnableWorkStarted();
+      const plan = runtimeState.staleQueuedWorkGuard.planContextAbort(runtimeState.currentTurnIndex);
+      if (plan !== null) applyStaleQueuedWorkEffects(plan.effects, ctx, deps);
       return undefined;
     }) satisfies ExtensionHandler<ContextEvent, undefined>,
 
-    onBeforeAgentStart: (async (event, ctx) => {
-      if (!("prompt" in event)) return undefined;
-      const continuationGoalId = continuation.continuationGoalIdFromRuntimePrompt(event.prompt);
-      if (continuationGoalId !== null) {
-        continuation.clearContinuationStateFor(continuationGoalId);
-        if (!stateController.isCurrentActiveGoalId(continuationGoalId)) {
-          status.refreshUi(ctx);
-          return undefined;
-        }
-        applyStaleQueuedWorkEffects(
-          runtimeState.staleQueuedWorkGuard.planBeforeAgentStartClearAbort().effects,
-          ctx,
-          deps,
-        );
-      } else {
-        applyStaleQueuedWorkEffects(
-          runtimeState.staleQueuedWorkGuard.planBeforeAgentStartClearAbort().effects,
-          ctx,
-          deps,
-        );
-        continuation.clearContinuationState();
-      }
+    onBeforeAgentStart: (async (_event, ctx) => {
+      applyStaleQueuedWorkEffects(runtimeState.staleQueuedWorkGuard.planBeforeAgentStartClearAbort().effects, ctx, deps);
       return undefined;
     }) satisfies ExtensionHandler<BeforeAgentStartEvent, undefined>,
 
     onMessageStart: (async (event, ctx) => {
-      if (event.message.role === "user") {
-        stateController.persistHostOverflowUserReset(false);
-      }
-
-      const queuedGoalId = queuedGoalWorkMessageIdForRuntime(event.message);
-      if (queuedGoalId === null) {
+      const details = goalDeliveryDetails(event.message);
+      if (details === null) {
+        if (event.message.role === "user") stateController.persistHostOverflowUserReset(false);
         if (event.message.role === "user" || event.message.role === "custom") {
           runtimeState.staleQueuedWorkGuard.noteRunnableWorkStarted();
-          continuation.clearContinuationState();
-          // Goal bookkeeping must never wake a wait. Native turn_start precedes
-          // message_start, so re-arm this response's accounting after waking.
-          const isExternalInput = event.message.role === "user" ||
+          const external = event.message.role === "user" ||
             (event.message.role === "custom" && event.message.customType !== CUSTOM_ENTRY_TYPE);
-          if (isExternalInput && stateController.resumeWaitingGoal(ctx)) {
-            deps.goalAccounting.beginAccounting();
+          if (external) {
+            continuation.clearContinuationState();
+            if (stateController.resumeWaitingGoal(ctx)) deps.goalAccounting.beginAccounting();
           }
         }
         return;
       }
-
-      continuation.clearContinuationStateFor(queuedGoalId);
-      if (stateController.isCurrentActiveGoalId(queuedGoalId)) {
-        runtimeState.staleQueuedWorkGuard.noteRunnableWorkStarted();
-        const details =
-          "details" in event.message ? (event.message as { details?: unknown }).details : undefined;
-        if (isActiveGoalQueuedDetails(details) && details.kind === "continuation") {
-          runtimeState.agentRunFromContinuation = true;
-        }
-        if (isCommandResumeQueuedGoalMessage(event.message)) {
-          resetErrorRecovery();
-        }
-        return;
+      if (!deliveries.start(details)) {
+        runtimeState.staleQueuedWorkGuard.noteStaleWorkStarted(details.deliveryId);
       }
-
-      runtimeState.staleQueuedWorkGuard.noteStaleWorkStarted(queuedGoalId);
     }) satisfies ExtensionHandler<MessageStartEvent>,
 
-    onMessageEnd: (async (event, _ctx): Promise<MessageEndEventResult | undefined> => {
+    onMessageEnd: (async (event): Promise<MessageEndEventResult | undefined> => {
       const { message } = event;
-      // Delivery-time changes require Goal metadata. User messages keep the
-      // existing marker guard and native input lifecycle, with no new delivery tracking.
-      if (message.role !== "custom" || message.customType !== CUSTOM_ENTRY_TYPE ||
-          !isActiveGoalQueuedDetails(message.details)) return undefined;
-      const queuedGoalId = message.details.goalId;
-      if (!stateController.isCurrentActiveGoalId(queuedGoalId)) {
-        const cancellation = cancelQueuedGoalWork(message, queuedGoalId, stateController.getGoal());
-        if (cancellation === null) return undefined;
+      if (message.role !== "custom") return undefined;
+      const details = goalDeliveryDetails(message);
+      if (details === null || details.kind === "stale_continuation") return undefined;
+      const original = deliveries.finish(details);
+      if (original === null) {
+        runtimeState.staleQueuedWorkGuard.noteStaleWorkStarted(details.deliveryId);
+        const cancellation = cancelQueuedGoalWork(details);
         return { message: { ...message, content: cancellation.text, display: false, details: cancellation.details } };
       }
 
-      // Only the first normal automatic continuation after compaction gets the
-      // full saved goal. Command start/resume and historical context do not.
-      if (message.details.kind !== "continuation") return undefined;
-      const original = typeof message.content === "string"
-        ? message.content : message.content.find((part) => part.type === "text")?.text;
-      const end = original === undefined ? null : continuationPromptEnd(original);
-      const prompt = end === null ? null : continuation.fullPromptForDelivery(queuedGoalId);
-      if (prompt === null || original === undefined || end === null) return undefined;
-      const text = prompt + original.slice(end);
-      if (typeof message.content === "string") return { message: { ...message, content: text } };
-      const firstText = message.content.findIndex((part) => part.type === "text");
-      const content = message.content.map((part, index) => index === firstText ? { ...part, text } : part);
-      return { message: { ...message, content } };
+      continuation.clearContinuationStateFor(details.goalId);
+      runtimeState.staleQueuedWorkGuard.noteRunnableWorkStarted();
+      if (details.kind === "continuation") runtimeState.agentRunFromContinuation = true;
+      if (details.kind === "command_resume") resetErrorRecovery();
+      let content = message.content;
+      let objectiveRefresh = false;
+      // Metadata establishes ownership. Match only our own produced prompt inside
+      // that delivery, preserving captions, images and native normalization notes.
+      if (details.kind === "continuation") {
+        const index = typeof content === "string" ? (content.includes(original) ? 0 : -1) :
+          content.findIndex((part) => part.type === "text" && part.text.includes(original));
+        const fullPrompt = index < 0 ? null : continuation.fullPromptForDelivery(details.goalId);
+        if (fullPrompt !== null) {
+          objectiveRefresh = true;
+          content = typeof content === "string" ? content.replace(original, fullPrompt) :
+            content.map((part, i) => i === index && part.type === "text" ?
+              { ...part, text: part.text.replace(original, fullPrompt) } : part);
+        }
+      }
+      return { message: { ...message, content, details: { ...details, lifecycle: "delivered", ...(objectiveRefresh ? { objectiveRefresh: true } : {}) } } };
     }) satisfies ExtensionHandler<MessageEndEvent, MessageEndEventResult | undefined>,
   };
 }

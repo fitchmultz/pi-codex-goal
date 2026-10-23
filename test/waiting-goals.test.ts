@@ -99,7 +99,7 @@ for (const role of ["user", "custom"] as const) {
   test(`${role} input wakes waiting and charges the first resumed response once`, async () => {
     mock.timers.enable({ apis: ["Date", "setTimeout", "setInterval"], now: 100_000 });
     try {
-      const h = createRuntimeHarness();
+      const h = createRuntimeHarness({ idle: false });
       await h.runTool("create_goal", { objective: "Integrate reports" });
       await h.runTool("update_goal", wait);
       mock.timers.tick(60_000);
@@ -116,6 +116,7 @@ for (const role of ["user", "custom"] as const) {
       assert.equal(h.snapshot().goal?.usage.tokensUsed, 230);
       assert.equal(h.snapshot().goal?.usage.activeSeconds, 3, "idle wait is excluded");
       await h.emit("agent_end", { type: "agent_end", messages: [message, response] });
+      h.setIdle(true);
       flushContinuationScheduler();
       assert.equal(h.sentMessages.length, 1, "normal unfinished-work continuation resumes after wake");
       assert.equal(h.snapshot().goal?.usage.tokensUsed, 230);
@@ -123,7 +124,7 @@ for (const role of ["user", "custom"] as const) {
   });
 }
 
-test("goal bookkeeping, assistant/tool messages and queued user continuations cannot wake waiting", async () => {
+test("goal bookkeeping and assistant/tool messages cannot wake waiting, but user text always can", async () => {
   for (const kind of ["continuation", "command_start", "command_resume", "budget_limit", "superseded_continuation", "stale_continuation"]) {
     const h = createRuntimeHarness();
     await h.runTool("create_goal", { objective: "Integrate reports" });
@@ -138,10 +139,10 @@ test("goal bookkeeping, assistant/tool messages and queued user continuations ca
     assert.equal(h.snapshot().goal?.status, "waiting", kind);
     const prompt = compactContinuationPrompt(goal);
     const [result] = await h.emit("input", { type: "input", text: prompt, images: [], source: "extension" });
-    assert.deepEqual(result, { action: "handled" });
+    assert.equal(result, undefined);
     await h.emit("before_agent_start", userBeforeAgentStartEvent(prompt));
     await h.emit("message_start", { type: "message_start", message: goalUserContextMessage(prompt) });
-    assert.equal(h.snapshot().goal?.status, "waiting");
+    assert.equal(h.snapshot().goal?.status, "active");
   }
 });
 
@@ -167,7 +168,8 @@ test("explicit resume wakes waiting, while explicit pause opts out of automatic 
     await h.runCommand(command);
     assert.equal(h.snapshot().goal?.status, command === "resume" ? "active" : "paused");
     assert.equal(h.snapshot().goal?.waitingReason, undefined);
-    assert.equal(h.sentUserMessages.length, command === "resume" ? 1 : 0);
+    assert.equal(h.sentUserMessages.length, 0);
+    assert.equal(h.sentMessages.length, command === "resume" ? 1 : 0);
     await h.emit("turn_start", { type: "turn_start", turnIndex: 1, timestamp: 1 });
     await h.emit("message_start", { type: "message_start", message: { role: "custom", customType: "explorer-result", content: "Report", display: true, timestamp: 1 } });
     assert.equal(h.snapshot().goal?.status, command === "resume" ? "active" : "paused");

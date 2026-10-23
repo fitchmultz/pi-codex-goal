@@ -15,13 +15,7 @@ import type {
 import goalExtension from "../../src/index.ts";
 import { CONTINUATION_RETRY_MS, PROVIDER_LIMIT_AUTO_RESUME_MS } from "../../src/runtime-config.ts";
 import { isGoalCustomEntry, reconstructGoal } from "../../src/state.ts";
-import {
-  toQueuedGoalContextCarrier,
-  type ActiveGoalQueuedDetails,
-  type QueuedGoalContextCarrier,
-  type QueuedGoalContextInput,
-  type QueuedGoalUserContent,
-} from "../../src/queued-goal-messages.ts";
+import type { QueuedGoalContextCarrier } from "./context-messages.ts";
 import { CUSTOM_ENTRY_TYPE } from "../../src/types.ts";
 
 type EventHandler = (event: object, ctx: ExtensionContext) => unknown | Promise<unknown>;
@@ -535,9 +529,16 @@ export function queuedCustomMessage(sent: SentMessage, timestamp = 1): QueuedGoa
   };
 }
 
+export async function deliverQueuedMessage(harness: RuntimeHarness, sent: SentMessage): Promise<QueuedGoalContextCarrier> {
+  const message = queuedCustomMessage(sent);
+  await harness.emit("message_start", { type: "message_start", message });
+  await emitMessageEnd(harness, message);
+  return message;
+}
+
 export function goalCustomContextMessage(options: {
   content: string;
-  details: ActiveGoalQueuedDetails | Record<string, unknown>;
+  details: Record<string, unknown>;
   display?: boolean;
   timestamp: number;
 }): QueuedGoalContextCarrier {
@@ -568,16 +569,15 @@ function parseProviderContextHandlerResult(result: unknown): ProviderContextHand
 
   const messages: QueuedGoalContextCarrier[] = [];
   for (const [index, message] of candidate.messages.entries()) {
-    const carrier = toQueuedGoalContextCarrier(message as QueuedGoalContextInput);
-    assert.ok(carrier, `Expected provider context message ${index} to include a numeric timestamp.`);
-    messages.push(carrier);
+    assert.ok(message && typeof message === "object" && typeof message.timestamp === "number", `Expected provider context message ${index} to include a numeric timestamp.`);
+    messages.push(message as QueuedGoalContextCarrier);
   }
 
   return { messages };
 }
 
 export function goalUserContextMessage(text: string, timestamp = 1): QueuedGoalContextCarrier {
-  const content: QueuedGoalUserContent = [{ type: "text", text }];
+  const content = [{ type: "text", text }];
   return {
     role: "user",
     content,

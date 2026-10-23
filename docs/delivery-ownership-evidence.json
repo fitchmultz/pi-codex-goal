@@ -1,509 +1,381 @@
 {
-  "status": "BLOCKED: normal suites pass; identity acceptance fails on both pinned hosts",
-  "evidenceRoot": "/tmp/pi-goal-pr109-ownership",
+  "status": "Local accepted-contract acceptance PASS; exact-head independent review and hosted CI required before merge",
+  "ownerDecision": "Public custom messages for all automated Goal follow-ups; not Alt+Up editable; no manufactured native overflow reset",
+  "evidenceRoot": "/tmp/pi-goal-pr109-custom-evidence",
   "node": "24.22.1",
-  "official": {
-    "version": "1.4.0",
-    "source": "4a080252f06caf63a525d7873c5d94d3c23887e0",
-    "companionGraph": [
-      {
-        "name": "@earendil-works/pi-coding-agent",
-        "root": "/private/tmp/pi-goal-pr109-ownership/official/node_modules/@earendil-works/pi-coding-agent",
-        "version": "1.4.0",
-        "entry": "/private/tmp/pi-goal-pr109-ownership/official/node_modules/@earendil-works/pi-coding-agent/dist/index.js",
-        "types": "/tmp/pi-goal-pr109-ownership/official/node_modules/@earendil-works/pi-coding-agent/dist/index.d.ts"
-      },
-      {
-        "name": "@earendil-works/pi-ai",
-        "root": "/private/tmp/pi-goal-pr109-ownership/official/node_modules/@earendil-works/pi-ai",
-        "version": "1.4.0",
-        "entry": "/private/tmp/pi-goal-pr109-ownership/official/node_modules/@earendil-works/pi-ai/dist/index.js",
-        "types": "/tmp/pi-goal-pr109-ownership/official/node_modules/@earendil-works/pi-ai/dist/index.d.ts"
-      },
-      {
-        "name": "@earendil-works/pi-tui",
-        "root": "/private/tmp/pi-goal-pr109-ownership/official/node_modules/@earendil-works/pi-tui",
-        "version": "1.4.0",
-        "entry": "/private/tmp/pi-goal-pr109-ownership/official/node_modules/@earendil-works/pi-tui/dist/index.js",
-        "types": "/tmp/pi-goal-pr109-ownership/official/node_modules/@earendil-works/pi-tui/dist/index.d.ts"
-      },
-      {
-        "name": "typebox",
-        "root": "/private/tmp/pi-goal-pr109-ownership/official/node_modules/typebox",
-        "version": "1.3.27",
-        "entry": "/private/tmp/pi-goal-pr109-ownership/official/node_modules/typebox/build/index.mjs",
-        "types": "/tmp/pi-goal-pr109-ownership/official/node_modules/typebox/build/index.d.mts"
-      }
-    ]
+  "sourceDigest": "f96f51ab4367f01de54d6dab5698580e5ddcd1b027ba8f72b2a133571d00d701",
+  "sourceFiles": 90,
+  "hosts": {
+    "official": {
+      "source": "4a080252f06caf63a525d7873c5d94d3c23887e0",
+      "version": "1.4.0",
+      "cliSha256": "e79626f2dd6f94aa45d30f3fa63cd84319a6eefcd150b353cfaf274366926774",
+      "companions": [
+        {
+          "name": "@earendil-works/pi-coding-agent",
+          "entry": "/private/tmp/pi-goal-pr109-ownership/official/node_modules/@earendil-works/pi-coding-agent/dist/index.js",
+          "version": "1.4.0",
+          "sha256": "4569157e6038be9840fa514db4b00a27fd0be9e3622cc7b49a281de6c027d7ff"
+        },
+        {
+          "name": "@earendil-works/pi-ai",
+          "entry": "/private/tmp/pi-goal-pr109-ownership/official/node_modules/@earendil-works/pi-ai/dist/index.js",
+          "version": "1.4.0",
+          "sha256": "7808fc618b4c816322005628af2726a53c4db678b37fb311163210c4fbab5ed0"
+        },
+        {
+          "name": "@earendil-works/pi-tui",
+          "entry": "/private/tmp/pi-goal-pr109-ownership/official/node_modules/@earendil-works/pi-tui/dist/index.js",
+          "version": "1.4.0",
+          "sha256": "6068ae4207de753d9ec00dbe14aee199e6160d1dea0db9c8a92f65d08ffc6e80"
+        },
+        {
+          "name": "typebox",
+          "entry": "/private/tmp/pi-goal-pr109-ownership/official/node_modules/typebox/build/index.mjs",
+          "version": "1.3.27",
+          "sha256": "26af1f941dfdb2c65928f2a11862bb4a1210652bcc6764135f5a425d7e4aeb72"
+        }
+      ]
+    },
+    "fork": {
+      "source": "b02d6a8e6d3e4b9b4c4ae45b371bfed95c71dc8e",
+      "version": "1.4.0",
+      "cliSha256": "601b40f7ad8a56ee198d84e16e301a8030a2893a4d9194002e8d18a10d0803b3",
+      "companions": [
+        {
+          "name": "@earendil-works/pi-coding-agent",
+          "entry": "/Users/mitchfultz/.local/share/pi-fork/releases/b02d6a8e6d3e4b9b4c4ae45b371bfed95c71dc8e-00d763f7e9d4bcdc-node24.22.1-darwin-arm64/node_modules/@earendil-works/pi-coding-agent/dist/index.js",
+          "version": "1.4.0",
+          "sha256": "8571698d27d098f224e684565fdf7bbcba72c0172b875adf59f0b7c088a94554"
+        },
+        {
+          "name": "@earendil-works/pi-ai",
+          "entry": "/Users/mitchfultz/.local/share/pi-fork/releases/b02d6a8e6d3e4b9b4c4ae45b371bfed95c71dc8e-00d763f7e9d4bcdc-node24.22.1-darwin-arm64/node_modules/@earendil-works/pi-ai/dist/index.js",
+          "version": "1.4.0",
+          "sha256": "7808fc618b4c816322005628af2726a53c4db678b37fb311163210c4fbab5ed0"
+        },
+        {
+          "name": "@earendil-works/pi-tui",
+          "entry": "/Users/mitchfultz/.local/share/pi-fork/releases/b02d6a8e6d3e4b9b4c4ae45b371bfed95c71dc8e-00d763f7e9d4bcdc-node24.22.1-darwin-arm64/node_modules/@earendil-works/pi-tui/dist/index.js",
+          "version": "1.4.0",
+          "sha256": "6068ae4207de753d9ec00dbe14aee199e6160d1dea0db9c8a92f65d08ffc6e80"
+        },
+        {
+          "name": "typebox",
+          "entry": "/Users/mitchfultz/.local/share/pi-fork/releases/b02d6a8e6d3e4b9b4c4ae45b371bfed95c71dc8e-00d763f7e9d4bcdc-node24.22.1-darwin-arm64/node_modules/typebox/build/index.mjs",
+          "version": "1.3.37",
+          "sha256": "26af1f941dfdb2c65928f2a11862bb4a1210652bcc6764135f5a425d7e4aeb72"
+        }
+      ]
+    }
   },
-  "fork": {
-    "source": "5eaa155bb7c837aba37f823b007c25279f7b58d6",
-    "companionGraph": [
-      {
-        "name": "@earendil-works/pi-coding-agent",
-        "root": "/Users/mitchfultz/.local/share/pi-fork/releases/5eaa155bb7c837aba37f823b007c25279f7b58d6-555dfb5611779ccf-node24.22.1-darwin-arm64/node_modules/@earendil-works/pi-coding-agent",
-        "version": "1.4.0",
-        "entry": "/Users/mitchfultz/.local/share/pi-fork/releases/5eaa155bb7c837aba37f823b007c25279f7b58d6-555dfb5611779ccf-node24.22.1-darwin-arm64/node_modules/@earendil-works/pi-coding-agent/dist/index.js",
-        "types": "/Users/mitchfultz/.local/share/pi-fork/releases/5eaa155bb7c837aba37f823b007c25279f7b58d6-555dfb5611779ccf-node24.22.1-darwin-arm64/node_modules/@earendil-works/pi-coding-agent/dist/index.d.ts"
-      },
-      {
-        "name": "@earendil-works/pi-ai",
-        "root": "/Users/mitchfultz/.local/share/pi-fork/releases/5eaa155bb7c837aba37f823b007c25279f7b58d6-555dfb5611779ccf-node24.22.1-darwin-arm64/node_modules/@earendil-works/pi-ai",
-        "version": "1.4.0",
-        "entry": "/Users/mitchfultz/.local/share/pi-fork/releases/5eaa155bb7c837aba37f823b007c25279f7b58d6-555dfb5611779ccf-node24.22.1-darwin-arm64/node_modules/@earendil-works/pi-ai/dist/index.js",
-        "types": "/Users/mitchfultz/.local/share/pi-fork/releases/5eaa155bb7c837aba37f823b007c25279f7b58d6-555dfb5611779ccf-node24.22.1-darwin-arm64/node_modules/@earendil-works/pi-ai/dist/index.d.ts"
-      },
-      {
-        "name": "@earendil-works/pi-tui",
-        "root": "/Users/mitchfultz/.local/share/pi-fork/releases/5eaa155bb7c837aba37f823b007c25279f7b58d6-555dfb5611779ccf-node24.22.1-darwin-arm64/node_modules/@earendil-works/pi-tui",
-        "version": "1.4.0",
-        "entry": "/Users/mitchfultz/.local/share/pi-fork/releases/5eaa155bb7c837aba37f823b007c25279f7b58d6-555dfb5611779ccf-node24.22.1-darwin-arm64/node_modules/@earendil-works/pi-tui/dist/index.js",
-        "types": "/Users/mitchfultz/.local/share/pi-fork/releases/5eaa155bb7c837aba37f823b007c25279f7b58d6-555dfb5611779ccf-node24.22.1-darwin-arm64/node_modules/@earendil-works/pi-tui/dist/index.d.ts"
-      },
-      {
-        "name": "typebox",
-        "root": "/Users/mitchfultz/.local/share/pi-fork/releases/5eaa155bb7c837aba37f823b007c25279f7b58d6-555dfb5611779ccf-node24.22.1-darwin-arm64/node_modules/typebox",
-        "version": "1.3.37",
-        "entry": "/Users/mitchfultz/.local/share/pi-fork/releases/5eaa155bb7c837aba37f823b007c25279f7b58d6-555dfb5611779ccf-node24.22.1-darwin-arm64/node_modules/typebox/build/index.mjs",
-        "types": "/Users/mitchfultz/.local/share/pi-fork/releases/5eaa155bb7c837aba37f823b007c25279f7b58d6-555dfb5611779ccf-node24.22.1-darwin-arm64/node_modules/typebox/build/index.d.mts"
-      }
-    ]
-  },
-  "checks": [
+  "artifacts": [
     {
-      "log": "d6-official-tests.log",
-      "sha256": "031d83ce261801662aa78106a2b12876f1389df8aec5180b1b718e7819777bc8",
-      "tests": 423,
-      "pass": 423,
-      "fail": 0,
-      "skipped": 0
+      "path": "check-dev.log",
+      "sha256": "0cdd48a460673dff9a0ebf2114999e479fca93f38e847baf1efbb99e351367c8"
     },
     {
-      "log": "d6-fork-tests.log",
-      "sha256": "e2946705780c3f84c55a696b23290c3337f1695b08223654ee89533808b7d048",
-      "tests": 423,
-      "pass": 423,
-      "fail": 0,
-      "skipped": 0
+      "path": "check-fork-5eaa155.log",
+      "sha256": "c8027a0e72e13c49e00a9ce98683bc68a2dcd1a96235118264731aef5fe9d0f9"
     },
     {
-      "log": "683-official-tests.log",
-      "sha256": "df63675a034c1999f047da86a60aa4e378baf6fe30c73b0a8184cd7650294706",
-      "tests": 412,
-      "pass": 412,
-      "fail": 0,
-      "skipped": 0
+      "path": "check-fork.log",
+      "sha256": "81328f990924870277ee3eb8fc42a1c19fe63fa3475735a84b13cc052a119a58"
     },
     {
-      "log": "683-fork-tests.log",
-      "sha256": "fcbba6766569d0392c8946b434c3041825cfe9a9158f62f417b8632a9354aad9",
-      "tests": 412,
-      "pass": 412,
-      "fail": 0,
-      "skipped": 0
+      "path": "check-official.log",
+      "sha256": "dc5095e188d24584e34f2a9f24f8671540372f6af043558cbcc80b81026691ef"
     },
     {
-      "log": "check.log",
-      "sha256": "b427b8d854aebe4b2c509359c0bfb20e81a7be4ce08ad6c697424cff8e9d5428",
-      "tests": 412,
-      "pass": 412,
-      "fail": 0,
-      "skipped": 0
+      "path": "identity-fork/prefixed-image-control/events.jsonl",
+      "sha256": "241e42a64413df14f690ac4fcbae12e5395e482a769e2942b167a0b57073652c"
+    },
+    {
+      "path": "identity-fork/prefixed-image-control/sessions/2026-10-23T18-51-29-157Z_01a16a1a-9405-75ee-a0c9-98107709db4a.jsonl",
+      "sha256": "d4ef42a762164af04586fdd74fd3c7d4896ff5f2081151012141913f97aef5bf"
+    },
+    {
+      "path": "identity-fork/report.json",
+      "sha256": "3f13e120bec8e23b6532fa05e2190d62d3b4fa59df70ce353bb544db4274f048"
+    },
+    {
+      "path": "identity-fork/resized-image/events.jsonl",
+      "sha256": "b69fac959fee72ab6eb57885d85f954c9349a1d0efaed695efe7640e183bc3f6"
+    },
+    {
+      "path": "identity-fork/resized-image/sessions/2026-10-23T18-51-29-117Z_01a16a1a-93dd-75ee-a0c9-980e8f3b7f60.jsonl",
+      "sha256": "4fc845e6e0d24dc10320e1e364c959015627882811d3a29c38b71e4e07be806d"
+    },
+    {
+      "path": "identity-fork/text-control/events.jsonl",
+      "sha256": "34ab210117faaf572a72f6e1d1c24f7d5b630cbdabb3132b1019072c85e54892"
+    },
+    {
+      "path": "identity-fork/text-control/sessions/2026-10-23T18-51-29-095Z_01a16a1a-93c7-75ee-a0c9-980dc9bbf066.jsonl",
+      "sha256": "a3e3de429a4ca1c06008cdb177546e35cdce3b63c4f08622106f7316c8aca552"
+    },
+    {
+      "path": "identity-fork.log",
+      "sha256": "3f13e120bec8e23b6532fa05e2190d62d3b4fa59df70ce353bb544db4274f048"
+    },
+    {
+      "path": "identity-official/prefixed-image-control/events.jsonl",
+      "sha256": "420702d26da96873d78613bb961fd63fce032c5097fd447badca9c9405efb8cb"
+    },
+    {
+      "path": "identity-official/prefixed-image-control/sessions/2026-10-23T18-51-28-369Z_01a16a1a-90f1-7243-ad71-2d79a6451cf8.jsonl",
+      "sha256": "a692ecad3340b759fa8410d18e331a19d98fa81fa4daf891b9b790c1677a2085"
+    },
+    {
+      "path": "identity-official/report.json",
+      "sha256": "7ca30804c0a2651af9a2065f2c4d908704cf50f5d73e806b1aa1b57ecc8b2c11"
+    },
+    {
+      "path": "identity-official/resized-image/events.jsonl",
+      "sha256": "d5dc01c5a16a47c98186b66d4177d4792f4df3d5b0646020b06e9a82609fbab5"
+    },
+    {
+      "path": "identity-official/resized-image/sessions/2026-10-23T18-51-28-326Z_01a16a1a-90c6-7243-ad71-2d7711afcaac.jsonl",
+      "sha256": "f741eda774200bfe884e922ffde223f0b17a6038f164d73e9c71f6475b93e25d"
+    },
+    {
+      "path": "identity-official/text-control/events.jsonl",
+      "sha256": "6a8d70973d754bf6a3e1e5448121d7eb7689daca9a07b44b14e71064528b0ee0"
+    },
+    {
+      "path": "identity-official/text-control/sessions/2026-10-23T18-51-28-311Z_01a16a1a-90b7-7243-ad71-2d75a19f8703.jsonl",
+      "sha256": "7ac69822996d578d4085085222618e20b04d6dd497049e6c501e90d94d4b443a"
+    },
+    {
+      "path": "identity-official.log",
+      "sha256": "7ca30804c0a2651af9a2065f2c4d908704cf50f5d73e806b1aa1b57ecc8b2c11"
+    },
+    {
+      "path": "pi-goal-custom-native-customonly-green.log",
+      "sha256": "57da8dcdd1842cacdc5aadfd69e398a0ddf1f73f3da93a3f9bdde7fc99291f13"
+    },
+    {
+      "path": "pi-goal-custom-native-customonly.log",
+      "sha256": "53595f5cd267d171e16f7c11233d0e5c008c239b3590ac1dee94fb28ca5f2d20"
+    },
+    {
+      "path": "pi-goal-custom-native-identity-green.log",
+      "sha256": "67382f2382b695a149809fcac6129950a60c7d6fb0a697049d7e67fd83958c09"
+    },
+    {
+      "path": "pi-goal-custom-native-identity.log",
+      "sha256": "43e47217b0f104080cc104a84586cbdc45bb288cfe1cb329b3f3f29370b2672e"
+    },
+    {
+      "path": "pi-goal-custom-refresh-green.log",
+      "sha256": "5e3df1fbcac16890924fbd5fdee7b0ad964f6749565cec29297a6a5f7fb4ca6c"
+    },
+    {
+      "path": "pi-goal-custom-refresh-red.log",
+      "sha256": "6172bd800de312243b903802a40b863ef391ab3fd43c88f625580aa303cc988d"
+    },
+    {
+      "path": "pty-fork-deliver/events.jsonl",
+      "sha256": "ec48d26d157e7b916fc583c8fe8cb45a629bfd8e73b6ba92e7a1f411516b29c2"
+    },
+    {
+      "path": "pty-fork-deliver/report.json",
+      "sha256": "1671cf4e004b00e3fabf782d37565bbc3973004a52bf9bb7f7ec96de3d606c4c"
+    },
+    {
+      "path": "pty-fork-deliver/sessions/2026-10-23T18-51-30-017Z_01a16a1a-9760-7019-a11a-ea7d6233cf4c.jsonl",
+      "sha256": "438eb75d511900de3c355fee5984321614a07e7dde6623e62665ba206af8ef3e"
+    },
+    {
+      "path": "pty-fork-deliver/terminal.ansi",
+      "sha256": "1493155c48be42a5465bb6f640545891a324e6d81a3dd4fc9469d7b335ba3f9d"
+    },
+    {
+      "path": "pty-fork-fullscreen/events.jsonl",
+      "sha256": "a7b22ee781519c3f2213c2da384257e844b4e990d9a70f2bdd3b0a57df85dcdb"
+    },
+    {
+      "path": "pty-fork-fullscreen/report.json",
+      "sha256": "2926160bf17d39db2db085231391c1f4f0e54b7fe002c1d1990c512b7ed0e721"
+    },
+    {
+      "path": "pty-fork-fullscreen/sessions/2026-10-23T18-51-30-017Z_01a16a1a-9760-7422-b288-a42f35c45fb0.jsonl",
+      "sha256": "608cbbeafed23f65fec85a11095252146a85e2b359f2d595722ca1fb8849436e"
+    },
+    {
+      "path": "pty-fork-fullscreen/terminal.ansi",
+      "sha256": "a364b29201133898f7cfc8ee39980c55a10d9c32bd75dfbad16fc14481eadc95"
+    },
+    {
+      "path": "pty-fork-restore/events.jsonl",
+      "sha256": "88de8a41c486f53f2c129744e3f1f65bbe66d97c42ed2571fd7638663c330440"
+    },
+    {
+      "path": "pty-fork-restore/report.json",
+      "sha256": "2926160bf17d39db2db085231391c1f4f0e54b7fe002c1d1990c512b7ed0e721"
+    },
+    {
+      "path": "pty-fork-restore/sessions/2026-10-23T18-50-34-906Z_01a16a19-c01a-7289-bfa3-d1ad17717ca0.jsonl",
+      "sha256": "5491cc9b39d49b67ddef8f4f821178b1d47212097ad3a95996db9f742064601b"
+    },
+    {
+      "path": "pty-fork-restore/terminal.ansi",
+      "sha256": "cf3b441773d82a0c0f78aab4c81b55d17e8bcce8766b5b331480fb723d7bddb2"
+    },
+    {
+      "path": "pty-official-deliver-v2/events.jsonl",
+      "sha256": "f5c217200ab618300036ea37ccc77f1199371bc86482caf6303f5a9cf58adfae"
+    },
+    {
+      "path": "pty-official-deliver-v2/report.json",
+      "sha256": "1671cf4e004b00e3fabf782d37565bbc3973004a52bf9bb7f7ec96de3d606c4c"
+    },
+    {
+      "path": "pty-official-deliver-v2/sessions/2026-10-23T18-51-29-917Z_01a16a1a-96fd-7242-baba-f12679574d8a.jsonl",
+      "sha256": "282e2617753ec74ca99f2b09250fa64c53d974b1481834e9f5cf1d39d870aec3"
+    },
+    {
+      "path": "pty-official-deliver-v2/terminal.ansi",
+      "sha256": "ddde445cfa05e322b74281cf99a0a37af2eef4c9e73c83f967a90fa018fab323"
+    },
+    {
+      "path": "pty-official-fullscreen/events.jsonl",
+      "sha256": "a9d8c2068dfbe4f3b405363a2442a30df8f757fb2a3ddefdaf8a20579199adb1"
+    },
+    {
+      "path": "pty-official-fullscreen/report.json",
+      "sha256": "2926160bf17d39db2db085231391c1f4f0e54b7fe002c1d1990c512b7ed0e721"
+    },
+    {
+      "path": "pty-official-fullscreen/sessions/2026-10-23T18-50-34-799Z_01a16a19-bfaf-75bb-b42f-5985e4d6e57e.jsonl",
+      "sha256": "e704f4097a6db5010d99d6ea9b30b9c51ee00f719be606da651f30d3d63d0848"
+    },
+    {
+      "path": "pty-official-fullscreen/terminal.ansi",
+      "sha256": "90e3f81b2e580f908846b606e1722f8ce9d57c879a702d9fa521393fd263d5f7"
+    },
+    {
+      "path": "pty-official-restore/events.jsonl",
+      "sha256": "2b9b8b449bd7eb2f45b3033ff78611091516b6e067e62dde5e5247e2f23768b5"
+    },
+    {
+      "path": "pty-official-restore/report.json",
+      "sha256": "2926160bf17d39db2db085231391c1f4f0e54b7fe002c1d1990c512b7ed0e721"
+    },
+    {
+      "path": "pty-official-restore/sessions/2026-10-23T18-47-55-743Z_01a16a17-525e-720e-9dc1-1d322f935b53.jsonl",
+      "sha256": "162bfbd8a88335f0dbf7bb6f4951407620d5acfd4a97d61068e63d0d06a96a4b"
+    },
+    {
+      "path": "pty-official-restore/terminal.ansi",
+      "sha256": "caf3f260728b6c59bbb9f9cb4175b0b276bc99236302db84b79da78891d3f37d"
+    },
+    {
+      "path": "qualify-official/qualification.json",
+      "sha256": "cb37fc9fc98e611ad10e601e92f8852c28c97c3c49196d150be7428ae37fd0ab"
+    },
+    {
+      "path": "qualify-official-final/qualification.json",
+      "sha256": "614b5affbb66971019fdd284ce991c63c0e3478aef490e71edfe0463667f5f72"
+    },
+    {
+      "path": "qualify-official-final.log",
+      "sha256": "3ede42054c6ce655f9001d8501b01725d98c1aca9e0c1cee949ae1e4d3b5b057"
+    },
+    {
+      "path": "qualify-official.log",
+      "sha256": "3e765ca089aee3af348eaa82fe312759c13e187d1c577cc748670ec2dd7b6dcc"
+    },
+    {
+      "path": "role-fork/custom/events.jsonl",
+      "sha256": "c8d0959e63dd4db7270d2bae3257b97fc0bc4ab6a97bda9fb2def8f55e72ba68"
+    },
+    {
+      "path": "role-fork/custom/sessions/2026-10-23T18-51-29-529Z_01a16a1a-9579-727a-bc15-746571e08528.jsonl",
+      "sha256": "8a518670a9065c15fecf0e015daa42c0dbd396ed5d45039ce1455c85db169e31"
+    },
+    {
+      "path": "role-fork/report.json",
+      "sha256": "08f48f5cceaa7a8585ef4e5a1b3489fb5a2e52910f01c91712dab663a5146a93"
+    },
+    {
+      "path": "role-fork/user/events.jsonl",
+      "sha256": "c2c493b26cf1e5349b3080355b70106d489dd2da27abee3174b92d7002ea7402"
+    },
+    {
+      "path": "role-fork/user/sessions/2026-10-23T18-51-29-555Z_01a16a1a-9593-727a-bc15-746775cb4dea.jsonl",
+      "sha256": "346550f8fd6c2740f2fe7e51f75dd139d9002f0208b8c179b47550d4b4eb8ff0"
+    },
+    {
+      "path": "role-fork.log",
+      "sha256": "08f48f5cceaa7a8585ef4e5a1b3489fb5a2e52910f01c91712dab663a5146a93"
+    },
+    {
+      "path": "role-official/custom/events.jsonl",
+      "sha256": "bc21842cbe49c855f6a5db9af1195ba51bd58f303a001a0470015b6ff614ff84"
+    },
+    {
+      "path": "role-official/custom/sessions/2026-10-23T18-51-28-708Z_01a16a1a-9244-71be-878f-9872bb1c426c.jsonl",
+      "sha256": "6dacd2028bb6017a9c1e66f81470b5f321f56134e11d7cc226e587fff57ea951"
+    },
+    {
+      "path": "role-official/report.json",
+      "sha256": "7a784ca30e3205ceebefe5cfbd66362d9d8e0890b7c8cb0694e8d5a6ef82cc40"
+    },
+    {
+      "path": "role-official/user/events.jsonl",
+      "sha256": "690eda4aa449b212661bd8101bc6cba4cab9036c4d59f904f21f64effe01e15c"
+    },
+    {
+      "path": "role-official/user/sessions/2026-10-23T18-51-28-730Z_01a16a1a-925a-71be-878f-98749610e47c.jsonl",
+      "sha256": "57fe6ca28ef04447b77f4f284731f6c0a090885492e2fff8de44d2ce36176873"
+    },
+    {
+      "path": "role-official.log",
+      "sha256": "7a784ca30e3205ceebefe5cfbd66362d9d8e0890b7c8cb0694e8d5a6ef82cc40"
+    },
+    {
+      "path": "test-audit.md",
+      "sha256": "7019994264aaccf580f093ec35c65495068425094d2089ee5aea2fe6f0d95dc1"
+    },
+    {
+      "path": "typecheck-fork.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "typecheck-official.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     }
   ],
-  "proofs": [
+  "checks": {
+    "development": "npm run check: 405/405, tsc (including scripts), pack dry-run",
+    "official": "405/405 plus full source/test/script types",
+    "fork": "405/405 plus full source/test/script types",
+    "historicalFork5eaa155": "405/405",
+    "nativeIdentity": "3/3 per host; leading-envelope resized-image input reaches provider once",
+    "nativeRole": "custom: 3 calls/1 summary; genuine user: 4 calls/2 summaries, per host",
+    "pty": "6/6 passing: regular delivery, regular Alt+Up+draft, fullscreen Alt+Up+draft on each host",
+    "officialGitAndPackedCli": "Shared native qualification passed at qualify-official-final; sourceDirty true at da4e9ff plus the source digest above",
+    "forkGitAndPackedCli": "Required hosted exact-head qualification pending",
+    "diff": "git diff --check passed"
+  },
+  "regressionEvidence": [
     {
-      "directory": "d6-official-deliver",
-      "productionRevision": "d6a2c67b5a462e84d6e21c52d2be8385a8ff9139",
-      "report": {
-        "queuedHeader": true,
-        "deliveredOutputHeader": true,
-        "restoredEditorHeader": false,
-        "restorationAttempted": false,
-        "exitCode": 0
-      },
-      "artifactSha256": {
-        "delivered.ansi": "c21d3f7f86263d4e5cfaeb9999ce5cda394636da4ab1d106cee4df9935e0fe50",
-        "events.jsonl": "eee7071c2441701e21dddc6e3c590d27ed85cac99b26fce52633b36091ac3361",
-        "invocation.json": "4d14b351afbdfca89528feed5225ae4d27e9cbf7e14de398a51950cc66b80d2b",
-        "process-result.json": "982b9e9bfb10ffe83cad665807abcfd3fa97b37822db5ab7831157a499548a9e",
-        "queued.ansi": "6a0d0ad727476b28d367069f7ab2504d0b376961ebf59caaa05840288fb1404c",
-        "report.json": "236308e836f7d4c3852c2de32ccaa29abf38cc24548fe08f1d896161f818f931",
-        "sessions/2026-10-23T16-26-59-578Z_01a16996-4a79-759a-a6d6-fdf35bf5c1ef.jsonl": "870fd72031f87954233a115b6e40a388f4be73c4e65b8bdc8c19354bf69b46f7",
-        "startup.ansi": "ddd2f4cc6e5a0031e8e1db6fe7fe7d92ca75027e71169ea25b9f521900f076f1",
-        "terminal.ansi": "fd824556fda48422c3f5e92c5e8ad93166cf9a7df2bca2bd00eef236500e8a57",
-        "working.ansi": "23897bf1d0887d2f1bf93b86651ba6acef88a82b29d3082aef89800af9c22606"
-      }
+      "red": "pi-goal-custom-refresh-red.log",
+      "green": "pi-goal-custom-refresh-green.log",
+      "defect": "Native compaction refresh intent lost on reload before branch-relative recovery"
     },
     {
-      "directory": "d6-official-restore",
-      "productionRevision": "d6a2c67b5a462e84d6e21c52d2be8385a8ff9139",
-      "report": {
-        "queuedHeader": true,
-        "deliveredOutputHeader": false,
-        "restoredEditorHeader": true,
-        "restorationAttempted": true,
-        "exitCode": 0
-      },
-      "artifactSha256": {
-        "delivered.ansi": "1e3606395d58e674bf7a9d81fb3f03a3ba7460afcbdf1cef9b4f26ae593d197a",
-        "events.jsonl": "4af6513851480724d5c4fdbaccf350822765af1eeb423d7a0d3469f5263ba4b8",
-        "invocation.json": "19aba245fa2b9c485835230f322845089b59d80d9a5ea00a086b07c86f9d496f",
-        "process-result.json": "982b9e9bfb10ffe83cad665807abcfd3fa97b37822db5ab7831157a499548a9e",
-        "queued.ansi": "339d37e568959e66ba4b15fab7ba680df19ce6200fee19aa7269c5e6845395c9",
-        "report.json": "ca1f6c2f45b5d685a4b52cc22b664f45e2a47831e145796294f98bb3a3971589",
-        "restored-editor.ansi": "cc9af7904ad458d8b1d24ac1f2f06ca0f338a2b3128d918605dd1006250962b9",
-        "resubmitted.ansi": "5e1726d077a2be8aa7512a8f409aa9bf09dd5ba02675f6f5aa2502ffce51c84f",
-        "sessions/2026-10-23T16-27-04-832Z_01a16996-5f00-722c-b33e-b178c1144363.jsonl": "33dac400d0a5b65cba23f7061c5f5abddb3cb37dc185f92ee0fcbabb1e364c3e",
-        "startup.ansi": "9cafd452c33afd27dfefe1cba783edaa0880dc6078a1557d79796d4155f5f6ca",
-        "terminal.ansi": "648ee5236c9fa6cc05e1b9e3daf595f61e6deb5cc965b931af1e3321393eea3b",
-        "working.ansi": "9ddad4bf414ac85f40a0167202457d352957e9a0f59f8995fc10c790de2b2b91"
-      }
+      "red": "pi-goal-custom-native-identity.log",
+      "green": "pi-goal-custom-native-identity-green.log",
+      "defect": "Stale abort discarded genuine pending image input before public pending-input guard"
     },
     {
-      "directory": "d6-fork-deliver",
-      "productionRevision": "d6a2c67b5a462e84d6e21c52d2be8385a8ff9139",
-      "report": {
-        "queuedHeader": true,
-        "deliveredOutputHeader": true,
-        "restoredEditorHeader": false,
-        "restorationAttempted": false,
-        "exitCode": 0
-      },
-      "artifactSha256": {
-        "delivered.ansi": "35a3e2a1ff3f46d1fac050bb9dd72161cd0825a0760092c73440bf92eb7c5ba9",
-        "events.jsonl": "d35ec598854a86d190831279bc49e07af9c3e6a84544f3071a8d3c68c94a95f1",
-        "invocation.json": "15eb72620556460ee19462449c302b1a2edd171b3b3738100e38b07ba4bacd48",
-        "process-result.json": "982b9e9bfb10ffe83cad665807abcfd3fa97b37822db5ab7831157a499548a9e",
-        "queued.ansi": "2a1e2b79105089445bcaeed33341fc83750e8e14e020ac07572a40c9bc08d504",
-        "report.json": "236308e836f7d4c3852c2de32ccaa29abf38cc24548fe08f1d896161f818f931",
-        "sessions/2026-10-23T16-26-59-637Z_01a16996-4ab4-7615-aa83-f0ad3dfc85a1.jsonl": "fcbef85208d2bbc53d3c6f6e9355d2dae85391ecd1b7e22d98ad7ef49c36c404",
-        "startup.ansi": "0dae6eb0b2adbf131f92af4f2f86c5ec676737139934bc83c86327b3223425ba",
-        "terminal.ansi": "2d2ffbad63189235c9162f4f7feb845ce074c9ad64c89e083fd6799a37c31e49",
-        "working.ansi": "a721cc7ba9b5328c19c6a94c79a1ae0470c333b6ce557c8e4006be5d65abc5ff"
-      }
-    },
-    {
-      "directory": "d6-fork-restore",
-      "productionRevision": "d6a2c67b5a462e84d6e21c52d2be8385a8ff9139",
-      "report": {
-        "queuedHeader": true,
-        "deliveredOutputHeader": false,
-        "restoredEditorHeader": true,
-        "restorationAttempted": true,
-        "exitCode": 0
-      },
-      "artifactSha256": {
-        "delivered.ansi": "53fc9807bb326f36a8f80333b88d27eff1f875de8ec1f630a1e01bc728ec9888",
-        "events.jsonl": "8c1a323de98f31a5fe61ac0cc31479bfc06b74bf2274a8343d7c90f8aeb3e39c",
-        "invocation.json": "bb7ed644f2f447d5b966c5f8f193d58af81b174819b4242183df3f18d6c09ee4",
-        "process-result.json": "982b9e9bfb10ffe83cad665807abcfd3fa97b37822db5ab7831157a499548a9e",
-        "queued.ansi": "51e76c597ed0ac5c1d9f0e45fb89dd492d21988c3b90e24da0efd563a02ed8e3",
-        "report.json": "ca1f6c2f45b5d685a4b52cc22b664f45e2a47831e145796294f98bb3a3971589",
-        "restored-editor.ansi": "9ee73e35f9cb27e42be5d2eaf9dd5cd781663afbcc38f7058d33a98e1b48e0cb",
-        "resubmitted.ansi": "2a36c6e1c114afbc47aaca684779766f1c9c5fd7ae37103460abb95c78f3ee82",
-        "sessions/2026-10-23T16-27-03-846Z_01a16996-5b25-7702-8b40-4a26b616e190.jsonl": "20a80390c15863798ca7e6994ede1fefaabb88d26438856b16b1ce34ea06e4f5",
-        "startup.ansi": "4bc435f28ec1ff3236998e9aa8f3518cb83feee53d432c0113ef73a036c02237",
-        "terminal.ansi": "6bccd59a81ecd2517afc7ac2089837d7cf65e28b4300bfd4dfd322226fb80e6b",
-        "working.ansi": "d7975ea66b85030f59a081ab80fddca47274b29bdf36b0e250d6ae57c44b8784"
-      }
-    },
-    {
-      "directory": "final-official-deliver",
-      "productionRevision": "6837d4b3a091bb3cb3fc1eb88033303d494356f1",
-      "report": {
-        "queuedHeader": false,
-        "deliveredOutputHeader": false,
-        "restoredEditorHeader": false,
-        "restorationAttempted": false,
-        "exitCode": 0
-      },
-      "artifactSha256": {
-        "delivered.ansi": "6797bdd413cb8e2331b5d3f2a308b6f3411a4ad58dd2f93085f89d5b0d66e366",
-        "events.jsonl": "f486ff1edc71b1ab43945a196be50f3b4e22299c1e8880a791dbb5150bf29ae0",
-        "invocation.json": "26eae8af7beb7243a16e4bef111cbbda20aa6b28e3aef42010eaafc8aba8ebf6",
-        "process-result.json": "982b9e9bfb10ffe83cad665807abcfd3fa97b37822db5ab7831157a499548a9e",
-        "queued.ansi": "1c4675a6e5c12fd22081e9b84451c453a1fad373827b998f6a92cb3243bc2760",
-        "report.json": "0aa375bbacb9a374a729f959769c0e31950cc251633fac10da92e94d622b9f2a",
-        "sessions/2026-10-23T16-33-50-465Z_01a1699c-8f81-708a-8d75-ee07d93290cd.jsonl": "aa02a4335652e3e089ff5810d00074162025284961743d9fa8bcff9d69035023",
-        "startup.ansi": "ab57f2a431c2fabe251cc84b62d304bc124868fd0cb5993440ec97b60e90df53",
-        "terminal.ansi": "f7e8d17c0f7d1344189dd12eba5a2a48c1148df09a5d5d892480a8d1f5d9aa98",
-        "working.ansi": "c9af07da22623b78a0b8d86d1941d1b09d5f4c9ed59721e89490d79dd0e79993"
-      }
-    },
-    {
-      "directory": "final-official-restore",
-      "productionRevision": "6837d4b3a091bb3cb3fc1eb88033303d494356f1",
-      "report": {
-        "queuedHeader": false,
-        "deliveredOutputHeader": false,
-        "restoredEditorHeader": false,
-        "restorationAttempted": true,
-        "exitCode": 0
-      },
-      "artifactSha256": {
-        "delivered.ansi": "aaac72f978bde958cd2ce9d0b3fb1e8a526a60957b783e1fd79a14e2ef447c73",
-        "events.jsonl": "e985a0e1590fe4857b477b1b68f9da706fc82aaf5f302abde4eb10adf72bfdf7",
-        "invocation.json": "1d79912079e616c812f74bb9fb8228f1ef9ddc843ae000dd3d4b1b3df32cebd1",
-        "process-result.json": "982b9e9bfb10ffe83cad665807abcfd3fa97b37822db5ab7831157a499548a9e",
-        "queued.ansi": "87f51f4dd4cb45ed1bbfada5b1c9a58c3b430ded43a67c9bab7ddc3abeb07c89",
-        "report.json": "68ef36926957d94ed4a160ef55dae8d6686730a546c36da2cfd3d63abe0d014e",
-        "restored-editor.ansi": "a6f3b7419d8ec7c3f903a2d05a2e30c69b378302aab8791cd016881f2d317360",
-        "resubmitted.ansi": "1401a9af6c7a8b4e6ce6fd04f508400b95b13897a76ebe18feb9649faf133ce3",
-        "sessions/2026-10-23T16-33-54-364Z_01a1699c-9ebc-70cd-a0a1-c839b5800f85.jsonl": "07be4ac93dce3859ff260a3dcad925224aae85cee79a6f1a29d6eebf5815a1d6",
-        "startup.ansi": "e607e0900e8e663927e7825315b3ec49fef92a5644790f1c381b401995343a1f",
-        "terminal.ansi": "87f666e3a853c0fc62ca242bd278e2b74cc5716e315185e7a3e235e55a1fe485",
-        "working.ansi": "5135a2bf3a321db5f96eb896df3368f0f303619a57d92bd60e0aab8cb4df51e2"
-      }
-    },
-    {
-      "directory": "final-official-fullscreen",
-      "productionRevision": "6837d4b3a091bb3cb3fc1eb88033303d494356f1",
-      "report": {
-        "queuedHeader": false,
-        "deliveredOutputHeader": false,
-        "restoredEditorHeader": false,
-        "restorationAttempted": true,
-        "exitCode": 0
-      },
-      "artifactSha256": {
-        "delivered.ansi": "58f027ee47c54e457b8bd917f2634798590441208cb09170221586bc2fd86715",
-        "events.jsonl": "2077a1f0e43fceb252947d11f487167aaf5293b3448291a5e3227805311d605f",
-        "invocation.json": "52ffc9c7f4e25ab67802b94dca782e3c7914304d6e7c0e6080c390062fbd6139",
-        "process-result.json": "982b9e9bfb10ffe83cad665807abcfd3fa97b37822db5ab7831157a499548a9e",
-        "queued.ansi": "fcea35520cca43b6335df83bb80d9caa352a6943ca9a3a18b6928f7063165956",
-        "report.json": "68ef36926957d94ed4a160ef55dae8d6686730a546c36da2cfd3d63abe0d014e",
-        "restored-editor.ansi": "fcd1c4d35f37490ca8f1ccfcf1628f1dc321ce3a7bc76d03cbb2098b583d96fc",
-        "resubmitted.ansi": "dc9e94cc9246b31639061994f6eaad36fbad841bffe38ae7b440c6b2aa87a3ee",
-        "sessions/2026-10-23T16-33-59-334Z_01a1699c-b225-72b9-9b4d-51088f6bc307.jsonl": "73c4069776659cd9561f850c3383b11a5c2962a1d28d7d8925bd839fdb2b9971",
-        "startup.ansi": "6c059e2fac483d76fe932ed5a8638d51c5c1786551480cda6ad3d8f67494fb8f",
-        "terminal.ansi": "f4931d0716398e79b62d266857e17c819f7f37f1429987000fab76db1bd83728",
-        "working.ansi": "6c51ec91e43d49067843ada6a930275fbb48bf6060d85c0bfc1ebd96008885a1"
-      }
-    },
-    {
-      "directory": "final-fork-deliver",
-      "productionRevision": "6837d4b3a091bb3cb3fc1eb88033303d494356f1",
-      "report": {
-        "queuedHeader": false,
-        "deliveredOutputHeader": false,
-        "restoredEditorHeader": false,
-        "restorationAttempted": false,
-        "exitCode": 0
-      },
-      "artifactSha256": {
-        "delivered.ansi": "367b3bb03d21f96eda331bc4b352a79780529ec7eb35e2520fa9b2eb6c27a97f",
-        "events.jsonl": "aacbc5fcb2c6b370abaf7bb22a4c41d422024cb6835fa2915ae51e9a2fe31982",
-        "invocation.json": "5088a3e323746335f04e75898dd0caf0b7f00c63959787a6bbaaca12fbb88f85",
-        "process-result.json": "982b9e9bfb10ffe83cad665807abcfd3fa97b37822db5ab7831157a499548a9e",
-        "queued.ansi": "5a5f050f122a15b39bf59fd0e4ffecc23e3b0206d2a7292df52eb1b0c13bf1b5",
-        "report.json": "0aa375bbacb9a374a729f959769c0e31950cc251633fac10da92e94d622b9f2a",
-        "sessions/2026-10-23T16-33-50-554Z_01a1699c-8fda-7641-81a7-0d23db3ea96c.jsonl": "d93a0489dcb055546936da1a25328fd698dd714edb17d52f87809d79d0cc9773",
-        "startup.ansi": "c08b0ffe58c3a35ccafe46ab4f8dc4e2cb3d3722bacf189fdc8fac9faf231372",
-        "terminal.ansi": "77e400e2455e66cfda7b6e8d6d8e37ce5ab0f3a28a84478b874674587773464c",
-        "working.ansi": "aabd2a1adb3a9e63d5510dfcd4a2ac5282bfe3112aa4c3bf9c651bd9e47cedf4"
-      }
-    },
-    {
-      "directory": "final-fork-restore",
-      "productionRevision": "6837d4b3a091bb3cb3fc1eb88033303d494356f1",
-      "report": {
-        "queuedHeader": false,
-        "deliveredOutputHeader": false,
-        "restoredEditorHeader": false,
-        "restorationAttempted": true,
-        "exitCode": 0
-      },
-      "artifactSha256": {
-        "delivered.ansi": "d3736a259707891eb382d061da658711a7766f1a7ad3702083676596caf50f2f",
-        "events.jsonl": "0efc7cca21df1a653f13fbb5f42d0bc3b43bcf83e6d1ce91be30154b61653126",
-        "invocation.json": "52aa1f0aa253ab354974fd83c17438f0cfebe699f655a57d021061655d0426b6",
-        "process-result.json": "982b9e9bfb10ffe83cad665807abcfd3fa97b37822db5ab7831157a499548a9e",
-        "queued.ansi": "2d1ac888ad49a25fa5b6481862d2fb7a16f1d72506fbb3c0b98bc3671911cec1",
-        "report.json": "68ef36926957d94ed4a160ef55dae8d6686730a546c36da2cfd3d63abe0d014e",
-        "restored-editor.ansi": "69aa9e672572a72695548adbb5d919fc578be8cdd7e8b8ee51df81e58e1f40c0",
-        "resubmitted.ansi": "446598a125dcd23cc4fe9e1d8a9f84c970205f8d0abee70fe6ad3d340e2ebc53",
-        "sessions/2026-10-23T16-33-54-571Z_01a1699c-9f8b-739b-8fa5-b3fe27da0764.jsonl": "c97f400ec2c805e4a208ec27a9e92e5f350d660b2237919dae2912516551d5c7",
-        "startup.ansi": "2c154413edb607aec4e011f8c4968207fd13256eb30421a81cc3e95c24e0bb67",
-        "terminal.ansi": "aa9d092372539f1a264f49aa3ebc92f017bd1d8774f46d35b1b800ee26c61287",
-        "working.ansi": "f1a56c94e34b95fadbac2d16f39b9cb5615a446a8e132333d9df58261d23cd10"
-      }
-    },
-    {
-      "directory": "final-fork-fullscreen",
-      "productionRevision": "6837d4b3a091bb3cb3fc1eb88033303d494356f1",
-      "report": {
-        "queuedHeader": false,
-        "deliveredOutputHeader": false,
-        "restoredEditorHeader": false,
-        "restorationAttempted": true,
-        "exitCode": 0
-      },
-      "artifactSha256": {
-        "delivered.ansi": "8531ece7dad3b89d9a5dcc2d020e025d13abf6446ae88bbb8f54b7a23cb5fb27",
-        "events.jsonl": "03fde6223947c68ec53d74c664d1e5876850f65026857f3b6ceab7812bbd8dec",
-        "invocation.json": "42967c1571b13f86671684b10160013002b67ebbb8e07a8c89cf8c10dd794d4c",
-        "process-result.json": "982b9e9bfb10ffe83cad665807abcfd3fa97b37822db5ab7831157a499548a9e",
-        "queued.ansi": "6f0bce6ddc7e8f427ea12087bbeb271e07436f3671a9bd93956012bf7ab5f47a",
-        "report.json": "68ef36926957d94ed4a160ef55dae8d6686730a546c36da2cfd3d63abe0d014e",
-        "restored-editor.ansi": "b16ff71f8b5e0b90915aa397c8974f5baf3ef3de16af5caf53ce736ac2fa3260",
-        "resubmitted.ansi": "26434f7a57b1a7ee6e29e3e4f4f1f12dc1d0fea4f5acd5fb2891cb63f41947ed",
-        "sessions/2026-10-23T16-33-59-700Z_01a1699c-b394-7244-abce-8be627db834e.jsonl": "a07a557327f398411806d73626b8dd63a3a29227f02cb139badac5106fe3f34b",
-        "startup.ansi": "fb46630422b498c563a2b57da4c22d3bd3454df571b32a5f38360184ca9bdc35",
-        "terminal.ansi": "3df2608f6a39094404add5ca949223f83afcfb0f38a8011ec3bbfe8b885e7a7a",
-        "working.ansi": "18ef8fd8aad6fad839d15174daa4bc8fe4eaa7d323a270232ccd01772f5ba1fb"
-      }
-    },
-    {
-      "directory": "role-official",
-      "productionRevision": "host-only",
-      "report": [
-        {
-          "route": "custom",
-          "providerCalls": 3,
-          "summaries": 1,
-          "extraSummaries": 0
-        },
-        {
-          "route": "user",
-          "providerCalls": 4,
-          "summaries": 2,
-          "extraSummaries": 1
-        }
-      ],
-      "artifactSha256": {
-        "custom/events.jsonl": "250e9d8c08c4a5c63268ffda399f0554bc5c8861aff1e20afddd27f58c19e5fe",
-        "custom/sessions/2026-10-23T16-27-10-169Z_01a16996-73d8-730b-9270-607d86212859.jsonl": "f0146af83fb5c92e8119a2ff31b1a176cecccd0df2689eb0dda6aff9a2ec4ffc",
-        "report.json": "be3f3bb1d0dcec424b85aa6d8af8a53a47450527245db73840daf133ddd53196",
-        "user/events.jsonl": "cb3b7de0d87e0fc80b88ad187f654a898877aa03d7f36e0a4772cf4a1db20e82",
-        "user/sessions/2026-10-23T16-27-10-192Z_01a16996-73f0-730b-9270-607f75aa7edf.jsonl": "a480e907bd7e16b891233744658a2d84fae95e902a5e6559e89d6df452aff61b"
-      }
-    },
-    {
-      "directory": "role-fork",
-      "productionRevision": "host-only",
-      "report": [
-        {
-          "route": "custom",
-          "providerCalls": 3,
-          "summaries": 1,
-          "extraSummaries": 0
-        },
-        {
-          "route": "user",
-          "providerCalls": 4,
-          "summaries": 2,
-          "extraSummaries": 1
-        }
-      ],
-      "artifactSha256": {
-        "custom/events.jsonl": "beb27807ebb0604405b56027dca2c19ec540d2b46a43a3aa741e44f7ac60e8ab",
-        "custom/sessions/2026-10-23T16-27-09-398Z_01a16996-70d6-74da-90cc-aeb8d3c7cdee.jsonl": "b7f5b9a47cddd20fe9efc25d520a26329cd97878ecbdbf26e0d00f18bac24c05",
-        "report.json": "f413d8c394083afba3cc62f7faa5d0dbcf7ee62e94635a35507ecad2b398be08",
-        "user/events.jsonl": "90d074e918c98ee8ff7a37cd8014d47cb694785fbcec4c8d0d7c85ae0314341a",
-        "user/sessions/2026-10-23T16-27-09-424Z_01a16996-70f0-74da-90cc-aeba37df201a.jsonl": "6f5f539dfead770220695c9d741595e418f84b359f58139ad8c04a6395152971"
-      }
-    },
-    {
-      "directory": "final-identity-official",
-      "productionRevision": "6837d4b3a091bb3cb3fc1eb88033303d494356f1",
-      "report": [
-        {
-          "image": false,
-          "leadingMarker": true,
-          "providerCalls": 1,
-          "expectedProviderCalls": 1,
-          "acceptancePassed": true,
-          "captionPreserved": true,
-          "resizeNotePresent": false,
-          "goalStatus": "paused"
-        },
-        {
-          "image": true,
-          "leadingMarker": true,
-          "providerCalls": 0,
-          "expectedProviderCalls": 1,
-          "acceptancePassed": false,
-          "captionPreserved": true,
-          "resizeNotePresent": true,
-          "goalStatus": "paused"
-        },
-        {
-          "image": true,
-          "leadingMarker": false,
-          "providerCalls": 1,
-          "expectedProviderCalls": 1,
-          "acceptancePassed": true,
-          "captionPreserved": true,
-          "resizeNotePresent": true,
-          "goalStatus": "paused"
-        }
-      ],
-      "artifactSha256": {
-        "prefixed-image-control/events.jsonl": "5674b886c4c3269a2af00bfdba1f09731eb340dbbea78cd3764a088786a92e96",
-        "prefixed-image-control/sessions/2026-10-23T16-34-04-595Z_01a1699c-c6b3-7615-84fe-515cd4abe8bf.jsonl": "f4bfeab838481679a1ea0fe9328377d07726b46a85a5b29db02763428975874e",
-        "report.json": "f9ed618da767b8639de623fdb402bb7bf8f8539e11cf409476ab9dcf6cd87a4c",
-        "resized-image/events.jsonl": "0442e9083222a3f22429e59ccce02e76baa8782082655ddab61920124dffe61d",
-        "resized-image/sessions/2026-10-23T16-34-04-553Z_01a1699c-c689-7615-84fe-515b71feaf1a.jsonl": "1a6e77870f6aa039e83ea9dfe7f781bf35a5d2cbba4456b2ff96da8dd26813c9",
-        "text-control/events.jsonl": "7b298065b19ab2f1200c77912be892c2124d9d78906172a4c81ede9a03593392",
-        "text-control/sessions/2026-10-23T16-34-04-539Z_01a1699c-c67a-7615-84fe-5159972ec35c.jsonl": "b20dbf00d1ac7b17180165166c5be943a05783fa7302053e1561962f20655aee"
-      }
-    },
-    {
-      "directory": "final-identity-fork",
-      "productionRevision": "6837d4b3a091bb3cb3fc1eb88033303d494356f1",
-      "report": [
-        {
-          "image": false,
-          "leadingMarker": true,
-          "providerCalls": 1,
-          "expectedProviderCalls": 1,
-          "acceptancePassed": true,
-          "captionPreserved": true,
-          "resizeNotePresent": false,
-          "goalStatus": "paused"
-        },
-        {
-          "image": true,
-          "leadingMarker": true,
-          "providerCalls": 0,
-          "expectedProviderCalls": 1,
-          "acceptancePassed": false,
-          "captionPreserved": true,
-          "resizeNotePresent": true,
-          "goalStatus": "paused"
-        },
-        {
-          "image": true,
-          "leadingMarker": false,
-          "providerCalls": 1,
-          "expectedProviderCalls": 1,
-          "acceptancePassed": true,
-          "captionPreserved": true,
-          "resizeNotePresent": true,
-          "goalStatus": "paused"
-        }
-      ],
-      "artifactSha256": {
-        "prefixed-image-control/events.jsonl": "5039c0dd98120b52b004a7c8193e47f9947b57277b91d9212e25d06eefdb68f8",
-        "prefixed-image-control/sessions/2026-10-23T16-34-04-977Z_01a1699c-c831-73ed-a5ca-309a86fe5e8f.jsonl": "0c65e9c4cd2a927d96419e6875ddd02a332059cb51d0d57b7b6db5c6923f31ce",
-        "report.json": "c9ed1a596535c946b7f35a0a2eea3038e72abfbafca1e24c381acb49e33f6cc9",
-        "resized-image/events.jsonl": "b29e9dbf3fada9c228c5c779310370a0070d7c82d33b9ea020824bdf1e6a4552",
-        "resized-image/sessions/2026-10-23T16-34-04-936Z_01a1699c-c808-73ed-a5ca-3099a3be8183.jsonl": "0401e0bb94869fe64b2301357819b19259af822152e8fd779d110b74e47f8b1f",
-        "text-control/events.jsonl": "b24b8a79053ce1fd731ebc9f689785f71db7dd77b55f12c363330c8d33666d51",
-        "text-control/sessions/2026-10-23T16-34-04-916Z_01a1699c-c7f3-73ed-a5ca-3096b76fb590.jsonl": "f5c83261d958c223ab7f1defb632241ae1f418c8adf022000b6bbd5e6f39e87d"
-      }
+      "red": "pi-goal-custom-native-customonly.log",
+      "green": "pi-goal-custom-native-customonly-green.log",
+      "defect": "Native abort discarded newer custom queue and left active goal wedged before post-event rescheduling"
     }
   ],
-  "probeSources": {
-    "scripts/delivery-identity-proof.ts": "84808fcfcbece2c10f7625dc9b08fb72f12e2d280e0aa86573aaf9ce22707bb2",
-    "scripts/delivery-ownership-provider.ts": "2c298996869b3f5c2465541fddc6acc334efd489a91469dbd514c7f3aa021e8d",
-    "scripts/delivery-ownership-pty.py": "014e3d1469b5905740c9a0d324c9d7822a95f7d8eddf2f98047a940bc93f8dad",
-    "scripts/delivery-role-proof.ts": "3e83105ff25d5ce16df6b143644868fb25e0962b1bb7ac861faa044d879780eb"
-  },
-  "baselineProviderSource": {
-    "path": "/tmp/pi-goal-pr109-ownership/provider-before-typecheck.ts",
-    "sha256": "7968c43591f0df0e616d504771952e12eab5da5226f96e83fed527fe0124da38",
-    "difference": "The final provider adds async to the proof-release command handler to satisfy its declared Promise<void> type. Native Goal sources and probe content are unchanged."
-  }
+  "historicalEvidence": "Original header leak and genuine-image RED proof at /tmp/pi-goal-pr109-ownership and /tmp/pi-goal-pr109-custom-red-fork; old manifest archived as historical-ownership-evidence.json. No session journals deleted.",
+  "limits": "No paid-model/cache-hit-rate measurement, live installation, runtime selector/canonical checkout change, merge or release. The first non-restored PTY report lacked the final provider callback trace; corrected probe instrumentation and fresh deliver-v2 report are retained separately, without overwriting the failed observation."
 }

@@ -24,9 +24,8 @@ import {
   type RecoveryAttention,
 } from "./recovery.ts";
 
-export type { GoalStartTurnStrategy, RecoveryPhase } from "./recovery-phase.ts";
+export type { RecoveryPhase } from "./recovery-phase.ts";
 export {
-  goalStartTurnStrategy,
   recoveryPhaseBlocksContinuation,
   recoveryPhaseNeedsUserStartTurn,
 } from "./recovery-phase.ts";
@@ -131,12 +130,12 @@ export function requireHostOverflowUserReset(state: GoalRecoveryMachineState): b
   return persistHostOverflowCapReset;
 }
 
-export function beginHostOverflowRecovery(state: GoalRecoveryMachineState): {
+export function beginHostOverflowRecovery(state: GoalRecoveryMachineState, needsUserReset = true): {
   attention: RecoveryAttention;
   persistHostOverflowCapReset: boolean;
 } {
-  const persistHostOverflowCapReset = !recoveryPhaseNeedsUserStartTurn(state.phase);
-  state.phase = hostOverflowRecoveringNeedsUserStartPhase();
+  const persistHostOverflowCapReset = recoveryPhaseNeedsUserStartTurn(state.phase) !== needsUserReset;
+  state.phase = needsUserReset ? hostOverflowRecoveringNeedsUserStartPhase() : { kind: "hostOverflowRecovering" };
   const attention = setRecoveryPendingAttention(state, HOST_OVERFLOW_RECOVERY_REASON);
   return { attention, persistHostOverflowCapReset };
 }

@@ -6,7 +6,6 @@ import {
   TOOL_PROMPT_GUIDELINES,
   budgetLimitPrompt,
   compactContinuationPrompt,
-  continuationGoalIdFromPrompt,
   continuationPrompt,
   goalToolReference,
 } from "../src/prompts.ts";
@@ -40,14 +39,14 @@ test("continuation prompt uses the canonical completion-audit contract", () => {
   assert.match(continuation, /Do not mark a goal complete merely because the budget is nearly exhausted/);
 });
 
-test("compact continuation keeps marker detection without repeating the full objective", () => {
+test("compact continuation supplies actionable guidance without ownership text or the full objective", () => {
   const created = createThreadGoal("ship it", 10);
 
   const compact = compactContinuationPrompt(created);
   const full = continuationPrompt(created);
 
-  assert.equal(continuationGoalIdFromPrompt(compact), created.goalId);
-  assert.match(compact, /<pi_goal_continuation goal_id="/);
+  assert.doesNotMatch(compact, /pi_goal_continuation|pi_goal_delivery/);
+  assert.ok(!compact.includes(created.goalId));
   assert.doesNotMatch(compact, /<untrusted_objective>/);
   assert.match(compact, /get_goal/);
   assert.ok(compact.length < full.length);

@@ -12,6 +12,7 @@ import {
 import {
   assistantMessage,
   createRuntimeHarness,
+  emitMessageEnd,
   userBeforeAgentStartEvent,
   emitPersistentAssistantError,
   flushContinuationScheduler,
@@ -67,6 +68,7 @@ test("host overflow session compaction does not queue extension continuation bef
       type: "message_start",
       message: queuedMessage,
     });
+  await emitMessageEnd(harness, queuedMessage);
     await harness.emit("turn_end", {
       type: "turn_end",
       turnIndex: 0,
@@ -95,7 +97,7 @@ test("host overflow session compaction does not queue extension continuation bef
   }
 });
 
-test("host overflow session compaction falls back when promised host retry never starts", async () => {
+test("host overflow without a native retry pauses instead of manufacturing recovery", async () => {
   mock.timers.enable({ apis: ["setTimeout"] });
   try {
     const harness = createRuntimeHarness();
@@ -111,12 +113,9 @@ test("host overflow session compaction falls back when promised host retry never
     flushContinuationScheduler();
 
     const goal = harness.snapshot().goal;
-    assert.equal(goal?.status, "active");
-    assert.equal(harness.sentMessages.length, 1);
-    assert.deepEqual(harness.sentMessages[0]?.message.details, {
-      kind: "continuation",
-      goalId: goal?.goalId,
-    });
+    assert.equal(goal?.status, "paused");
+    assert.equal(harness.sentMessages.length, 0);
+    assert.match(harness.footerStatuses.at(-1) ?? "", /genuine user message/);
   } finally {
     mock.timers.reset();
   }
@@ -153,10 +152,10 @@ for (const { label, errorMessage } of [
     assert.equal(harness.sentMessages.length, 0);
 
     await harness.emit("agent_start", agentStartEvent());
-    await harness.emit("agent_end", {
-      type: "agent_end",
-      messages: [assistantMessage("stop", { input: 1, output: 1 })],
-    });
+    const success = assistantMessage("stop", { input: 1, output: 1 });
+    harness.setIdle(false);
+    await harness.emit("turn_end", { type: "turn_end", turnIndex: 1, message: success, toolResults: [] });
+    await harness.emit("agent_end", { type: "agent_end", messages: [success] });
 
     assert.equal(harness.snapshot().goal?.status, "active");
     assert.equal(harness.sentMessages.length, 1);
@@ -327,7 +326,7 @@ test("/goal pause after pending overflow error clears recovery attention", async
 });
 
 test("successful turns reset transient error counters and continue active goals", async () => {
-  const harness = createRuntimeHarness();
+  const harness = createRuntimeHarness({ idle: false });
   await harness.runCommand("ship it");
   harness.sentMessages.length = 0;
 

@@ -172,7 +172,7 @@ test("session_tree to a different active goal clears stale transient recovery an
   assert.equal(goal?.status, "active");
   assert.doesNotMatch(harness.footerStatuses.at(-1) ?? "", /Goal recovery pending/);
   assert.equal(harness.sentMessages.length, 1);
-  assert.deepEqual(harness.sentMessages[0]?.message.details, {
+  assert.partialDeepStrictEqual(harness.sentMessages[0]?.message.details, {
     kind: "continuation",
     goalId: goalB.goalId,
   });
@@ -202,7 +202,7 @@ test("session_tree to a different active goal clears stale overflow recovery and
   assert.equal(goal?.status, "active");
   assert.doesNotMatch(harness.footerStatuses.at(-1) ?? "", /Goal recovery pending/);
   assert.equal(harness.sentMessages.length, 1);
-  assert.deepEqual(harness.sentMessages[0]?.message.details, {
+  assert.partialDeepStrictEqual(harness.sentMessages[0]?.message.details, {
     kind: "continuation",
     goalId: goalB.goalId,
   });

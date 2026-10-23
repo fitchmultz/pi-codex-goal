@@ -3,10 +3,9 @@ import { test } from "node:test";
 
 import {
   compactContinuationPrompt,
-  continuationGoalIdFromPrompt,
   continuationPrompt,
 } from "../src/prompts.ts";
-import { type QueuedGoalContextCarrier, userContentFromUnknown } from "../src/queued-goal-messages.ts";
+import { type QueuedGoalContextCarrier, userContentFromUnknown } from "./support/context-messages.ts";
 import {
   assistantMessage,
   createRuntimeHarness,
@@ -15,6 +14,7 @@ import {
   emitQueuedTurnThroughContext,
   goalCustomContextMessage,
   goalUserContextMessage,
+  queuedCustomMessage,
 } from "./support/runtime-harness.ts";
 
 test("provider context leaves every active-goal continuation verbatim", async () => {
@@ -167,15 +167,13 @@ test("latest active continuation remains runnable", async () => {
   const goal = harness.snapshot().goal;
   assert.ok(goal);
 
-  const latest = goalCustomContextMessage({
-    content: compactContinuationPrompt(goal),
-    details: { kind: "continuation", goalId: goal.goalId },
-    timestamp: 2,
-  });
+  const queued = harness.sentMessages[0];
+  assert.ok(queued);
+  const latest = queuedCustomMessage(queued, 2);
   const contextResults = await emitQueuedTurnThroughContext(harness, [latest], 0);
   assert.equal(contextResults[0], undefined);
   const latestContent = String(latest.content);
-  assert.equal(continuationGoalIdFromPrompt(latestContent), goal.goalId);
+  assert.match(latestContent, /<untrusted_objective>/);
 
   harness.sentMessages.length = 0;
   await harness.emit("before_agent_start", userBeforeAgentStartEvent(latestContent));
@@ -186,7 +184,7 @@ test("latest active continuation remains runnable", async () => {
 
   assert.equal(harness.snapshot().goal?.status, "active");
   assert.equal(harness.sentMessages.length, 1);
-  assert.deepEqual(harness.sentMessages[0]?.message.details, {
+  assert.partialDeepStrictEqual(harness.sentMessages[0]?.message.details, {
     kind: "continuation",
     goalId: goal.goalId,
   });
@@ -199,25 +197,15 @@ test("queued work delivered after its goal completed is cancelled at delivery", 
   assert.ok(goal);
 
   await harness.runTool("update_goal", { status: "complete" });
-  const delivered = [1, 2].map((timestamp) =>
-    goalCustomContextMessage({
-      content: compactContinuationPrompt(goal),
-      details: { kind: "continuation", goalId: goal.goalId },
-      timestamp,
-    }),
-  );
+  const queued = harness.sentMessages[0];
+  assert.ok(queued);
+  const delivered = [1, 2].map((timestamp) => queuedCustomMessage(queued, timestamp));
   const contextResults = await emitQueuedTurnThroughContext(harness, delivered, 0);
 
   assert.equal(contextResults[0], undefined);
   for (const message of delivered) {
-    assert.match(String(message.content), /queued hidden goal continuation was stale/);
-    assert.equal(continuationGoalIdFromPrompt(String(message.content)), null);
-    assert.deepEqual(message.details, {
-      kind: "stale_continuation",
-      goalId: goal.goalId,
-      currentGoalId: goal.goalId,
-      currentStatus: "complete",
-    });
+    assert.match(String(message.content), /queued Goal follow-up was cancelled/);
+    assert.partialDeepStrictEqual(message.details, { kind: "stale_continuation", lifecycle: "cancelled", goalId: goal.goalId });
   }
   assert.equal(harness.snapshot().goal?.status, "complete");
 });
@@ -229,14 +217,12 @@ test("a cancellation recorded while the goal was paused is kept after it resumes
   assert.ok(goal);
 
   await harness.runCommand("pause");
-  const delivered = goalCustomContextMessage({
-    content: compactContinuationPrompt(goal),
-    details: { kind: "continuation", goalId: goal.goalId },
-    timestamp: 1,
-  });
+  const queued = harness.sentMessages[0];
+  assert.ok(queued);
+  const delivered = queuedCustomMessage(queued);
   await emitQueuedTurnThroughContext(harness, [delivered], 0);
   assert.equal(harness.abortCount, 1);
-  assert.match(String(delivered.content), /current status: paused/);
+  assert.match(String(delivered.content), /cancelled before running/);
   const cancelled = structuredClone(delivered);
 
   await harness.runCommand("resume");

@@ -1,4 +1,4 @@
-// Acceptance probe, not a passing regression: exit 1 means genuine user input was lost.
+// Native acceptance probe: exit 1 means genuine user input was lost.
 // Use the exact host graph through scripts/host-sdk.ts. All session evidence is retained.
 import assert from "node:assert/strict";
 import { mkdirSync, writeFileSync } from "node:fs";
@@ -62,7 +62,7 @@ for (const { name, image, leadingMarker } of [
     assert.equal(saved?.status, "paused");
     assert.ok(saved);
     // This is genuine interactive input, not an extension delivery. The same text is legal user data.
-    const text = (leadingMarker ? "" : "Inspect this literal data:\n") + compactContinuationPrompt(saved) + "\nKEEP_GENUINE_CAPTION";
+    const text = (leadingMarker ? "" : "Inspect this literal data:\n") + `<pi_goal_continuation goal_id="${saved.goalId}">\n` + compactContinuationPrompt(saved) + "\n</pi_goal_continuation>\nKEEP_GENUINE_CAPTION";
     faux.setResponses([fauxAssistantMessage("Genuine user data answered.")]);
     await session.prompt(text, image ? { images: [oversizedImage()] } : undefined);
     await session.waitForIdle();

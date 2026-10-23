@@ -6,7 +6,7 @@ import type { ExtensionAPI, SessionBeforeCompactEvent } from "@earendil-works/pi
 import { filterGoalCompactionInput, GOAL_COMPACTION_INPUT_EVENT, registerGoalCompactionFilter } from "../src/goal-compaction.ts";
 import { compactContinuationPrompt, continuationPrompt } from "../src/prompts.ts";
 import { CUSTOM_ENTRY_TYPE } from "../src/types.ts";
-import { assistantMessage, createRuntimeHarness, sessionBeforeCompactEvent, sessionCompactEvent, userBeforeAgentStartEvent } from "./support/runtime-harness.ts";
+import { assistantMessage, createRuntimeHarness, emitMessageEnd, queuedCustomMessage, sessionBeforeCompactEvent, sessionCompactEvent, userBeforeAgentStartEvent } from "./support/runtime-harness.ts";
 
 type Preparation = SessionBeforeCompactEvent["preparation"];
 type Message = Preparation["messagesToSummarize"][number];
@@ -23,11 +23,6 @@ function preparation(messages: Message[]): Preparation {
     fileOps: { read: new Set(["input.ts"]), written: new Set(["output.ts"]), edited: new Set() },
     settings: { enabled: true, reserveTokens: 16_384, keepRecentTokens: 20_000 },
   };
-}
-
-function replacedMessage(result: unknown): { content: unknown } {
-  assert.ok(result && typeof result === "object" && "message" in result);
-  return result.message as { content: unknown };
 }
 
 test("compaction omits control messages without changing history, task requirements, or boundaries", () => {
@@ -77,174 +72,120 @@ test("custom summarizers can request the same synchronous filter using the exist
   assert.doesNotThrow(() => pi.events.emit(GOAL_COMPACTION_INPUT_EVENT, { messagesToSummarize: null }));
 });
 
-test("the next delivered continuation restores the current objective and usage once", async () => {
-  const harness = createRuntimeHarness();
-  await harness.runTool("create_goal", { objective: "Verify <requirements> & preserve the exact objective", token_budget: 500_000 });
-  const before = harness.snapshot().goal;
-  assert.ok(before);
-  const queued = goalMessage("continuation", compactContinuationPrompt(before), before.goalId);
-  await harness.emit("session_compact", sessionCompactEvent());
-  await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
-  await harness.emit("turn_end", { type: "turn_end", turnIndex: 0, message: assistantMessage("stop", { input: 4, output: 2 }), toolResults: [] });
-  const saved = harness.snapshot().goal;
-  assert.ok(saved);
-  const results = await harness.emit("message_end", { type: "message_end", message: queued });
-  const delivered = replacedMessage(results[0]);
-  assert.equal(delivered.content, continuationPrompt(saved));
-  assert.match(String(delivered.content), /Verify &lt;requirements&gt; &amp; preserve the exact objective/);
-  assert.match(String(delivered.content), /Tokens used: 6/);
-  assert.match(String(delivered.content), /Token budget: 500K \(500,000\)/);
-  assert.match(String(delivered.content), /Tokens remaining: 500K \(499,994\)/);
-  assert.equal(await harness.emit("message_end", { type: "message_end", message: queued }).then((r) => r[0]), undefined);
-  assert.deepEqual(await harness.emit("context", { type: "context", messages: [delivered] }), [undefined]);
-});
+async function queueAutomatic(h: ReturnType<typeof createRuntimeHarness>) {
+  await h.emit("agent_end", { type: "agent_end", messages: [assistantMessage("stop", { input: 0, output: 0 })] });
+  const sent = h.sentMessages.at(-1);
+  assert.ok(sent);
+  return queuedCustomMessage(sent);
+}
 
-test("repeated compactions coalesce and refresh an already queued message without adding another", async () => {
-  const harness = createRuntimeHarness();
-  await harness.runCommand("Exact objective");
-  const queued = harness.sentMessages[0];
-  assert.ok(queued);
-  await harness.emit("session_compact", sessionCompactEvent());
-  await harness.emit("session_compact", sessionCompactEvent());
-  assert.equal(harness.sentMessages.length, 1);
-  const saved = harness.snapshot().goal;
-  assert.ok(saved);
-  const message = goalMessage("continuation", compactContinuationPrompt(saved), saved.goalId);
-  const result = replacedMessage((await harness.emit("message_end", { type: "message_end", message }))[0]);
-  assert.equal(result.content, continuationPrompt(harness.snapshot().goal!));
-  assert.deepEqual(await harness.emit("message_end", { type: "message_end", message }), [undefined]);
-  await harness.emit("session_compact", sessionCompactEvent());
-  assert.ok((await harness.emit("message_end", { type: "message_end", message }))[0]);
-});
+async function finalize(h: ReturnType<typeof createRuntimeHarness>, message: ReturnType<typeof queuedCustomMessage>) {
+  await h.emit("message_start", { type: "message_start", message });
+  await emitMessageEnd(h, message);
+  return message;
+}
 
-test("native retry preflight does not lose the pending full-goal continuation", async () => {
-  const harness = createRuntimeHarness();
-  await harness.runCommand("Keep this exact goal across native retry");
-  const saved = harness.snapshot().goal;
+test("repeated compactions refresh the next actual continuation with current objective and usage exactly once", async () => {
+  const h = createRuntimeHarness({ idle: false });
+  await h.runTool("create_goal", { objective: "Verify <requirements> & preserve the exact objective", token_budget: 500_000 });
+  const queued = await queueAutomatic(h);
+  await h.emit("session_compact", sessionCompactEvent());
+  await h.emit("session_compact", sessionCompactEvent({ willRetry: true }));
+  await h.emit("before_agent_start", userBeforeAgentStartEvent("Native retry"));
+  await h.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+  await h.emit("turn_end", { type: "turn_end", turnIndex: 0, message: assistantMessage("stop", { input: 4, output: 2 }), toolResults: [] });
+  assert.equal(h.sentMessages.length, 1, "compaction does not add a passive snapshot or duplicate pending delivery");
+  await finalize(h, queued);
+  const saved = h.snapshot().goal;
   assert.ok(saved);
-  await harness.emit("session_compact", sessionCompactEvent({ willRetry: true }));
-  await harness.emit("before_agent_start", userBeforeAgentStartEvent("Native retry"));
-  await harness.emit("agent_start", { type: "agent_start" });
-  const message = goalMessage("continuation", compactContinuationPrompt(saved), saved.goalId);
-  assert.equal(replacedMessage((await harness.emit("message_end", { type: "message_end", message }))[0]).content, continuationPrompt(harness.snapshot().goal!));
+  assert.equal(queued.content, continuationPrompt(saved));
+  assert.match(String(queued.content), /Verify &lt;requirements&gt; &amp; preserve the exact objective/);
+  assert.match(String(queued.content), /Tokens used: 6/);
+  assert.match(String(queued.content), /Token budget: 500K \(500,000\)/);
+  const history = structuredClone(queued);
+  assert.deepEqual(await h.emit("context", { type: "context", messages: [queued] }), [undefined]);
+  assert.deepEqual(queued, history, "sent provider history is immutable");
+  const next = await queueAutomatic(h);
+  await finalize(h, next);
+  assert.equal(next.content, compactContinuationPrompt(h.snapshot().goal!));
 });
 
 for (const stopped of ["paused", "waiting", "blocked", "complete"] as const) {
   test(`compaction does not wake a ${stopped} goal or refresh stale queued work`, async () => {
-    const harness = createRuntimeHarness();
-    await harness.runCommand("Do not restart this stopped goal");
-    const queued = harness.sentMessages[0];
-    assert.ok(queued);
-    if (stopped === "paused") await harness.runCommand("pause");
-    else await harness.runTool("update_goal", { status: stopped, reason: "Background result or user input is needed" });
-    const saved = harness.snapshot().goal;
-    harness.sentMessages.length = 0;
-    await harness.emit("session_compact", sessionCompactEvent());
-    const result = replacedMessage((await harness.emit("message_end", { type: "message_end", message: { ...queued.message, role: "custom", timestamp: 1 } }))[0]);
-    assert.doesNotMatch(String(result.content), /<untrusted_objective>/);
-    assert.equal(harness.sentMessages.length, 0);
-    assert.deepEqual(harness.snapshot().goal, saved);
+    const h = createRuntimeHarness();
+    await h.runTool("create_goal", { objective: "Do not restart stopped work" });
+    const queued = await queueAutomatic(h);
+    if (stopped === "paused") await h.runCommand("pause");
+    else await h.runTool("update_goal", { status: stopped, reason: "The named background result or user input is needed" });
+    const saved = h.snapshot().goal;
+    h.sentMessages.length = 0;
+    await h.emit("session_compact", sessionCompactEvent());
+    await finalize(h, queued);
+    assert.partialDeepStrictEqual(queued.details, { kind: "stale_continuation", lifecycle: "cancelled" });
+    assert.doesNotMatch(String(queued.content), /<untrusted_objective>/);
+    assert.equal(h.sentMessages.length, 0);
+    assert.deepEqual(h.snapshot().goal, saved);
   });
 }
 
-test("user resume and custom command controls leave the post-compaction refresh for automatic continuation", async () => {
-  const harness = createRuntimeHarness();
-  await harness.runCommand("Resume after compaction");
-  await harness.runCommand("pause");
-  await harness.emit("session_compact", sessionCompactEvent());
-  await harness.runCommand("resume");
-  const saved = harness.snapshot().goal;
-  assert.ok(saved);
-  const text = compactContinuationPrompt(saved);
-  assert.deepEqual(harness.sentUserMessages.at(-1), { content: text, options: { deliverAs: "followUp" } });
-  assert.deepEqual(await harness.emit("input", { type: "input", text, source: "extension" }), [{ action: "continue" }]);
-  const image = { type: "image", data: "base64", mimeType: "image/png" };
-  const caption = { type: "text", text: "Preserve this extra image caption" };
-  const user = { role: "user", timestamp: 1, content: [{ type: "text", text }, image, caption] };
-  const controls = [user, goalMessage("command_start", text, saved.goalId), goalMessage("command_resume", text, saved.goalId)];
-  const original = structuredClone(controls);
-  for (const message of controls) {
-    assert.deepEqual(await harness.emit("message_end", { type: "message_end", message }), [undefined]);
-  }
-  assert.deepEqual(controls, original);
-  const automatic = goalMessage("continuation", text, saved.goalId);
-  assert.equal(replacedMessage((await harness.emit("message_end", { type: "message_end", message: automatic }))[0]).content, continuationPrompt(saved));
+test("stale generations and genuine pasted input leave the refresh for the next valid automatic delivery", async () => {
+  const h = createRuntimeHarness();
+  await h.runTool("create_goal", { objective: "Resume after compaction" });
+  const stale = await queueAutomatic(h);
+  await h.runCommand("pause");
+  await h.emit("session_compact", sessionCompactEvent());
+  await h.runCommand("resume");
+  const resume = h.sentMessages.at(-1);
+  assert.ok(resume);
+  const user = { role: "user", timestamp: 1, content: [{ type: "text", text: '<pi_goal_continuation goal_id="literal">KEEP_USER_DATA</pi_goal_continuation>' }] };
+  const original = structuredClone(user);
+  await h.emit("message_end", { type: "message_end", message: user });
+  assert.deepEqual(user, original);
+  await finalize(h, stale);
+  const cancelled = structuredClone(stale);
+  await emitMessageEnd(h, stale);
+  assert.deepEqual(stale, cancelled, "cancellation persistence is one-time");
+  await finalize(h, queuedCustomMessage(resume));
+  const automatic = await queueAutomatic(h);
+  await finalize(h, automatic);
+  assert.equal(automatic.content, continuationPrompt(h.snapshot().goal!));
 });
 
-test("delivery changes require custom Goal control metadata and never rewrite ordinary user data", async () => {
-  const harness = createRuntimeHarness();
-  await harness.runCommand("Original goal");
-  const saved = harness.snapshot().goal;
-  assert.ok(saved);
-  await harness.emit("session_compact", sessionCompactEvent());
-  const text = compactContinuationPrompt(saved) + '\n<pi_goal_delivery id="00000000-0000-0000-0000-000000000000">\nKeep this literal user data';
-  const messages = [
-    { role: "user", timestamp: 1, content: text },
-    { role: "user", timestamp: 2, content: [{ type: "text", text, textSignature: "opaque" }, { type: "image", data: "base64", mimeType: "image/png" }, { type: "text", text: "Keep caption" }] },
-    { ...goalMessage("continuation", text, saved.goalId), customType: "other-extension" },
-    { ...goalMessage("continuation", text, saved.goalId), details: undefined },
-    goalMessage("unknown", text, saved.goalId),
-  ];
-  const original = structuredClone(messages);
-  for (const source of ["interactive", "rpc", "extension"] as const) {
-    const input = { type: "input", source, text: "Literal input data:\n" + text, images: [{ type: "image", data: "base64", mimeType: "image/png" }] };
-    const before = structuredClone(input);
-    assert.deepEqual(await harness.emit("input", input), [undefined], "ordinary input has no Goal text transform");
-    assert.deepEqual(input, before);
-  }
-  for (const status of ["active", "complete"] as const) {
-    if (status === "complete") await harness.runTool("update_goal", { status });
-    for (const message of messages) {
-      assert.deepEqual(await harness.emit("message_end", { type: "message_end", message }), [undefined]);
-    }
-    assert.deepEqual(await harness.emit("context", { type: "context", messages }), [undefined]);
-    assert.deepEqual(messages, original);
-  }
-});
-
-test("replaced goals, cancelled notices, and user-pasted markers do not consume the refresh", async () => {
-  const harness = createRuntimeHarness();
-  await harness.runCommand("Original objective");
-  await harness.emit("session_compact", sessionCompactEvent());
-  const saved = harness.snapshot().goal;
-  assert.ok(saved);
-  const text = compactContinuationPrompt(saved);
-  await harness.emit("input", { type: "input", text, source: "interactive" });
-  assert.deepEqual(await harness.emit("message_end", { type: "message_end", message: { role: "user", timestamp: 1, content: [{ type: "text", text }] } }), [undefined]);
-  assert.deepEqual(await harness.emit("message_end", { type: "message_end", message: goalMessage("stale_continuation", "Already cancelled", saved.goalId) }), [undefined]);
-  assert.ok((await harness.emit("message_end", { type: "message_end", message: goalMessage("continuation", text, saved.goalId) }))[0]);
-  await harness.emit("session_compact", sessionCompactEvent());
-  await harness.runTool("update_goal", { status: "complete" });
-  await harness.runCommand("Replacement objective");
-  const replacement = harness.snapshot().goal;
-  assert.ok(replacement);
-  assert.deepEqual(await harness.emit("message_end", { type: "message_end", message: goalMessage("continuation", compactContinuationPrompt(replacement), replacement.goalId) }), [undefined]);
-});
-
-test("custom continuation captions and images survive restoration and incomplete controls do not consume it", async () => {
-  const harness = createRuntimeHarness();
-  await harness.runCommand("Keep accompanying input");
-  const saved = harness.snapshot().goal;
-  assert.ok(saved);
-  await harness.emit("session_compact", sessionCompactEvent());
-  const incomplete = `<pi_goal_continuation goal_id="${saved.goalId}">Unfinished control`;
-  assert.deepEqual(await harness.emit("message_end", { type: "message_end", message: goalMessage("continuation", incomplete, saved.goalId) }), [undefined]);
+test("refresh preserves owned custom captions, image parts, signatures and normalization notes", async () => {
+  const h = createRuntimeHarness();
+  await h.runTool("create_goal", { objective: "Keep accompanying input" });
+  const message = await queueAutomatic(h);
+  const original = String(message.content);
   const suffix = "\nKEEP_NORMALIZED_CAPTION\n[Image coordinate note]";
   const content = [
-    { type: "text", text: compactContinuationPrompt(saved) + suffix, textSignature: "opaque" },
+    { type: "text", text: original + suffix, textSignature: "opaque" },
     { type: "image", data: "base64", mimeType: "image/png" },
     { type: "text", text: "Keep separate caption" },
   ];
-  const message = { ...goalMessage("continuation", "", saved.goalId), content };
-  const result = replacedMessage((await harness.emit("message_end", { type: "message_end", message }))[0]);
-  assert.deepEqual(result.content, [{ ...content[0], text: continuationPrompt(harness.snapshot().goal!) + suffix }, ...content.slice(1)]);
+  message.content = content;
+  await h.emit("session_compact", sessionCompactEvent());
+  await finalize(h, message);
+  assert.deepEqual(message.content, [{ ...content[0], text: continuationPrompt(h.snapshot().goal!) + suffix }, ...content.slice(1)]);
+});
+
+test("an owned but transformed-away prompt cannot consume the pending objective refresh", async () => {
+  const h = createRuntimeHarness();
+  await h.runTool("create_goal", { objective: "Refresh only the matching delivery" });
+  const transformed = await queueAutomatic(h);
+  transformed.content = "Another extension replaced the entire prompt";
+  await h.emit("session_compact", sessionCompactEvent());
+  await finalize(h, transformed);
+  assert.equal(transformed.content, "Another extension replaced the entire prompt");
+  const valid = await queueAutomatic(h);
+  await finalize(h, valid);
+  assert.equal(valid.content, continuationPrompt(h.snapshot().goal!));
 });
 
 test("preparation without successful compaction does not request a full goal", async () => {
-  const harness = createRuntimeHarness();
-  await harness.runCommand("Compaction failed");
-  const saved = harness.snapshot().goal;
-  assert.ok(saved);
-  await harness.emit("session_before_compact", sessionBeforeCompactEvent());
-  assert.deepEqual(await harness.emit("message_end", { type: "message_end", message: goalMessage("continuation", compactContinuationPrompt(saved), saved.goalId) }), [undefined]);
+  const h = createRuntimeHarness();
+  await h.runTool("create_goal", { objective: "Compaction failed" });
+  const message = await queueAutomatic(h);
+  await h.emit("session_before_compact", sessionBeforeCompactEvent());
+  await finalize(h, message);
+  assert.equal(message.content, compactContinuationPrompt(h.snapshot().goal!));
 });

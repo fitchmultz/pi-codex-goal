@@ -187,7 +187,7 @@ test("zero-output length overflow suppresses continuation and shows overflow rec
   );
 });
 
-test("host overflow compaction falls back to goal continuation when host retry never starts", async () => {
+test("host overflow without a native retry pauses instead of manufacturing recovery", async () => {
   mock.timers.enable({ apis: ["setTimeout"] });
   try {
     const harness = createRuntimeHarness();
@@ -207,12 +207,9 @@ test("host overflow compaction falls back to goal continuation when host retry n
     flushContinuationScheduler();
 
     const goal = harness.snapshot().goal;
-    assert.equal(goal?.status, "active");
-    assert.equal(harness.sentMessages.length, 1);
-    assert.deepEqual(harness.sentMessages[0]?.message.details, {
-      kind: "continuation",
-      goalId: goal?.goalId,
-    });
+    assert.equal(goal?.status, "paused");
+    assert.equal(harness.sentMessages.length, 0);
+    assert.match(harness.footerStatuses.at(-1) ?? "", /genuine user message/);
   } finally {
     mock.timers.reset();
   }
