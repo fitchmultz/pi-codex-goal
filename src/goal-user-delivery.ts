@@ -8,9 +8,11 @@ type Message = MessageEndEvent["message"];
 // Input transforms have text/images, but no metadata or queue-discard callback on Pi 1.0.
 // Carry ownership in the delivery itself, not a text lookup or a parallel pending queue.
 // Only extension-source Goal controls receive this transport header. Re-entering queued
-// text through input removes its old header before the NEW source decides ownership.
-const DELIVERY_HEADER = /^<pi_goal_delivery id="[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}">\n/;
-const finalizedGoalIds = new WeakMap<object, string>();
+// text through input removes its old headers before the NEW source decides ownership.
+const DELIVERY_HEADER_LINE = /<pi_goal_delivery id="[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}">/;
+const DELIVERY_HEADER = new RegExp(`^${DELIVERY_HEADER_LINE.source}\\n`);
+const REENTRY_DELIVERY_HEADERS = new RegExp(`^${DELIVERY_HEADER_LINE.source}(?:\\n|$)`, "gm");
+const deliveryGoalIds = new WeakMap<object, string>();
 
 function unpack(text: string): { text: string; tagged: boolean } {
   const header = DELIVERY_HEADER.exec(text);
@@ -18,7 +20,9 @@ function unpack(text: string): { text: string; tagged: boolean } {
 }
 
 export function prepareGoalUserInput(event: InputEvent): { text: string; goalId: string | null } {
-  const { text } = unpack(event.text);
+  // Pi restores multiple queued messages into one editor value. Headers can now
+  // be in the middle; removing them is cleanup, not evidence of ownership.
+  const text = event.text.replace(REENTRY_DELIVERY_HEADERS, "");
   const goalId = event.source === "extension" ? continuationGoalIdFromPrompt(text) : null;
   return { text: goalId === null ? text : `<pi_goal_delivery id="${randomUUID()}">\n${text}`, goalId };
 }
@@ -28,14 +32,24 @@ export function goalIdFromDeliveryPrompt(text: string): string | null {
   return delivery.tagged ? continuationGoalIdFromPrompt(delivery.text) : null;
 }
 
+/** Bind the native delivery before chained message_end handlers can pass copies. */
+export function noteGoalUserDeliveryStarted(message: Message): void {
+  if (message.role !== "user") return;
+  const text = typeof message.content === "string" ? message.content
+    : message.content.find((part) => part.type === "text")?.text;
+  const goalId = text === undefined ? null : goalIdFromDeliveryPrompt(text);
+  if (goalId !== null) deliveryGoalIds.set(message, goalId);
+}
+
 export function finalizedGoalUserMessageId(message: object): string | null {
-  return finalizedGoalIds.get(message) ?? null;
+  return deliveryGoalIds.get(message) ?? null;
 }
 
 /**
  * Strip transport data before Pi persists/sends the finalized USER message. The callback
  * changes only Goal's control envelope; normalization's captions, images and notes survive.
- * Pi's finalized lifecycle retains the delivered message object (including at agent_end).
+ * Pi retains the original message_start object at agent_end and in persistence, even if
+ * an earlier message_end handler gives us a copy. Its ownership was bound at message_start.
  * Keep that identity out of serialized content. Discarded inputs need no cleanup: no pending
  * record exists, and finalized records are weakly held for the message's own lifetime.
  */
@@ -57,8 +71,8 @@ export function finalizeGoalUserDelivery(
   const clean = { ...message, content };
   const result = (goalId === null ? undefined : rewrite(clean, goalId)) ?? { message: clean };
   if (goalId !== null) {
-    finalizedGoalIds.set(message, goalId);
-    if (result.message) finalizedGoalIds.set(result.message, goalId);
+    deliveryGoalIds.set(message, goalId);
+    if (result.message) deliveryGoalIds.set(result.message, goalId);
   }
   return result;
 }

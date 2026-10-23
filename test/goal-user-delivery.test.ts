@@ -24,6 +24,20 @@ test("ownership belongs to each extension delivery, never to identical genuine t
   assert.deepEqual(input("An external extension result", "extension"), { text: "An external extension result", goalId: null });
 });
 
+test("re-entry removes all exact transport-header lines, but only a leading header proves delivery ownership", () => {
+  const first = input(control, "extension"), second = input(control, "extension");
+  const header = first.text.split("\n")[0]!;
+  const combined = ["Genuine input", first.text, second.text, "Keep caption", header].join("\n\n");
+  const expected = ["Genuine input", control, control, "Keep caption", ""].join("\n\n");
+  for (const source of ["interactive", "rpc", "extension"] as const) {
+    assert.deepEqual(input(combined, source), { text: expected, goalId: null });
+  }
+  assert.equal(goalIdFromDeliveryPrompt(combined), null);
+  assert.equal(goalIdFromDeliveryPrompt(first.text), "goal");
+  const lookalikes = [`quoted ${header}`, `${header} is not a header line`, header.replace('id="', 'id="invalid-')].join("\n");
+  assert.deepEqual(input(lookalikes, "interactive"), { text: lookalikes, goalId: null });
+});
+
 test("finalization owns marker removal and retains identity only for the actual finalized message", () => {
   const prepared = input(control, "extension");
   const suffix = "\nCaption\n\n[Image: original 3000x8, displayed at 2000x5]";

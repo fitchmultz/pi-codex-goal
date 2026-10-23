@@ -7,7 +7,7 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 
 import { continuationPromptEnd } from "./prompts.ts";
-import { finalizeGoalUserDelivery, goalIdFromDeliveryPrompt, prepareGoalUserInput } from "./goal-user-delivery.ts";
+import { finalizeGoalUserDelivery, goalIdFromDeliveryPrompt, noteGoalUserDeliveryStarted, prepareGoalUserInput } from "./goal-user-delivery.ts";
 import { CUSTOM_ENTRY_TYPE } from "./types.ts";
 import { cancelQueuedGoalWork } from "./queued-goal-work.ts";
 import {
@@ -108,6 +108,7 @@ export function createInputContextEventHandlers(
 
     onMessageStart: (async (event, ctx) => {
       if (event.message.role === "user") {
+        noteGoalUserDeliveryStarted(event.message);
         stateController.persistHostOverflowUserReset(false);
       }
 

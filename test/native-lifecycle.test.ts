@@ -4,8 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 import { crc32, deflateSync } from "node:zlib";
-import { createAssistantMessageEventStream, fauxProvider, fauxAssistantMessage, fauxToolCall, InMemoryCredentialStore } from "@earendil-works/pi-ai";
-import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager, type ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import { createAssistantMessageEventStream, fauxProvider, fauxAssistantMessage, fauxToolCall, InMemoryCredentialStore, type UserMessage } from "@earendil-works/pi-ai";
+import { AgentSessionRuntime, createAgentSession, DefaultResourceLoader, InteractiveMode, ModelRuntime, SessionManager, SettingsManager, type ExtensionFactory } from "@earendil-works/pi-coding-agent";
+import type { Terminal } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import goalExtension from "../src/index.ts";
 import { compactContinuationPrompt, escapeXmlText } from "../src/prompts.ts";
@@ -42,7 +43,7 @@ async function fixture(t: TestContext, recover = false, extraFactories: Extensio
   const create = runner.getToolDefinition("create_goal"); assert.ok(create);
   await create.execute("create", { objective: "Verify native lifecycle" }, undefined, undefined, runner.createToolContext("create", undefined));
   const goal = () => reconstructGoal(session.sessionManager.getBranch()).goal;
-  return { session, faux, goal };
+  return { session, faux, goal, agentDir };
 }
 
 const complete = () => fauxAssistantMessage(fauxToolCall("update_goal", { status: "complete" }), { stopReason: "toolUse" });
@@ -603,6 +604,122 @@ test(`native ${discard} discards ownership with its delivery, not a later identi
   const entries = JSON.stringify(h.session.sessionManager.getEntries());
   assert.doesNotMatch(entries, /pi_goal_delivery|queued hidden goal continuation was stale/);
   assert.equal(h.goal()?.status, "paused");
+});
+}
+
+test("native restored editor input removes every joined delivery header without acquiring ownership", async (t) => {
+  const h = await fixture(t);
+  const runtime = new AgentSessionRuntime(h.session, {
+    cwd: h.session.sessionManager.getCwd(), agentDir: h.agentDir,
+    settingsManager: h.session.settingsManager, modelRuntime: h.session.modelRuntime,
+    resourceLoader: h.session.resourceLoader, diagnostics: [],
+  }, async () => { throw new Error("This test must not replace the session"); });
+  const terminal: Terminal = {
+    start() { assert.fail("This test must not start terminal IO"); }, stop() {},
+    async drainInput() {}, write() {}, columns: 100, rows: 30, kittyProtocolActive: false,
+    moveBy() {}, hideCursor() {}, showCursor() {}, clearLine() {}, clearFromCursor() {},
+    clearScreen() {}, setTitle() {}, setProgress() {},
+  };
+  // Construct the real editor/queue owner, but do not start its CLI loop, IO or
+  // startup checks. Invoke the native restore method; never recreate its join logic.
+  const mode = new InteractiveMode(runtime, { terminal, tuiMode: "regular" });
+  const editor: unknown = Reflect.get(mode, "editor");
+  const restoreToEditor: unknown = Reflect.get(mode, "restoreQueuedMessagesToEditor");
+  assert.ok(editor && typeof editor === "object" &&
+    "getText" in editor && typeof editor.getText === "function" &&
+    "setText" in editor && typeof editor.setText === "function");
+  assert.ok(typeof restoreToEditor === "function");
+  let started!: () => void, release = () => {};
+  const firstStarted = new Promise<void>((resolve) => { started = resolve; });
+  const delivered: string[] = [], providerContexts: string[] = [];
+  h.session.agent.streamFunction = (model, context) => {
+    providerContexts.push(JSON.stringify(context.messages));
+    const user = context.messages.findLast((message) => message.role === "user");
+    assert.ok(user?.role === "user");
+    delivered.push(typeof user.content === "string" ? user.content : user.content.filter((part) => part.type === "text").map((part) => part.text).join("\n"));
+    const message = { ...fauxAssistantMessage("Ordinary input answered."), api: model.api, provider: model.provider, model: model.id, timestamp: Date.now() };
+    const stream = createAssistantMessageEventStream();
+    const done = () => { stream.push({ type: "done", reason: "stop", message }); stream.end(); };
+    if (delivered.length === 1) { release = () => { release = () => {}; done(); }; started(); }
+    else queueMicrotask(done);
+    return stream;
+  };
+  const run = h.session.prompt("Initial ordinary input.");
+  await firstStarted;
+  try {
+    const saved = h.goal();
+    assert.ok(saved);
+    const genuine = "KEEP_GENUINE_QUEUED_INPUT";
+    const controls = ["KEEP_CAPTION_ONE", "KEEP_CAPTION_TWO"].map((caption) => compactContinuationPrompt(saved) + "\n" + caption);
+    await h.session.followUp(genuine);
+    for (const control of controls) await h.session.sendUserMessage(control, { deliverAs: "followUp" });
+    await h.session.prompt("/goal pause");
+    editor.setText("KEEP_EDITOR_DRAFT");
+    assert.equal(restoreToEditor.call(mode), 3);
+    const restored: unknown = editor.getText();
+    assert.ok(typeof restored === "string");
+    assert.ok(restored.startsWith(genuine + "\n\n<pi_goal_delivery"), "native restore puts an owned header after genuine text");
+    assert.equal(h.session.pendingMessageCount, 0);
+    release();
+    await run;
+    await h.session.waitForIdle();
+    await h.session.prompt(restored);
+    await h.session.waitForIdle();
+    const expected = [genuine, ...controls, "KEEP_EDITOR_DRAFT"].join("\n\n");
+    assert.deepEqual({
+      headerInProvider: /pi_goal_delivery/.test(providerContexts.join("\n")),
+      headerStored: /pi_goal_delivery/.test(JSON.stringify(h.session.sessionManager.getEntries())),
+    }, { headerInProvider: false, headerStored: false });
+    assert.deepEqual(delivered, ["Initial ordinary input.", expected]);
+    const users = h.session.messages.filter((message) => message.role === "user");
+    assert.equal(users.length, 2, "restored input is one new delivery, not the discarded Goal work");
+    assert.equal(agentEndMessagesIncludeQueuedGoalWork(users), false);
+    assert.equal(h.goal()?.status, "paused");
+  } finally {
+    release();
+    await run;
+    mode.stop();
+  }
+});
+
+for (const copyBeforeGoal of [false, true]) {
+test(`native finalized delivery ownership survives ${copyBeforeGoal ? "a preceding shallow-copy handler" : "without a preceding copy"}`, async (t) => {
+  const originals: UserMessage[] = [], terminalOwnership: boolean[] = [];
+  const h = await fixture(t, false, [(pi) => {
+    pi.on("message_start", (event) => { if (event.message.role === "user") originals.push(event.message); });
+    if (copyBeforeGoal) pi.on("message_end", (event) => ({ message: { ...event.message } }));
+    pi.on("agent_end", (event) => {
+      for (const message of event.messages) {
+        if (message.role === "user") terminalOwnership.push(agentEndMessagesIncludeQueuedGoalWork([message]));
+      }
+    });
+  }], true, true);
+  const saved = h.goal();
+  assert.ok(saved);
+  const control = compactContinuationPrompt(saved);
+  const providerContexts: string[] = [];
+  const stream = h.session.agent.streamFunction;
+  assert.ok(stream);
+  h.session.agent.streamFunction = (model, context, options) => {
+    providerContexts.push(JSON.stringify(context.messages));
+    return stream(model, context, options);
+  };
+  h.faux.setResponses([complete(), fauxAssistantMessage("Goal complete."), fauxAssistantMessage("Genuine input answered.")]);
+  await h.session.sendUserMessage(control);
+  await h.session.waitForIdle();
+  await h.session.prompt(control);
+  await h.session.waitForIdle();
+  assert.doesNotMatch(providerContexts.join("\n"), /pi_goal_delivery/);
+  assert.doesNotMatch(JSON.stringify(h.session.sessionManager.getEntries()), /pi_goal_delivery/);
+  assert.deepEqual(terminalOwnership, [true, false], "only the owned delivery stays owned at agent_end");
+  h.session.refreshContext();
+  const users = h.session.messages.filter((message) => message.role === "user");
+  assert.equal(users.length, 2);
+  for (const [index, message] of users.entries()) {
+    assert.equal(message, originals[index], "Pi retains the original delivery object through replacement and refresh");
+    assert.equal(agentEndMessagesIncludeQueuedGoalWork([message]), index === 0);
+    assert.equal(typeof message.content === "string" ? message.content : message.content.filter((part) => part.type === "text").map((part) => part.text).join("\n"), control);
+  }
 });
 }
 
