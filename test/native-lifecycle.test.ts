@@ -10,10 +10,10 @@ import { Type } from "typebox";
 import goalExtension from "../src/index.ts";
 import { compactContinuationPrompt, continuationPrompt, escapeXmlText } from "../src/prompts.ts";
 import { GOAL_COMPACTION_INPUT_EVENT } from "../src/goal-compaction.ts";
-import { reconstructGoal } from "../src/state.ts";
+import { reconstructGoal, reconstructHostOverflowCapNeedsUserReset } from "../src/state.ts";
 import { CUSTOM_ENTRY_TYPE } from "../src/types.ts";
 
-async function fixture(t: TestContext, recover = false, extraFactories: ExtensionFactory[] = [], customCompactor = true, consumerFirst = false) {
+async function fixture(t: TestContext, recover = false, extraFactories: ExtensionFactory[] = [], customCompactor = true, consumerFirst = false, objective = "Verify native lifecycle") {
   const root = mkdtempSync(join(tmpdir(), "goal-native-"));
   const cwd = join(root, "project"), agentDir = join(root, "agent");
   mkdirSync(cwd); mkdirSync(agentDir);
@@ -39,7 +39,7 @@ async function fixture(t: TestContext, recover = false, extraFactories: Extensio
   await session.bindExtensions({ mode: "print", onError(error) { throw new Error(error.error); } });
   const runner = session.extensionRunner;
   const create = runner.getToolDefinition("create_goal"); assert.ok(create);
-  await create.execute("create", { objective: "Verify native lifecycle" }, undefined, undefined, runner.createToolContext("create", undefined));
+  await create.execute("create", { objective }, undefined, undefined, runner.createToolContext("create", undefined));
   const goal = () => reconstructGoal(session.sessionManager.getBranch()).goal;
   return { session, faux, goal };
 }
@@ -253,6 +253,74 @@ test("native exhausted overflow pauses automation and only genuine user input gr
   assert.equal(h.session.sessionManager.getEntries().filter((e) => e.type === "message" && e.message.role === "user").length, 2, "automated commands never become native user input");
 });
 
+for (const route of ["startup", "resume", "tree"] as const) {
+test(`native ${route} restores unfinished overflow recovery as a truthful pause, not an active stall`, async (t) => {
+  let snapshot: SessionManager | undefined;
+  const h = await fixture(t, true, [(pi) => {
+    if (route !== "tree") pi.on("session_compact", (_event, ctx) => {
+      const file = ctx.sessionManager.getSessionFile();
+      assert.ok(file);
+      snapshot = SessionManager.forkFrom(file, ctx.cwd, join(ctx.cwd, "interrupted-recovery"));
+    });
+  }]);
+  h.faux.setResponses([
+    fauxAssistantMessage("", { stopReason: "error", errorMessage: "prompt is too long: 300000 tokens > 100000 maximum" }),
+    fauxAssistantMessage(fauxToolCall("update_goal", { status: "waiting", reason: "Explorer recovery-check will deliver its report" }), { stopReason: "toolUse" }),
+    fauxAssistantMessage("Waiting for explorer recovery-check."),
+  ]);
+  await h.session.prompt("Recover native overflow, then wait for the explorer.");
+  await h.session.waitForIdle();
+  assert.equal(h.goal()?.status, "waiting");
+  const goalId = h.goal()?.goalId;
+  const calls = h.faux.state.callCount;
+  const statuses: string[] = [];
+  let confirms = 0;
+  const ui = {
+    ...h.session.extensionRunner.getUIContext(),
+    setStatus(_key: string, text: string | undefined) { if (text) statuses.push(text); },
+    async confirm() { confirms++; return true; },
+  };
+  let restored = h.session;
+  try {
+    if (route === "tree") {
+      const compact = h.session.sessionManager.getEntries().find((entry) => entry.type === "compaction");
+      assert.ok(compact);
+      const branch = h.session.sessionManager.getBranch(compact.id);
+      assert.equal(reconstructGoal(branch).goal?.status, "active");
+      assert.equal(reconstructHostOverflowCapNeedsUserReset(branch), true);
+      restored.extensionRunner.setUIContext(ui, "tui");
+      const result = await restored.navigateTree(compact.id, { summarize: false });
+      assert.equal(result.cancelled, false);
+    } else {
+      assert.ok(snapshot, "capture native persisted state at compaction, before the retry or any graceful shutdown");
+      assert.equal(reconstructGoal(snapshot.getBranch()).goal?.status, "active");
+      assert.equal(reconstructHostOverflowCapNeedsUserReset(snapshot.getBranch()), true);
+      ({ session: restored } = await createAgentSession({
+        cwd: snapshot.getCwd(), agentDir: join(snapshot.getCwd(), "restored-agent"),
+        resourceLoader: h.session.resourceLoader, modelRuntime: h.session.modelRuntime,
+        model: h.faux.getModel(), settingsManager: h.session.settingsManager,
+        sessionManager: snapshot, noTools: "builtin", sessionStartEvent: { type: "session_start", reason: route },
+      }));
+      await restored.bindExtensions({ mode: "tui", uiContext: ui, onError(error) { throw new Error(error.error); } });
+    }
+    const goal = reconstructGoal(restored.sessionManager.getBranch()).goal;
+    assert.equal(goal?.goalId, goalId);
+    assert.equal(goal?.status, "paused");
+    assert.match(statuses.at(-1) ?? "", /genuine user message.*\/goal resume/);
+    assert.equal(confirms, 0, "a restored recovery pause must not immediately offer automatic resumption");
+    await restored.prompt("/goal resume");
+    assert.equal(reconstructGoal(restored.sessionManager.getBranch()).goal?.status, "paused");
+    assert.equal(h.faux.state.callCount, calls, "restoration and resume cannot impersonate a genuine user reset");
+  } finally {
+    if (restored !== h.session) {
+      await restored.abort();
+      await restored.extensionRunner.emit({ type: "session_shutdown", reason: "quit" });
+      restored.dispose();
+    }
+  }
+});
+}
+
 for (const route of ["direct", "nested"] as const) {
 test(`native ${route} repeated call IDs account the current response once across deferred boundary drafts`, async (t) => {
   let ended = 0;
@@ -337,6 +405,7 @@ test(`native ${route} repeated call IDs account the current response once across
 
 for (const customCompactor of [false, true]) {
 test(`native ${customCompactor ? "custom" : "default"} compaction refreshes only the first normal custom continuation after resume`, async (t) => {
+  const objective = "Preserve $$HOME, $&, $` and $' literally <&>.";
   const deliveries: Array<{ content: unknown; full: string; compact: string }> = [];
   const h = await fixture(t, false, [(pi) => {
     pi.on("message_end", (event, ctx) => {
@@ -346,7 +415,7 @@ test(`native ${customCompactor ? "custom" : "default"} compaction refreshes only
       assert.ok(current);
       deliveries.push({ content: event.message.content, full: continuationPrompt(current), compact: compactContinuationPrompt(current) });
     });
-  }], customCompactor);
+  }], customCompactor, false, objective);
   await h.session.prompt("/goal pause");
   h.faux.setResponses([
     fauxAssistantMessage("Existing verified work."),
@@ -379,6 +448,7 @@ test(`native ${customCompactor ? "custom" : "default"} compaction refreshes only
   assert.equal(deliveries[0]?.content, deliveries[0]?.full, "custom continuation is finalized with the full current goal before its first request");
   assert.equal(deliveries[1]?.content, deliveries[1]?.compact, "later automatic continuations return to the compact prompt");
   assert.ok(String(deliveries[0]?.content).includes(escapeXmlText(saved.objective)));
+  assert.ok(JSON.stringify(requests[1]).includes(escapeXmlText(objective)), "the provider receives the saved replacement-token literals verbatim");
   assert.equal(requests.length, 4, "resume, two continuations, and completion receipt");
   for (let index = 1; index < requests.length; index += 1) {
     const previous = requests[index - 1]!;
@@ -549,6 +619,8 @@ test(`native queue discard exposes only genuine input; automation ${pauseBeforeR
 }
 
 test("native owned refresh preserves normalized image captions and its consumed intent survives reload", async (t) => {
+  const objective = "Preserve $$HOME, $&, $` and $' literally <&>.";
+  const prefix = "KEEP_CONTROL_PREFIX\n", suffix = "\nKEEP_CONTROL_SUFFIX";
   let attached = false;
   let normalized: Array<{ type: string }> = [];
   const h = await fixture(t, false, [(pi) => {
@@ -561,9 +633,9 @@ test("native owned refresh preserves normalized image captions and its consumed 
       normalized = structuredClone(content);
       attached = true;
       assert.equal(typeof event.message.content, "string");
-      return { message: { ...event.message, content: [{ type: "text", text: String(event.message.content) }, ...content] } };
+      return { message: { ...event.message, content: [{ type: "text", text: prefix + String(event.message.content) + suffix }, ...content] } };
     });
-  }], true, true);
+  }], true, true, objective);
   await h.session.prompt("/goal pause");
   h.faux.setResponses([fauxAssistantMessage("Image recorded.")]);
   await h.session.prompt("KEEP_NORMALIZED_OWNED_CAPTION", { images: [oversizedImage()] });
@@ -587,6 +659,10 @@ test("native owned refresh preserves normalized image captions and its consumed 
   assert.match(JSON.stringify(first.content), /KEEP_NORMALIZED_OWNED_CAPTION/);
   assert.match(JSON.stringify(first.content), /Image: original 3000x8, displayed at/);
   assert.match(JSON.stringify(first.content[0]), /untrusted_objective/);
+  const control = first.content[0];
+  assert.ok(control?.type === "text");
+  assert.ok(control.text.startsWith(prefix) && control.text.endsWith(suffix));
+  assert.ok(control.text.includes(escapeXmlText(objective)), "text-block refresh preserves all saved replacement-token literals");
   await h.session.reload();
   h.faux.setResponses([fauxAssistantMessage("Explorer verification integrated; finish the audit."), complete(), fauxAssistantMessage("Goal complete.")]);
   await h.session.sendCustomMessage({ customType: "explorer-beta", content: "Explorer beta verified every requirement.", display: true }, { triggerTurn: true });

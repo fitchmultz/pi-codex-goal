@@ -33,6 +33,14 @@ export function createSessionEventHandlers(deps: GoalRuntimeSessionHandlerContex
     resumeGoalWithContinuation,
   } = deps;
 
+  const pauseRestoredOverflow = (ctx: ExtensionContext): boolean => {
+    if (stateController.getGoal()?.status !== "active" ||
+        runtimeState.recoveryState.phase.kind !== "hostOverflowNeedsUserStart") return false;
+    stateController.pauseForRecovery(ctx,
+      "Restored overflow recovery is paused. Reduce context or switch models, then send a genuine user message before /goal resume.");
+    return true;
+  };
+
   const schedulePostCompactContinuationFallback = (
     ctx: ExtensionContext,
     options: { clearHostOverflowRecovery: boolean },
@@ -72,6 +80,7 @@ export function createSessionEventHandlers(deps: GoalRuntimeSessionHandlerContex
       stateController.reloadFromSession(ctx);
       continuation.restoreCompactionRefresh(ctx.sessionManager.getBranch());
       goalAccounting.beginAccounting();
+      if (pauseRestoredOverflow(ctx)) return;
       const goal = stateController.getGoal();
       const pausedGoal = goal?.status === "paused" ? goal : null;
       if (event.reason === "resume" && pausedGoal && ctx.hasUI) {
@@ -95,6 +104,7 @@ export function createSessionEventHandlers(deps: GoalRuntimeSessionHandlerContex
       stateController.reloadFromSession(ctx);
       continuation.restoreCompactionRefresh(ctx.sessionManager.getBranch());
       goalAccounting.beginAccounting();
+      if (pauseRestoredOverflow(ctx)) return;
       continuation.maybeContinue(ctx);
     }) satisfies ExtensionHandler<SessionTreeEvent>,
 

@@ -86,9 +86,9 @@ export function createInputContextEventHandlers(deps: GoalRuntimeInputContextHan
         const fullPrompt = index < 0 ? null : continuation.fullPromptForDelivery(details.goalId);
         if (fullPrompt !== null) {
           objectiveRefresh = true;
-          content = typeof content === "string" ? content.replace(original, fullPrompt) :
+          content = typeof content === "string" ? content.replace(original, () => fullPrompt) :
             content.map((part, i) => i === index && part.type === "text" ?
-              { ...part, text: part.text.replace(original, fullPrompt) } : part);
+              { ...part, text: part.text.replace(original, () => fullPrompt) } : part);
         }
       }
       return { message: { ...message, content, details: { ...details, lifecycle: "delivered", ...(objectiveRefresh ? { objectiveRefresh: true } : {}) } } };
