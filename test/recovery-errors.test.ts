@@ -187,34 +187,6 @@ test("zero-output length overflow suppresses continuation and shows overflow rec
   );
 });
 
-test("host overflow without a native retry pauses instead of manufacturing recovery", async () => {
-  mock.timers.enable({ apis: ["setTimeout"] });
-  try {
-    const harness = createRuntimeHarness();
-    await harness.runCommand("ship it");
-    harness.sentMessages.length = 0;
-
-    await emitPersistentAssistantError(
-      harness,
-      0,
-      'Codex error: {"error":{"code":"context_length_exceeded"}}',
-    );
-    await emitHostSessionCompact(harness);
-
-    assert.equal(harness.snapshot().goal?.status, "active");
-    assert.equal(harness.sentMessages.length, 0);
-
-    flushContinuationScheduler();
-
-    const goal = harness.snapshot().goal;
-    assert.equal(goal?.status, "paused");
-    assert.equal(harness.sentMessages.length, 0);
-    assert.match(harness.footerStatuses.at(-1) ?? "", /genuine user message/);
-  } finally {
-    mock.timers.reset();
-  }
-});
-
 test("host overflow compaction fallback does not duplicate a host retry turn", async () => {
   mock.timers.enable({ apis: ["setTimeout"] });
   try {

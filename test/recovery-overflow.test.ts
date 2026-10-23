@@ -12,6 +12,7 @@ import {
 import {
   assistantMessage,
   createRuntimeHarness,
+  emitHostSessionCompact,
   emitMessageEnd,
   userBeforeAgentStartEvent,
   emitPersistentAssistantError,
@@ -97,29 +98,38 @@ test("host overflow session compaction does not queue extension continuation bef
   }
 });
 
-test("host overflow without a native retry pauses instead of manufacturing recovery", async () => {
-  mock.timers.enable({ apis: ["setTimeout"] });
-  try {
-    const harness = createRuntimeHarness();
-    await harness.runCommand("ship it");
-    harness.sentMessages.length = 0;
+for (const { label, errorMessage, willRetry } of [
+  { label: "plain, promised retry", errorMessage: "context_length_exceeded", willRetry: true },
+  {
+    label: "Codex-wrapped, no promised retry",
+    errorMessage: 'Codex error: {"error":{"code":"context_length_exceeded"}}',
+    willRetry: false,
+  },
+]) {
+  test(`host overflow without a native retry pauses instead of manufacturing recovery (${label})`, async () => {
+    mock.timers.enable({ apis: ["setTimeout"] });
+    try {
+      const harness = createRuntimeHarness();
+      await harness.runCommand("ship it");
+      harness.sentMessages.length = 0;
 
-    await emitPersistentAssistantError(harness, 0, "context_length_exceeded");
-    await harness.emit("session_compact", sessionCompactEvent({ reason: "overflow", willRetry: true }));
+      await emitPersistentAssistantError(harness, 0, errorMessage);
+      await emitHostSessionCompact(harness, { willRetry });
 
-    assert.equal(harness.snapshot().goal?.status, "active");
-    assert.equal(harness.sentMessages.length, 0);
+      assert.equal(harness.snapshot().goal?.status, "active");
+      assert.equal(harness.sentMessages.length, 0);
 
-    flushContinuationScheduler();
+      flushContinuationScheduler();
 
-    const goal = harness.snapshot().goal;
-    assert.equal(goal?.status, "paused");
-    assert.equal(harness.sentMessages.length, 0);
-    assert.match(harness.footerStatuses.at(-1) ?? "", /genuine user message/);
-  } finally {
-    mock.timers.reset();
-  }
-});
+      const goal = harness.snapshot().goal;
+      assert.equal(goal?.status, "paused");
+      assert.equal(harness.sentMessages.length, 0);
+      assert.match(harness.footerStatuses.at(-1) ?? "", /genuine user message/);
+    } finally {
+      mock.timers.reset();
+    }
+  });
+}
 
 for (const { label, errorMessage } of [
   { label: "generic", errorMessage: assistantMessage("error", { input: 30, output: 12 }, "context_length_exceeded") },
