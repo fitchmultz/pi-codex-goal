@@ -50,6 +50,10 @@ The compatibility workflow uses this qualification tool for both Pi hosts. Quali
 
 Native tests also check recovery user-follow-up start, resume queues/editor restoration without transport text, and host-normalized images/captions. Keep the original public delivery calls and legacy marker/passthrough guards; no new user-text delivery tracking or generalized user provenance is part of this work. The inferred Terminal adapter includes `setProgramStatus` so current and older supported hosts can check it at the same public boundary.
 
+## Delivery-ownership hold
+
+PR #109's ownership acceptance is not satisfied by a green normal test suite. See the [supported-host contract proposal and native reproductions](delivery-ownership-proposal.md) before changing user delivery, queue editing, or overflow recovery. The standalone `scripts/delivery-identity-proof.ts` currently exits 1 on both pinned hosts because genuine leading-marker input with a resized image is aborted as stale work; it is an explicit failing acceptance probe, not part of `npm run check`. The PTY and role probes use offline providers and isolated sessions, never the live installation.
+
 ## Paid compaction smoke
 
 `scripts/compaction-smoke.ts` is an explicit, bounded live check, not part of `npm test`. It requires configured Bedrock models, but no Pi changes. Select an existing installed SDK and its companion graph without replacing the development dependencies:
