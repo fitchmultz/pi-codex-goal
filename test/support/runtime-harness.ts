@@ -9,8 +9,6 @@ import type {
   ExtensionCommandContext,
   ExtensionContext,
   ExtensionToolContext,
-  InputEventResult,
-  InputSource,
   SessionMessageEntry,
 } from "@earendil-works/pi-coding-agent";
 
@@ -585,22 +583,6 @@ export function goalUserContextMessage(text: string, timestamp = 1): QueuedGoalC
     content,
     timestamp,
   };
-}
-
-/** Exercise the public input transform before constructing a queued USER delivery. */
-export async function acceptUserMessage(
-  harness: RuntimeHarness,
-  text: string,
-  source: InputSource,
-  timestamp = 1,
-): Promise<QueuedGoalContextCarrier> {
-  const results = await harness.emit("input", { type: "input", text, source });
-  for (const value of results) {
-    const result = value as InputEventResult | undefined;
-    assert.notEqual(result?.action, "handled", "Expected input to be accepted before delivery");
-    if (result?.action === "transform") text = result.text;
-  }
-  return goalUserContextMessage(text, timestamp);
 }
 
 export async function emitProviderContext(

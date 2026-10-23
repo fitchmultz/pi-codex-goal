@@ -6,8 +6,7 @@ import type {
   InputEventResult,
 } from "@earendil-works/pi-coding-agent";
 
-import { continuationPromptEnd } from "./prompts.ts";
-import { finalizeGoalUserDelivery, goalIdFromDeliveryPrompt, noteGoalUserDeliveryStarted, prepareGoalUserInput } from "./goal-user-delivery.ts";
+import { continuationGoalIdFromPrompt, continuationPromptEnd } from "./prompts.ts";
 import { CUSTOM_ENTRY_TYPE } from "./types.ts";
 import { cancelQueuedGoalWork } from "./queued-goal-work.ts";
 import {
@@ -31,10 +30,8 @@ export function createInputContextEventHandlers(
 
   return {
     onInput: (async (event, ctx) => {
-      const prepared = prepareGoalUserInput(event);
-      const continuationGoalId = prepared.goalId;
-      const transformed = prepared.text === event.text ? undefined
-        : { action: "transform" as const, text: prepared.text };
+      continuation.clearPassthroughContinuationInput();
+      const continuationGoalId = continuationGoalIdFromPrompt(event.text);
 
       if (event.source !== "extension") {
         deps.providerLimitAutoResume.clear();
@@ -44,12 +41,15 @@ export function createInputContextEventHandlers(
           ctx,
           deps,
         );
+        if (continuationGoalId !== null) {
+          continuation.notePassthroughContinuationInput(event.text);
+        }
         status.refreshUi(ctx);
-        return transformed;
+        return undefined;
       }
 
       if (continuationGoalId === null) {
-        return transformed;
+        return undefined;
       }
 
       applyStaleQueuedWorkEffects(
@@ -59,7 +59,7 @@ export function createInputContextEventHandlers(
       );
       if (stateController.isCurrentActiveGoalId(continuationGoalId)) {
         continuation.markContinuationQueued(continuationGoalId);
-        return transformed;
+        return { action: "continue" } as const;
       }
 
       continuation.clearContinuationStateFor(continuationGoalId);
@@ -69,7 +69,8 @@ export function createInputContextEventHandlers(
 
     // Provider context is left exactly as the transcript has it. Prompt caches match the request
     // prefix, so any message rewritten here from current goal state after the provider has seen it
-    // re-caches everything from that message on. Stale queued work is cancelled at delivery instead.
+    // re-caches everything from that message on. Fresh metadata-owned custom controls
+    // can be cancelled at delivery instead; old sent controls stay verbatim.
     onContext: (async (_event, ctx) => {
       const contextAbortPlan = runtimeState.staleQueuedWorkGuard.planContextAbort(
         runtimeState.currentTurnIndex,
@@ -83,7 +84,7 @@ export function createInputContextEventHandlers(
 
     onBeforeAgentStart: (async (event, ctx) => {
       if (!("prompt" in event)) return undefined;
-      const continuationGoalId = goalIdFromDeliveryPrompt(event.prompt);
+      const continuationGoalId = continuation.continuationGoalIdFromRuntimePrompt(event.prompt);
       if (continuationGoalId !== null) {
         continuation.clearContinuationStateFor(continuationGoalId);
         if (!stateController.isCurrentActiveGoalId(continuationGoalId)) {
@@ -108,7 +109,6 @@ export function createInputContextEventHandlers(
 
     onMessageStart: (async (event, ctx) => {
       if (event.message.role === "user") {
-        noteGoalUserDeliveryStarted(event.message);
         stateController.persistHostOverflowUserReset(false);
       }
 
@@ -146,47 +146,31 @@ export function createInputContextEventHandlers(
     }) satisfies ExtensionHandler<MessageStartEvent>,
 
     onMessageEnd: (async (event, _ctx): Promise<MessageEndEventResult | undefined> => {
-      const rewrite = (message: MessageEndEvent["message"], queuedGoalId: string): MessageEndEventResult | undefined => {
-        if (stateController.isCurrentActiveGoalId(queuedGoalId)) {
-          // Only a newly delivered, runnable Goal message can be refreshed. Never
-          // rewrite answered history, user-pasted markers, or cancelled notices.
-          if ((message.role === "user" || message.role === "custom") &&
-              (message.role !== "custom" || isActiveGoalQueuedDetails(message.details))) {
-            const original = typeof message.content === "string"
-              ? message.content : message.content.find((part) => part.type === "text")?.text;
-            const end = original === undefined ? null : continuationPromptEnd(original);
-            const prompt = end === null ? null : continuation.fullPromptForDelivery(queuedGoalId);
-            if (prompt !== null && original !== undefined && end !== null) {
-              // Pi can merge captions and append resize notes into this text block.
-              // Replace only the control envelope, not the accompanying input.
-              const text = prompt + original.slice(end);
-              if (typeof message.content === "string") {
-                if (message.role === "custom") return { message: { ...message, content: text } };
-                return { message: { ...message, content: [{ type: "text", text }] } };
-              }
-              const firstText = message.content.findIndex((part) => part.type === "text");
-              const content = message.content.map((part, index) => index === firstText ? { type: "text" as const, text } : part);
-              return { message: { ...message, content } };
-            }
-          }
-          return undefined;
-        }
-
+      const { message } = event;
+      // Delivery-time changes require Goal metadata. User messages keep the
+      // existing marker guard and native input lifecycle, with no new delivery tracking.
+      if (message.role !== "custom" || message.customType !== CUSTOM_ENTRY_TYPE ||
+          !isActiveGoalQueuedDetails(message.details)) return undefined;
+      const queuedGoalId = message.details.goalId;
+      if (!stateController.isCurrentActiveGoalId(queuedGoalId)) {
         const cancellation = cancelQueuedGoalWork(message, queuedGoalId, stateController.getGoal());
-        if (cancellation === null) {
-          return undefined;
-        }
-        if (message.role === "custom") {
-          return { message: { ...message, content: cancellation.text, display: false, details: cancellation.details } };
-        }
-        if (message.role === "user") {
-          return { message: { ...message, content: [{ type: "text", text: cancellation.text }] } };
-        }
-        return undefined;
-      };
-      if (event.message.role === "user") return finalizeGoalUserDelivery(event.message, rewrite);
-      const queuedGoalId = queuedGoalWorkMessageIdForRuntime(event.message);
-      return queuedGoalId === null ? undefined : rewrite(event.message, queuedGoalId);
+        if (cancellation === null) return undefined;
+        return { message: { ...message, content: cancellation.text, display: false, details: cancellation.details } };
+      }
+
+      // Only the first normal automatic continuation after compaction gets the
+      // full saved goal. Command start/resume and historical context do not.
+      if (message.details.kind !== "continuation") return undefined;
+      const original = typeof message.content === "string"
+        ? message.content : message.content.find((part) => part.type === "text")?.text;
+      const end = original === undefined ? null : continuationPromptEnd(original);
+      const prompt = end === null ? null : continuation.fullPromptForDelivery(queuedGoalId);
+      if (prompt === null || original === undefined || end === null) return undefined;
+      const text = prompt + original.slice(end);
+      if (typeof message.content === "string") return { message: { ...message, content: text } };
+      const firstText = message.content.findIndex((part) => part.type === "text");
+      const content = message.content.map((part, index) => index === firstText ? { ...part, text } : part);
+      return { message: { ...message, content } };
     }) satisfies ExtensionHandler<MessageEndEvent, MessageEndEventResult | undefined>,
   };
 }

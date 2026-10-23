@@ -1,5 +1,4 @@
 import { continuationGoalIdFromPrompt } from "./prompts.ts";
-import { finalizedGoalUserMessageId, goalIdFromDeliveryPrompt } from "./goal-user-delivery.ts";
 import {
   isActiveGoalQueuedDetails,
   type QueuedGoalContextInput,
@@ -20,8 +19,9 @@ export interface QueuedGoalWorkCancellation {
 }
 
 const CANCELLED_WORK_FIRST_LINE = "A queued hidden goal continuation was stale and has been cancelled before running.";
-const CANCELLED_WORK_GOAL_ID = /^Queued goal id: (.+)\.$/m;
 
+// Cancellation replaces the custom control text, but its goal id still lets
+// the guard settle the native terminal obligation for that delivery.
 function cancelledQueuedGoalWorkGoalId(details: unknown): string | null {
   if (details === null || typeof details !== "object") {
     return null;
@@ -48,15 +48,6 @@ function continuationGoalIdFromMessageContent(content: unknown): string | null {
   return text === null ? null : continuationGoalIdFromPrompt(text);
 }
 
-/** Goal id of a user message that was cancelled at delivery, which has no details to carry it. */
-function cancelledGoalIdFromMessageContent(content: unknown): string | null {
-  const text = textContentFromMessageContent(content);
-  if (text === null || !text.startsWith(CANCELLED_WORK_FIRST_LINE)) {
-    return null;
-  }
-  return CANCELLED_WORK_GOAL_ID.exec(text)?.[1] ?? null;
-}
-
 function staleGoalContinuationMessage(queuedGoalId: string, currentGoal: ThreadGoal | null): string {
   const currentState = currentGoal
     ? `Current goal id: ${currentGoal.goalId}; current status: ${currentGoal.status}.`
@@ -74,6 +65,11 @@ function extensionQueuedGoalWorkMessageId(message: QueuedGoalContextInput): stri
     return null;
   }
 
+  if (message.details !== null && typeof message.details === "object" &&
+      (message.details as { kind?: unknown }).kind === "superseded_continuation") {
+    return null;
+  }
+
   if (isActiveGoalQueuedDetails(message.details)) {
     return message.details.goalId;
   }
@@ -83,15 +79,15 @@ function extensionQueuedGoalWorkMessageId(message: QueuedGoalContextInput): stri
 
 function queuedGoalWorkMessageId(message: QueuedGoalContextInput): string | null {
   if (message.role === "user") {
-    return finalizedGoalUserMessageId(message);
+    return continuationGoalIdFromMessageContent(message.content);
   }
 
   return extensionQueuedGoalWorkMessageId(message);
 }
 
 /**
- * Text and details that replace queued goal work delivered after its goal stopped being active, or
- * null when the message is already cancelled.
+ * Text and details that replace fresh metadata-owned custom Goal controls
+ * delivered after their goal stopped being active. User deliveries are not rewritten.
  *
  * Pi persists a `message_end` replacement in place of the delivered message, so the transcript
  * records the cancellation once and every later provider request resends it unchanged. Deciding
@@ -102,11 +98,8 @@ export function cancelQueuedGoalWork(
   queuedGoalId: string,
   currentGoal: ThreadGoal | null,
 ): QueuedGoalWorkCancellation | null {
-  const alreadyCancelled =
-    message.role === "custom"
-      ? cancelledQueuedGoalWorkGoalId(message.details) !== null
-      : cancelledGoalIdFromMessageContent(message.content) !== null;
-  if (alreadyCancelled) {
+  if (message.role !== "custom" || message.customType !== CUSTOM_ENTRY_TYPE ||
+      !isActiveGoalQueuedDetails(message.details)) {
     return null;
   }
 
@@ -123,10 +116,11 @@ export function cancelQueuedGoalWork(
 
 export function extensionQueuedGoalWorkMessageIdForRuntime(
   message: QueuedGoalContextInput,
+  resolveContinuationGoalIdFromPrompt: (prompt: string) => string | null,
 ): string | null {
   if (message.role === "user") {
     const text = textContentFromMessageContent(message.content);
-    return finalizedGoalUserMessageId(message) ?? (text === null ? null : goalIdFromDeliveryPrompt(text));
+    return text === null ? null : resolveContinuationGoalIdFromPrompt(text);
   }
 
   return queuedGoalWorkMessageId(message);

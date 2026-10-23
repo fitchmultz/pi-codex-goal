@@ -3,9 +3,9 @@
 ## Unreleased
 
 - Add model-declared `waiting` goals for named background work that delivers its own result, stopping hidden continuation loops and active time while waiting (#105). Reactivate on new user/steering/extension input or explicit `/goal resume`, preserve waiting reasons across sessions, and keep goal bookkeeping from waking a wait.
-- Stop rewriting messages in provider context. Rebuilding answered continuations from the current goal broke prompt caching on every automatic continuation and goal transition. Queued work delivered after its goal stops being active is now cancelled once, when it is delivered. Existing sessions intentionally resend their already-persisted history unchanged; stored JSONL is not migrated.
-- Treat pasted Goal continuation markers as ordinary user input, not extension-owned bookkeeping. Custom summarizers must consume filtered preparation by loading after Goal or synchronously emitting `pi-codex-goal:compaction-input` before summarizing.
-- Omit repeated goal control messages only from compaction input. After successful compaction, the next normally delivered Goal continuation includes the full saved objective and current budget once, then later continuations return to the compact prompt. No Pi changes are required. Preserve genuine input provenance and accompanying captions/image-coordinate notes through native prompt normalization.
+- Keep sent Goal messages unchanged in provider requests so continuations and goal changes can reuse the cached prefix. New custom Goal controls for an inactive goal are cancelled once at delivery. User messages are not rewritten, and existing JSONL is not migrated.
+- Remove repeated custom Goal controls only from compaction input copies. Keep objectives, user messages (including pasted Goal markers), substantive work, and compaction boundaries. Custom summarizers opt in by loading after Goal or emitting `pi-codex-goal:compaction-input` before summarizing.
+- After compaction, the next normal custom continuation includes the full saved objective, status, budget, and usage once. Later continuations stay compact. Existing start/resume, user-follow-up delivery, marker guards, and scheduling stay unchanged. No transport headers, role conversions, or Pi changes are required.
 
 ## 0.6.1 - 2026-10-12
 

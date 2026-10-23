@@ -44,6 +44,12 @@ node /tmp/pi-goal-automation/scripts/qualify.mjs --repo pi-codex-goal --source "
 
 The compatibility workflow uses this qualification tool for both Pi hosts. Qualification does not publish, install into live settings, restart active sessions, merge, or tag.
 
+## Cache/compaction regressions
+
+`test/provider-context.test.ts` and `test/native-lifecycle.test.ts` check unchanged provider prefixes across normal continuations and goal transitions. Old sent controls must remain verbatim, not be rewritten or deduplicated to satisfy older tests. `test/goal-compaction.test.ts` checks copy-only filtering, custom summarizer opt-in, and one full saved goal on the first normal metadata-owned custom automatic continuation after successful compaction. User deliveries and custom command start/resume must not consume that refresh.
+
+Native tests also check recovery user-follow-up start, resume queues/editor restoration without transport text, and host-normalized images/captions. Keep the original public delivery calls and legacy marker/passthrough guards; no new user-text delivery tracking or generalized user provenance is part of this work. The inferred Terminal adapter includes `setProgramStatus` so current and older supported hosts can check it at the same public boundary.
+
 ## Paid compaction smoke
 
 `scripts/compaction-smoke.ts` is an explicit, bounded live check, not part of `npm test`. It requires configured Bedrock models, but no Pi changes. Select an existing installed SDK and its companion graph without replacing the development dependencies:

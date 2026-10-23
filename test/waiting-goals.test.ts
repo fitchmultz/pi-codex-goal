@@ -7,7 +7,7 @@ import { compactContinuationPrompt, continuationPrompt, TOOL_PROMPT_GUIDELINES }
 import { applyUsage, createThreadGoal, goalsEquivalent, isThreadGoal, reconstructGoal, runtimeUsageEntry, setEntry, updateGoalStatus } from "../src/state.ts";
 import { CUSTOM_ENTRY_TYPE } from "../src/types.ts";
 import {
-  acceptUserMessage, assistantMessage, createRuntimeHarness, emitPersistentAssistantError, fireProviderLimitAutoResume,
+  assistantMessage, createRuntimeHarness, emitPersistentAssistantError, fireProviderLimitAutoResume,
   flushContinuationScheduler, goalUserContextMessage, queuedCustomMessage, sessionCompactEvent,
   userBeforeAgentStartEvent,
 } from "./support/runtime-harness.ts";
@@ -129,7 +129,6 @@ test("goal bookkeeping, assistant/tool messages and queued user continuations ca
     await h.runTool("create_goal", { objective: "Integrate reports" });
     const goal = h.snapshot().goal;
     assert.ok(goal);
-    const queuedUser = await acceptUserMessage(h, compactContinuationPrompt(goal), "extension");
     await h.runTool("update_goal", wait);
     await h.emit("agent_start", { type: "agent_start" });
     await h.emit("turn_start", { type: "turn_start", turnIndex: 1, timestamp: 1 });
@@ -141,7 +140,7 @@ test("goal bookkeeping, assistant/tool messages and queued user continuations ca
     const [result] = await h.emit("input", { type: "input", text: prompt, images: [], source: "extension" });
     assert.deepEqual(result, { action: "handled" });
     await h.emit("before_agent_start", userBeforeAgentStartEvent(prompt));
-    await h.emit("message_start", { type: "message_start", message: queuedUser });
+    await h.emit("message_start", { type: "message_start", message: goalUserContextMessage(prompt) });
     assert.equal(h.snapshot().goal?.status, "waiting");
   }
 });

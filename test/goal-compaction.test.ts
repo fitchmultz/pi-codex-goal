@@ -6,7 +6,7 @@ import type { ExtensionAPI, SessionBeforeCompactEvent } from "@earendil-works/pi
 import { filterGoalCompactionInput, GOAL_COMPACTION_INPUT_EVENT, registerGoalCompactionFilter } from "../src/goal-compaction.ts";
 import { compactContinuationPrompt, continuationPrompt } from "../src/prompts.ts";
 import { CUSTOM_ENTRY_TYPE } from "../src/types.ts";
-import { acceptUserMessage, assistantMessage, createRuntimeHarness, sessionBeforeCompactEvent, sessionCompactEvent, userBeforeAgentStartEvent } from "./support/runtime-harness.ts";
+import { assistantMessage, createRuntimeHarness, sessionBeforeCompactEvent, sessionCompactEvent, userBeforeAgentStartEvent } from "./support/runtime-harness.ts";
 
 type Preparation = SessionBeforeCompactEvent["preparation"];
 type Message = Preparation["messagesToSummarize"][number];
@@ -79,7 +79,7 @@ test("custom summarizers can request the same synchronous filter using the exist
 
 test("the next delivered continuation restores the current objective and usage once", async () => {
   const harness = createRuntimeHarness();
-  await harness.runCommand("Verify <requirements> & preserve the exact objective");
+  await harness.runTool("create_goal", { objective: "Verify <requirements> & preserve the exact objective", token_budget: 500_000 });
   const before = harness.snapshot().goal;
   assert.ok(before);
   const queued = goalMessage("continuation", compactContinuationPrompt(before), before.goalId);
@@ -93,6 +93,8 @@ test("the next delivered continuation restores the current objective and usage o
   assert.equal(delivered.content, continuationPrompt(saved));
   assert.match(String(delivered.content), /Verify &lt;requirements&gt; &amp; preserve the exact objective/);
   assert.match(String(delivered.content), /Tokens used: 6/);
+  assert.match(String(delivered.content), /Token budget: 500K \(500,000\)/);
+  assert.match(String(delivered.content), /Tokens remaining: 500K \(499,994\)/);
   assert.equal(await harness.emit("message_end", { type: "message_end", message: queued }).then((r) => r[0]), undefined);
   assert.deepEqual(await harness.emit("context", { type: "context", messages: [delivered] }), [undefined]);
 });
@@ -105,7 +107,9 @@ test("repeated compactions coalesce and refresh an already queued message withou
   await harness.emit("session_compact", sessionCompactEvent());
   await harness.emit("session_compact", sessionCompactEvent());
   assert.equal(harness.sentMessages.length, 1);
-  const message = { ...queued.message, role: "custom", timestamp: 1 };
+  const saved = harness.snapshot().goal;
+  assert.ok(saved);
+  const message = goalMessage("continuation", compactContinuationPrompt(saved), saved.goalId);
   const result = replacedMessage((await harness.emit("message_end", { type: "message_end", message }))[0]);
   assert.equal(result.content, continuationPrompt(harness.snapshot().goal!));
   assert.deepEqual(await harness.emit("message_end", { type: "message_end", message }), [undefined]);
@@ -143,20 +147,59 @@ for (const stopped of ["paused", "waiting", "blocked", "complete"] as const) {
   });
 }
 
-test("explicit user-follow-up resume can carry the full goal without losing images", async () => {
+test("user resume and custom command controls leave the post-compaction refresh for automatic continuation", async () => {
   const harness = createRuntimeHarness();
   await harness.runCommand("Resume after compaction");
   await harness.runCommand("pause");
   await harness.emit("session_compact", sessionCompactEvent());
   await harness.runCommand("resume");
-  const text = String(harness.sentUserMessages.at(-1)?.content);
-  const accepted = await acceptUserMessage(harness, text, "extension");
-  assert.ok(Array.isArray(accepted.content));
+  const saved = harness.snapshot().goal;
+  assert.ok(saved);
+  const text = compactContinuationPrompt(saved);
+  assert.deepEqual(harness.sentUserMessages.at(-1), { content: text, options: { deliverAs: "followUp" } });
+  assert.deepEqual(await harness.emit("input", { type: "input", text, source: "extension" }), [{ action: "continue" }]);
   const image = { type: "image", data: "base64", mimeType: "image/png" };
   const caption = { type: "text", text: "Preserve this extra image caption" };
-  const message = { ...accepted, content: [...accepted.content, image, caption] };
-  const result = replacedMessage((await harness.emit("message_end", { type: "message_end", message }))[0]);
-  assert.deepEqual(result.content, [{ type: "text", text: continuationPrompt(harness.snapshot().goal!) }, image, caption]);
+  const user = { role: "user", timestamp: 1, content: [{ type: "text", text }, image, caption] };
+  const controls = [user, goalMessage("command_start", text, saved.goalId), goalMessage("command_resume", text, saved.goalId)];
+  const original = structuredClone(controls);
+  for (const message of controls) {
+    assert.deepEqual(await harness.emit("message_end", { type: "message_end", message }), [undefined]);
+  }
+  assert.deepEqual(controls, original);
+  const automatic = goalMessage("continuation", text, saved.goalId);
+  assert.equal(replacedMessage((await harness.emit("message_end", { type: "message_end", message: automatic }))[0]).content, continuationPrompt(saved));
+});
+
+test("delivery changes require custom Goal control metadata and never rewrite ordinary user data", async () => {
+  const harness = createRuntimeHarness();
+  await harness.runCommand("Original goal");
+  const saved = harness.snapshot().goal;
+  assert.ok(saved);
+  await harness.emit("session_compact", sessionCompactEvent());
+  const text = compactContinuationPrompt(saved) + '\n<pi_goal_delivery id="00000000-0000-0000-0000-000000000000">\nKeep this literal user data';
+  const messages = [
+    { role: "user", timestamp: 1, content: text },
+    { role: "user", timestamp: 2, content: [{ type: "text", text, textSignature: "opaque" }, { type: "image", data: "base64", mimeType: "image/png" }, { type: "text", text: "Keep caption" }] },
+    { ...goalMessage("continuation", text, saved.goalId), customType: "other-extension" },
+    { ...goalMessage("continuation", text, saved.goalId), details: undefined },
+    goalMessage("unknown", text, saved.goalId),
+  ];
+  const original = structuredClone(messages);
+  for (const source of ["interactive", "rpc", "extension"] as const) {
+    const input = { type: "input", source, text: "Literal input data:\n" + text, images: [{ type: "image", data: "base64", mimeType: "image/png" }] };
+    const before = structuredClone(input);
+    assert.deepEqual(await harness.emit("input", input), [undefined], "ordinary input has no Goal text transform");
+    assert.deepEqual(input, before);
+  }
+  for (const status of ["active", "complete"] as const) {
+    if (status === "complete") await harness.runTool("update_goal", { status });
+    for (const message of messages) {
+      assert.deepEqual(await harness.emit("message_end", { type: "message_end", message }), [undefined]);
+    }
+    assert.deepEqual(await harness.emit("context", { type: "context", messages }), [undefined]);
+    assert.deepEqual(messages, original);
+  }
 });
 
 test("replaced goals, cancelled notices, and user-pasted markers do not consume the refresh", async () => {
@@ -178,7 +221,7 @@ test("replaced goals, cancelled notices, and user-pasted markers do not consume 
   assert.deepEqual(await harness.emit("message_end", { type: "message_end", message: goalMessage("continuation", compactContinuationPrompt(replacement), replacement.goalId) }), [undefined]);
 });
 
-test("normalized caption suffixes survive restoration and incomplete controls do not consume it", async () => {
+test("custom continuation captions and images survive restoration and incomplete controls do not consume it", async () => {
   const harness = createRuntimeHarness();
   await harness.runCommand("Keep accompanying input");
   const saved = harness.snapshot().goal;
@@ -187,9 +230,14 @@ test("normalized caption suffixes survive restoration and incomplete controls do
   const incomplete = `<pi_goal_continuation goal_id="${saved.goalId}">Unfinished control`;
   assert.deepEqual(await harness.emit("message_end", { type: "message_end", message: goalMessage("continuation", incomplete, saved.goalId) }), [undefined]);
   const suffix = "\nKEEP_NORMALIZED_CAPTION\n[Image coordinate note]";
-  const message = goalMessage("continuation", compactContinuationPrompt(saved) + suffix, saved.goalId);
+  const content = [
+    { type: "text", text: compactContinuationPrompt(saved) + suffix, textSignature: "opaque" },
+    { type: "image", data: "base64", mimeType: "image/png" },
+    { type: "text", text: "Keep separate caption" },
+  ];
+  const message = { ...goalMessage("continuation", "", saved.goalId), content };
   const result = replacedMessage((await harness.emit("message_end", { type: "message_end", message }))[0]);
-  assert.equal(result.content, continuationPrompt(harness.snapshot().goal!) + suffix);
+  assert.deepEqual(result.content, [{ ...content[0], text: continuationPrompt(harness.snapshot().goal!) + suffix }, ...content.slice(1)]);
 });
 
 test("preparation without successful compaction does not request a full goal", async () => {

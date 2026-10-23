@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
-import { compactContinuationPrompt, continuationPrompt } from "./prompts.ts";
+import { compactContinuationPrompt, continuationGoalIdFromPrompt, continuationPrompt } from "./prompts.ts";
 import {
   recoveryPhaseBlocksContinuation,
   type GoalRecoveryMachineState,
@@ -32,6 +32,7 @@ export function createContinuationScheduler(deps: ContinuationSchedulerDeps) {
   let continuationScheduledDelayMs: number | null = null;
   let continuationTimer: ReturnType<typeof setTimeout> | null = null;
   let postCompactContinuationTimer: ReturnType<typeof setTimeout> | null = null;
+  let passthroughContinuationInput: { text: string; turnIndex: number | null } | null = null;
 
   const clearContinuationTimer = (): void => {
     if (continuationTimer) {
@@ -66,6 +67,45 @@ export function createContinuationScheduler(deps: ContinuationSchedulerDeps) {
 
   const markContinuationQueued = (goalId: string): void => {
     continuationQueuedFor = goalId;
+  };
+
+  const clearPassthroughContinuationInput = (): void => {
+    passthroughContinuationInput = null;
+  };
+
+  const bindPassthroughContinuationInputToTurn = (turnIndex: number): void => {
+    if (!passthroughContinuationInput) {
+      return;
+    }
+    if (passthroughContinuationInput.turnIndex === null) {
+      passthroughContinuationInput = { ...passthroughContinuationInput, turnIndex };
+      return;
+    }
+    if (passthroughContinuationInput.turnIndex !== turnIndex) {
+      clearPassthroughContinuationInput();
+    }
+  };
+
+  const isPassthroughContinuationInput = (text: string): boolean => {
+    if (!passthroughContinuationInput || passthroughContinuationInput.text !== text) {
+      return false;
+    }
+    const currentTurnIndex = deps.getCurrentTurnIndex();
+    return (
+      passthroughContinuationInput.turnIndex === null ||
+      passthroughContinuationInput.turnIndex === currentTurnIndex
+    );
+  };
+
+  const continuationGoalIdFromRuntimePrompt = (prompt: string): string | null => {
+    if (isPassthroughContinuationInput(prompt)) {
+      return null;
+    }
+    return continuationGoalIdFromPrompt(prompt);
+  };
+
+  const notePassthroughContinuationInput = (text: string): void => {
+    passthroughContinuationInput = { text, turnIndex: null };
   };
 
   const noteCompaction = (): void => {
@@ -215,15 +255,19 @@ export function createContinuationScheduler(deps: ContinuationSchedulerDeps) {
   };
 
   return {
+    bindPassthroughContinuationInputToTurn,
     clearContinuationState,
     clearContinuationStateFor,
     clearContinuationTimer,
     clearPostCompactContinuationFallback,
+    clearPassthroughContinuationInput,
+    continuationGoalIdFromRuntimePrompt,
     markContinuationQueued,
     noteCompaction,
     fullPromptForDelivery,
     maybeContinue,
     maybeContinueAfterCurrentEvent,
     maybeContinueAfterPostCompactFallback,
+    notePassthroughContinuationInput,
   };
 }
