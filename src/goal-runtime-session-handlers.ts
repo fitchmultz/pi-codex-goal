@@ -133,7 +133,6 @@ export function createSessionEventHandlers(deps: GoalRuntimeSessionHandlerContex
     onSessionShutdown: (async (_event, ctx) => {
       continuation.clearPostCompactContinuationFallback();
       deps.providerLimitAutoResume.clear();
-      continuation.clearPassthroughContinuationInput();
       continuation.clearContinuationTimer();
       applyStaleQueuedWorkEffects(runtimeState.staleQueuedWorkGuard.planSessionShutdown().effects, ctx, deps);
 

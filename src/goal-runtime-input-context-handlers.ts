@@ -6,7 +6,8 @@ import type {
   InputEventResult,
 } from "@earendil-works/pi-coding-agent";
 
-import { continuationGoalIdFromPrompt, continuationPromptEnd } from "./prompts.ts";
+import { continuationPromptEnd } from "./prompts.ts";
+import { finalizeGoalUserDelivery, goalIdFromDeliveryPrompt, prepareGoalUserInput } from "./goal-user-delivery.ts";
 import { CUSTOM_ENTRY_TYPE } from "./types.ts";
 import { cancelQueuedGoalWork } from "./queued-goal-work.ts";
 import {
@@ -30,8 +31,10 @@ export function createInputContextEventHandlers(
 
   return {
     onInput: (async (event, ctx) => {
-      continuation.clearPassthroughContinuationInput();
-      const continuationGoalId = continuationGoalIdFromPrompt(event.text);
+      const prepared = prepareGoalUserInput(event);
+      const continuationGoalId = prepared.goalId;
+      const transformed = prepared.text === event.text ? undefined
+        : { action: "transform" as const, text: prepared.text };
 
       if (event.source !== "extension") {
         deps.providerLimitAutoResume.clear();
@@ -41,15 +44,12 @@ export function createInputContextEventHandlers(
           ctx,
           deps,
         );
-        if (continuationGoalId !== null) {
-          continuation.notePassthroughContinuationInput(event.text);
-        }
         status.refreshUi(ctx);
-        return undefined;
+        return transformed;
       }
 
       if (continuationGoalId === null) {
-        return undefined;
+        return transformed;
       }
 
       applyStaleQueuedWorkEffects(
@@ -59,7 +59,7 @@ export function createInputContextEventHandlers(
       );
       if (stateController.isCurrentActiveGoalId(continuationGoalId)) {
         continuation.markContinuationQueued(continuationGoalId);
-        return { action: "continue" } as const;
+        return transformed;
       }
 
       continuation.clearContinuationStateFor(continuationGoalId);
@@ -83,7 +83,7 @@ export function createInputContextEventHandlers(
 
     onBeforeAgentStart: (async (event, ctx) => {
       if (!("prompt" in event)) return undefined;
-      const continuationGoalId = continuation.continuationGoalIdFromRuntimePrompt(event.prompt);
+      const continuationGoalId = goalIdFromDeliveryPrompt(event.prompt);
       if (continuationGoalId !== null) {
         continuation.clearContinuationStateFor(continuationGoalId);
         if (!stateController.isCurrentActiveGoalId(continuationGoalId)) {
@@ -145,48 +145,48 @@ export function createInputContextEventHandlers(
     }) satisfies ExtensionHandler<MessageStartEvent>,
 
     onMessageEnd: (async (event, _ctx): Promise<MessageEndEventResult | undefined> => {
-      const { message } = event;
-      const queuedGoalId = queuedGoalWorkMessageIdForRuntime(message);
-      if (queuedGoalId === null) {
-        return undefined;
-      }
-      if (stateController.isCurrentActiveGoalId(queuedGoalId)) {
-        // Only a newly delivered, runnable Goal message can be refreshed. Never
-        // rewrite answered history, user-pasted markers, or cancelled notices.
-        if ((message.role === "user" || message.role === "custom") &&
-            (message.role !== "custom" || isActiveGoalQueuedDetails(message.details))) {
-          const original = typeof message.content === "string"
-            ? message.content : message.content.find((part) => part.type === "text")?.text;
-          const end = original === undefined ? null : continuationPromptEnd(original);
-          const prompt = end === null ? null : continuation.fullPromptForDelivery(queuedGoalId);
-          if (prompt !== null && original !== undefined && end !== null) {
-            // Pi can merge captions and append resize notes into this text block.
-            // Replace only the control envelope, not the accompanying input.
-            const text = prompt + original.slice(end);
-            if (typeof message.content === "string") {
-              if (message.role === "custom") return { message: { ...message, content: text } };
-              return { message: { ...message, content: [{ type: "text", text }] } };
+      const rewrite = (message: MessageEndEvent["message"], queuedGoalId: string): MessageEndEventResult | undefined => {
+        if (stateController.isCurrentActiveGoalId(queuedGoalId)) {
+          // Only a newly delivered, runnable Goal message can be refreshed. Never
+          // rewrite answered history, user-pasted markers, or cancelled notices.
+          if ((message.role === "user" || message.role === "custom") &&
+              (message.role !== "custom" || isActiveGoalQueuedDetails(message.details))) {
+            const original = typeof message.content === "string"
+              ? message.content : message.content.find((part) => part.type === "text")?.text;
+            const end = original === undefined ? null : continuationPromptEnd(original);
+            const prompt = end === null ? null : continuation.fullPromptForDelivery(queuedGoalId);
+            if (prompt !== null && original !== undefined && end !== null) {
+              // Pi can merge captions and append resize notes into this text block.
+              // Replace only the control envelope, not the accompanying input.
+              const text = prompt + original.slice(end);
+              if (typeof message.content === "string") {
+                if (message.role === "custom") return { message: { ...message, content: text } };
+                return { message: { ...message, content: [{ type: "text", text }] } };
+              }
+              const firstText = message.content.findIndex((part) => part.type === "text");
+              const content = message.content.map((part, index) => index === firstText ? { type: "text" as const, text } : part);
+              if (message.role === "custom") return { message: { ...message, content } };
+              return { message: { ...message, content } };
             }
-            const firstText = message.content.findIndex((part) => part.type === "text");
-            const content = message.content.map((part, index) => index === firstText ? { type: "text" as const, text } : part);
-            if (message.role === "custom") return { message: { ...message, content } };
-            return { message: { ...message, content } };
           }
+          return undefined;
+        }
+
+        const cancellation = cancelQueuedGoalWork(message, queuedGoalId, stateController.getGoal());
+        if (cancellation === null) {
+          return undefined;
+        }
+        if (message.role === "custom") {
+          return { message: { ...message, content: cancellation.text, display: false, details: cancellation.details } };
+        }
+        if (message.role === "user") {
+          return { message: { ...message, content: [{ type: "text", text: cancellation.text }] } };
         }
         return undefined;
-      }
-
-      const cancellation = cancelQueuedGoalWork(message, queuedGoalId, stateController.getGoal());
-      if (cancellation === null) {
-        return undefined;
-      }
-      if (message.role === "custom") {
-        return { message: { ...message, content: cancellation.text, display: false, details: cancellation.details } };
-      }
-      if (message.role === "user") {
-        return { message: { ...message, content: [{ type: "text", text: cancellation.text }] } };
-      }
-      return undefined;
+      };
+      if (event.message.role === "user") return finalizeGoalUserDelivery(event.message, rewrite);
+      const queuedGoalId = queuedGoalWorkMessageIdForRuntime(event.message);
+      return queuedGoalId === null ? undefined : rewrite(event.message, queuedGoalId);
     }) satisfies ExtensionHandler<MessageEndEvent, MessageEndEventResult | undefined>,
   };
 }

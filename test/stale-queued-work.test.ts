@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  acceptUserMessage,
   assistantMessage,
   createRuntimeHarness,
   userBeforeAgentStartEvent,
@@ -77,8 +78,8 @@ for (const source of ["interactive", "rpc"] as const) {
     const laterUserMessage = goalUserContextMessage(prompt, 2);
     const laterContextResults = await emitQueuedTurnThroughContext(harness, [laterUserMessage], 1);
     assert.equal(laterContextResults[0], undefined);
-    assert.match(String(userContentFromUnknown(laterUserMessage.content)[0]?.text), /queued hidden goal continuation was stale/);
-    assert.equal(harness.abortCount, 1);
+    assert.equal(userContentFromUnknown(laterUserMessage.content)[0]?.text, prompt);
+    assert.equal(harness.abortCount, 0, "a later unowned USER delivery is still genuine, not an expired exemption");
   });
 }
 
@@ -92,13 +93,13 @@ test("stale queued continuation aborts if the goal became complete before launch
     assert.fail("Expected queued goal message content to be a string.");
   }
 
+  const queuedMessage = await acceptUserMessage(harness, prompt, "extension");
   await harness.runTool("update_goal", { status: "complete" });
-  const results = await harness.emit("before_agent_start", userBeforeAgentStartEvent(prompt, "base prompt"));
+  const results = await harness.emit("before_agent_start", userBeforeAgentStartEvent(String(userContentFromUnknown(queuedMessage.content)[0]?.text), "base prompt"));
 
   assert.equal(results[0], undefined);
   assert.equal(harness.abortCount, 0);
 
-  const queuedMessage = goalUserContextMessage(prompt, 1);
   const contextResults = await emitQueuedTurnThroughContext(harness, [queuedMessage]);
   assert.equal(contextResults[0], undefined);
   assert.deepEqual(queuedMessage.content, [
@@ -156,6 +157,7 @@ test("stale provider context replacement covers queued work kinds and prompt mar
     assert.fail("Expected queued goal message content to be a string.");
   }
 
+  const queuedUser = await acceptUserMessage(harness, prompt, "extension");
   await harness.runTool("update_goal", { status: "complete" });
   const staleMessages = [
     goalCustomContextMessage({
@@ -178,7 +180,7 @@ test("stale provider context replacement covers queued work kinds and prompt mar
       details: { kind: "other", goalId: queuedGoalId },
       timestamp: 1,
     }),
-    goalUserContextMessage(prompt, 1),
+    queuedUser,
   ];
 
   const results = await emitQueuedTurnThroughContext(harness, staleMessages);
@@ -218,7 +220,7 @@ test("stale prompt-based queued work does not pause or charge a replacement goal
   if (typeof oldPrompt !== "string") {
     assert.fail("Expected queued goal message content to be a string.");
   }
-  const oldMessage = goalUserContextMessage(oldPrompt, 1);
+  const oldMessage = await acceptUserMessage(harness, oldPrompt, "extension");
 
   await harness.runCommand("new goal");
   const replacement = harness.snapshot().goal;
@@ -256,7 +258,7 @@ test("stale prompt-based queued work with stop terminal does not corrupt replace
   if (typeof oldPrompt !== "string") {
     assert.fail("Expected queued goal message content to be a string.");
   }
-  const oldMessage = goalUserContextMessage(oldPrompt, 1);
+  const oldMessage = await acceptUserMessage(harness, oldPrompt, "extension");
 
   await harness.runCommand("new goal");
   const replacement = harness.snapshot().goal;

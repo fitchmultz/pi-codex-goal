@@ -1,4 +1,5 @@
 import { continuationGoalIdFromPrompt } from "./prompts.ts";
+import { finalizedGoalUserMessageId, goalIdFromDeliveryPrompt } from "./goal-user-delivery.ts";
 import {
   isActiveGoalQueuedDetails,
   type QueuedGoalContextInput,
@@ -82,7 +83,7 @@ function extensionQueuedGoalWorkMessageId(message: QueuedGoalContextInput): stri
 
 function queuedGoalWorkMessageId(message: QueuedGoalContextInput): string | null {
   if (message.role === "user") {
-    return continuationGoalIdFromMessageContent(message.content) ?? cancelledGoalIdFromMessageContent(message.content);
+    return finalizedGoalUserMessageId(message);
   }
 
   return extensionQueuedGoalWorkMessageId(message);
@@ -122,11 +123,10 @@ export function cancelQueuedGoalWork(
 
 export function extensionQueuedGoalWorkMessageIdForRuntime(
   message: QueuedGoalContextInput,
-  resolveContinuationGoalIdFromPrompt: (prompt: string) => string | null,
 ): string | null {
   if (message.role === "user") {
     const text = textContentFromMessageContent(message.content);
-    return text === null ? null : resolveContinuationGoalIdFromPrompt(text);
+    return finalizedGoalUserMessageId(message) ?? (text === null ? null : goalIdFromDeliveryPrompt(text));
   }
 
   return queuedGoalWorkMessageId(message);

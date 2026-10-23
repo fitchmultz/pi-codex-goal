@@ -1,7 +1,6 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 import type {
-  GoalRuntimeContinuationPort,
   GoalRuntimeOverflowRecoveryContext,
   QueuedGoalWorkMessage,
   QueuedGoalWorkMessageIdResolver,
@@ -49,14 +48,9 @@ export function runStaleQueuedWorkPlan(
   return plan.skip;
 }
 
-export function createQueuedGoalWorkMessageIdResolver(
-  continuation: GoalRuntimeContinuationPort,
-): QueuedGoalWorkMessageIdResolver {
+export function createQueuedGoalWorkMessageIdResolver(): QueuedGoalWorkMessageIdResolver {
   return (message: QueuedGoalWorkMessage): string | null =>
-    extensionQueuedGoalWorkMessageIdForRuntime(
-      message,
-      continuation.continuationGoalIdFromRuntimePrompt,
-    );
+    extensionQueuedGoalWorkMessageIdForRuntime(message);
 }
 
 export function getContextWindow(ctx: ExtensionContext): number {

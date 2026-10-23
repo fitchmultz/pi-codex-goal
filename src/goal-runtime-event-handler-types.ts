@@ -58,13 +58,10 @@ export interface ProviderLimitAutoResumePort {
 }
 
 export interface GoalRuntimeContinuationPort {
-  bindPassthroughContinuationInputToTurn: (turnIndex: number) => void;
   clearContinuationState: () => void;
   clearContinuationStateFor: (goalId: string) => void;
   clearContinuationTimer: () => void;
   clearPostCompactContinuationFallback: () => void;
-  clearPassthroughContinuationInput: () => void;
-  continuationGoalIdFromRuntimePrompt: (prompt: string) => string | null;
   markContinuationQueued: (goalId: string) => void;
   noteCompaction: () => void;
   fullPromptForDelivery: (goalId: string) => string | null;
@@ -78,7 +75,6 @@ export interface GoalRuntimeContinuationPort {
       prepareContinuation?: () => boolean;
     },
   ) => void;
-  notePassthroughContinuationInput: (input: string) => void;
 }
 
 export interface GoalAccountingPort {
@@ -142,7 +138,6 @@ export interface GoalRuntimeTurnHandlerContext extends StaleQueuedWorkEffectCont
     | "maybeFlushRuntimePersistence"
     | "pauseForAbort"
   >;
-  continuation: Pick<GoalRuntimeContinuationPort, "bindPassthroughContinuationInputToTurn">;
   goalAccounting: GoalAccountingPort;
   recoveryRuntime: Pick<RecoveryRuntimePort, "finishSuccessfulAssistantTurn">;
 }
@@ -161,7 +156,7 @@ export interface GoalRuntimeAgentHandlerContext extends StaleQueuedWorkEffectCon
   >;
   continuation: Pick<
     GoalRuntimeContinuationPort,
-    "clearPassthroughContinuationInput" | "maybeContinue"
+    "maybeContinue"
   >;
   goalAccounting: Pick<GoalAccountingPort, "accountProgress">;
   recoveryRuntime: Pick<
@@ -187,7 +182,6 @@ export interface GoalRuntimeSessionHandlerContext extends StaleQueuedWorkEffectC
     GoalRuntimeContinuationPort,
     | "clearContinuationTimer"
     | "clearPostCompactContinuationFallback"
-    | "clearPassthroughContinuationInput"
     | "maybeContinue"
     | "maybeContinueAfterCurrentEvent"
     | "maybeContinueAfterPostCompactFallback"

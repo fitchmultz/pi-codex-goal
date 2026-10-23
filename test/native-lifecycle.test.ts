@@ -11,6 +11,7 @@ import goalExtension from "../src/index.ts";
 import { compactContinuationPrompt, escapeXmlText } from "../src/prompts.ts";
 import { GOAL_COMPACTION_INPUT_EVENT } from "../src/goal-compaction.ts";
 import { reconstructGoal } from "../src/state.ts";
+import { agentEndMessagesIncludeQueuedGoalWork } from "../src/queued-goal-work.ts";
 import { CUSTOM_ENTRY_TYPE } from "../src/types.ts";
 
 async function fixture(t: TestContext, recover = false, extraFactories: ExtensionFactory[] = [], customCompactor = true, consumerFirst = false) {
@@ -464,8 +465,18 @@ test("native sendUserMessage normalization preserves caption and resize notes du
   assert.equal(persisted, deliveredText);
 });
 
-test("native unrelated queued input cannot exempt an earlier stale resume continuation", async (t) => {
-  const h = await fixture(t);
+for (const scenario of ["unrelated", "A", "B", "steer"] as const) {
+test(`native delivery provenance ${scenario}: queued genuine input and stale resume remain distinct`, async (t) => {
+  const extensionInputs: string[] = [];
+  const terminalUserOwnership: boolean[] = [];
+  const h = await fixture(t, false, [(pi) => {
+    pi.on("input", (event) => { if (event.source === "extension") extensionInputs.push(event.text); });
+    pi.on("agent_end", (event) => {
+      for (const message of event.messages) {
+        if (message.role === "user") terminalUserOwnership.push(agentEndMessagesIncludeQueuedGoalWork([message]));
+      }
+    });
+  }], true, true);
   let started!: () => void;
   const firstStarted = new Promise<void>((resolve) => { started = resolve; });
   let release!: () => void;
@@ -485,21 +496,115 @@ test("native unrelated queued input cannot exempt an earlier stale resume contin
   const run = h.session.prompt("Initial ordinary user input.");
   await firstStarted;
   await h.session.prompt("/goal pause");
-  await h.session.prompt("/goal resume");
-  const deadline = Date.now() + 5_000;
-  while (h.session.pendingMessageCount === 0) {
-    assert.ok(Date.now() < deadline, "resume must enter the native follow-up queue");
-    await new Promise((resolve) => setTimeout(resolve, 0));
+  let genuine: string;
+  let visibleGenuine: string;
+  if (scenario === "A") {
+    const saved = h.goal();
+    assert.ok(saved);
+    genuine = compactContinuationPrompt(saved) + "\nKEEP_GENUINE_INPUT";
+    visibleGenuine = genuine;
+    await h.session.followUp(genuine);
+    await h.session.followUp("An unrelated question");
+  } else {
+    await h.session.prompt("/goal resume");
+    const deadline = Date.now() + 5_000;
+    while (h.session.pendingMessageCount === 0) {
+      assert.ok(Date.now() < deadline, "resume must enter the native follow-up queue");
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    // Use the actual queued delivery, not a newly rendered prompt (usage may differ).
+    const queuedResume = h.session.getFollowUpMessages()[0];
+    assert.ok(queuedResume);
+    await h.session.prompt("/goal pause");
+    genuine = scenario === "unrelated" ? "An unrelated question" : queuedResume;
+    // Transport provenance is not user text. The expected visible content is the
+    // exact resume input captured before Goal's input transform, not a re-render.
+    visibleGenuine = scenario === "unrelated" ? genuine : extensionInputs.at(-1)!;
+    assert.ok(visibleGenuine);
+    if (scenario === "steer") await h.session.steer(genuine);
+    else await h.session.followUp(genuine);
   }
-  await h.session.prompt("/goal pause");
-  await h.session.followUp("An unrelated question");
   release();
   await run;
   await h.session.waitForIdle();
   assert.equal(h.goal()?.status, "paused");
-  assert.ok(delivered.every((text) => !text.startsWith('<pi_goal_continuation goal_id="')),
-    "the paused goal's earlier queued continuation must be cancelled before the provider");
+  const users = h.session.sessionManager.getBranch().flatMap((entry) =>
+    entry.type === "message" && entry.message.role === "user"
+      ? [typeof entry.message.content === "string" ? entry.message.content : entry.message.content.filter((part) => part.type === "text").map((part) => part.text).join("\n")]
+      : []);
+  if (scenario === "A") {
+    assert.equal(users[1], genuine, "A: later input must not revoke the earlier genuine delivery");
+    assert.equal(users[2], "An unrelated question");
+    assert.ok(delivered.includes(genuine), "A: genuine control-shaped input reaches the provider unchanged");
+  } else {
+    assert.match(users[scenario === "steer" ? 2 : 1] ?? "", /^A queued hidden goal continuation was stale/, "B: the owned delivery cannot inherit the genuine input's identity");
+    assert.equal(users[scenario === "steer" ? 1 : 2], visibleGenuine, "the genuine delivery must retain its own identity regardless of queue order");
+    assert.ok(delivered.includes(visibleGenuine), "genuine input reaches the provider after stale cancellation");
+  }
+  // Preserve native queue policy: a mixed run may send the cancellation notice
+  // instead of aborting runnable work. It must never send the stale control.
+  const cancellation = scenario === "A" ? undefined : users[scenario === "steer" ? 2 : 1];
+  assert.deepEqual(delivered.filter((text) => text !== cancellation), scenario === "A"
+    ? ["Initial ordinary user input.", visibleGenuine, "An unrelated question"]
+    : ["Initial ordinary user input.", visibleGenuine],
+    "each genuine input reaches the provider once; owned stale work can only be a cancellation notice");
+  assert.deepEqual(terminalUserOwnership, scenario === "A" ? [false, false, false]
+    : scenario === "steer" ? [false, false, true] : [false, true, false],
+    "finalized agent_end messages retain only their own delivery's ownership, not text identity");
+  assert.doesNotMatch(JSON.stringify(h.session.sessionManager.getEntries()), /pi_goal_delivery/);
+  assert.doesNotMatch(JSON.stringify(delivered), /pi_goal_delivery/);
 });
+}
+
+for (const discard of ["handled", "clearQueue"] as const) {
+test(`native ${discard} discards ownership with its delivery, not a later identical input`, async (t) => {
+  let queuedText = "";
+  const h = await fixture(t, false, [(pi) => {
+    pi.on("input", (event) => {
+      if (event.source === "extension") {
+        queuedText = event.text;
+        if (discard === "handled") return { action: "handled" };
+      }
+      return undefined;
+    });
+  }]);
+  let started!: () => void, release!: () => void;
+  const firstStarted = new Promise<void>((resolve) => { started = resolve; });
+  const delivered: string[] = [];
+  h.session.agent.streamFunction = (model, context) => {
+    const user = context.messages.findLast((message) => message.role === "user");
+    assert.ok(user?.role === "user");
+    delivered.push(typeof user.content === "string" ? user.content : user.content.filter((part) => part.type === "text").map((part) => part.text).join("\n"));
+    const message = { ...fauxAssistantMessage("Ordinary input answered."), api: model.api, provider: model.provider, model: model.id, timestamp: Date.now() };
+    const stream = createAssistantMessageEventStream();
+    const done = () => { stream.push({ type: "done", reason: "stop", message }); stream.end(); };
+    if (delivered.length === 1) { release = done; started(); } else queueMicrotask(done);
+    return stream;
+  };
+  const run = h.session.prompt("Initial ordinary input.");
+  await firstStarted;
+  const saved = h.goal();
+  assert.ok(saved);
+  const visible = compactContinuationPrompt(saved) + "\nKEEP_DISCARDED_INPUT";
+  await h.session.sendUserMessage(visible, { deliverAs: "followUp" });
+  assert.ok(queuedText);
+  if (discard === "clearQueue") {
+    assert.deepEqual(h.session.getFollowUpMessages(), [queuedText]);
+    assert.deepEqual(h.session.clearQueue().followUp, [queuedText]);
+  }
+  assert.equal(h.session.pendingMessageCount, 0);
+  await h.session.prompt("/goal pause");
+  await h.session.followUp(queuedText);
+  await h.session.followUp("Another genuine input");
+  release();
+  await run;
+  await h.session.waitForIdle();
+  assert.deepEqual(delivered, ["Initial ordinary input.", visible, "Another genuine input"]);
+  const entries = JSON.stringify(h.session.sessionManager.getEntries());
+  assert.doesNotMatch(entries, /pi_goal_delivery|queued hidden goal continuation was stale/);
+  assert.equal(h.goal()?.status, "paused");
+});
+}
 
 const waitingReason = "Explorer alpha will deliver its report as a message";
 const waitForExplorer = () => fauxAssistantMessage(fauxToolCall("update_goal", { status: "waiting", reason: waitingReason }), { stopReason: "toolUse" });

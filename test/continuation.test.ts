@@ -7,6 +7,7 @@ import { formatFooterStatus } from "../src/format.ts";
 import { isGoalCustomEntry, setEntry } from "../src/state.ts";
 import { CUSTOM_ENTRY_TYPE } from "../src/types.ts";
 import {
+  acceptUserMessage,
   assistantMessage,
   createRuntimeHarness,
   userBeforeAgentStartEvent,
@@ -722,14 +723,7 @@ test("extension user continuation accepted before compaction suppresses duplicat
   const content = String(queued.message.content);
   harness.sentMessages.length = 0;
 
-  const results = await harness.emit("input", {
-    type: "input",
-    text: content,
-    source: "extension",
-    streamingBehavior: "followUp",
-  });
-
-  assert.deepEqual(results, [{ action: "continue" }]);
+  await acceptUserMessage(harness, content, "extension");
   await harness.emit("session_compact", sessionCompactEvent());
 
   const goal = harness.snapshot().goal;

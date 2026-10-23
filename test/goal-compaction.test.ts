@@ -6,7 +6,7 @@ import type { ExtensionAPI, SessionBeforeCompactEvent } from "@earendil-works/pi
 import { filterGoalCompactionInput, GOAL_COMPACTION_INPUT_EVENT, registerGoalCompactionFilter } from "../src/goal-compaction.ts";
 import { compactContinuationPrompt, continuationPrompt } from "../src/prompts.ts";
 import { CUSTOM_ENTRY_TYPE } from "../src/types.ts";
-import { assistantMessage, createRuntimeHarness, sessionBeforeCompactEvent, sessionCompactEvent, userBeforeAgentStartEvent } from "./support/runtime-harness.ts";
+import { acceptUserMessage, assistantMessage, createRuntimeHarness, sessionBeforeCompactEvent, sessionCompactEvent, userBeforeAgentStartEvent } from "./support/runtime-harness.ts";
 
 type Preparation = SessionBeforeCompactEvent["preparation"];
 type Message = Preparation["messagesToSummarize"][number];
@@ -150,10 +150,11 @@ test("explicit user-follow-up resume can carry the full goal without losing imag
   await harness.emit("session_compact", sessionCompactEvent());
   await harness.runCommand("resume");
   const text = String(harness.sentUserMessages.at(-1)?.content);
-  await harness.emit("input", { type: "input", text, source: "extension" });
+  const accepted = await acceptUserMessage(harness, text, "extension");
+  assert.ok(Array.isArray(accepted.content));
   const image = { type: "image", data: "base64", mimeType: "image/png" };
   const caption = { type: "text", text: "Preserve this extra image caption" };
-  const message = { role: "user", timestamp: 1, content: [{ type: "text", text }, image, caption] };
+  const message = { ...accepted, content: [...accepted.content, image, caption] };
   const result = replacedMessage((await harness.emit("message_end", { type: "message_end", message }))[0]);
   assert.deepEqual(result.content, [{ type: "text", text: continuationPrompt(harness.snapshot().goal!) }, image, caption]);
 });

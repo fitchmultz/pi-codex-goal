@@ -18,9 +18,7 @@ export type {
 export function createGoalRuntimeEventHandlers(
   context: GoalRuntimeEventContext,
 ): GoalRuntimeEventHandlers {
-  const queuedGoalWorkMessageIdForRuntime = createQueuedGoalWorkMessageIdResolver(
-    context.continuation,
-  );
+  const queuedGoalWorkMessageIdForRuntime = createQueuedGoalWorkMessageIdResolver();
 
   return {
     ...createInputContextEventHandlers(context, queuedGoalWorkMessageIdForRuntime),
