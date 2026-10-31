@@ -24,7 +24,7 @@ on:
         required: true
         type: string
     secrets:
-      OPENROUTER_API_KEY:
+      ZAI_API_KEY:
         description: The main-protected release environment's live-model credential
         required: true
 
@@ -91,7 +91,7 @@ jobs:
       - name: Verify the real interactive goal on both hosts
         if: steps.scope.outputs.live == 'true'
         env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
         run: |
           filename="$(node -p 'require(process.env.RUNNER_TEMP + "/npm-candidate/release.json").filename')"
           for host in official fork; do
