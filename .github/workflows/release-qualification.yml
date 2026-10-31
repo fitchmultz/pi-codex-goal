@@ -146,4 +146,3 @@ jobs:
             ${{ runner.temp }}/goal-evidence/*/live/*.log
             ${{ runner.temp }}/goal-evidence/*/live/sessions/*.jsonl
           if-no-files-found: error
-          retention-days: 14
