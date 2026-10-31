@@ -182,7 +182,7 @@ export function createRuntimeHarness(options: {
         return () => { eventBus.off(event, handler); };
       },
     },
-    exec: async () => ({ stdout: "", stderr: "", code: 0, killed: false }),
+    exec: async () => ({ stdout: "", stderr: "", code: 0, killed: false, truncated: false }),
     getActiveTools: () => [],
     getAllTools: () => [],
     getCommands: () => [],
