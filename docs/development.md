@@ -131,10 +131,10 @@ If a run appears stuck on `Working...` after a built-in `read` result, capture t
 
 ## Automatic npm releases
 
-The [shared release workflow](https://github.com/fitchmultz/.github#automatic-npm-releases) publishes matching npm and GitHub releases from reviewed changes on `main`. Compatibility checks and candidate-tarball qualification must pass. Complete package-specific evidence before publication, including [interactive smoke tests](#interactive-smoke-tests) for release-sensitive changes.
+The [shared release workflow](https://github.com/fitchmultz/.github#automatic-npm-releases) creates a reviewed patch-version PR after changes merge to `main`, then publishes matching npm and GitHub releases. Compatibility checks and candidate-tarball qualification must pass before publication.
 
 The package release qualification checks the prepared tarball and source identities, rebuilds the two selected host graphs, and matches their CLI, SDK, cohort, companion, lockfile and runtime-graph identities to the candidate receipt. The delivery-identity and role probes and the regular, draft-restoration and fullscreen PTY probes run against that tarball on both hosts. A comparison with the previous published source records whether live interactive evidence is required; an unavailable or incomparable baseline requires it.
 
 When required, `scripts/release-interactive-pty.py` drives the actual interactive Pi TUI with `/goal` and CSI-u Enter on both selected hosts. The calling workflow passes `ZAI_API_KEY` by name; the main-protected `release` environment supplies its value for the direct Z.ai `glm-5.3-flash` model. The retained evidence includes the candidate hash, requested and responding models, command, native session JSONL, file read, `update_goal` completion and final response. This is the interactive smoke path, not print-mode or an offline-provider substitute; non-runtime metadata-only releases do not require a paid model call.
 
-Follow the shared procedure for retries. Set `NPM_RELEASE_ENABLED` to anything other than `true` to stop new release plans; cancel pending runs separately when needed. Verify the actual npm and GitHub releases; workflow validation alone is not evidence of a completed OIDC publication.
+Follow the shared procedure for retries. Set `NPM_RELEASE_ENABLED` to anything other than `true` to stop new version and release plans; cancel pending runs separately when needed. Verify the actual npm and GitHub releases; workflow validation alone is not evidence of a completed OIDC publication.
