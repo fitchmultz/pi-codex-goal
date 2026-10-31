@@ -6,7 +6,7 @@ pi-codex-goal adds a persistent goal to [Pi](https://github.com/earendil-works/p
 
 ## Install and start
 
-Use Pi 1.0.0 or later and Node.js 24 or later. The extension supports official Pi releases and the [fitchmultz Pi fork](https://github.com/fitchmultz/pi).
+Check the [Node.js and Pi requirements](https://github.com/fitchmultz/pi-codex-goal/blob/main/docs/reference.md#installation-options) before installing. The extension supports official Pi releases and the [fitchmultz Pi fork](https://github.com/fitchmultz/pi).
 
 ```sh
 pi install npm:pi-codex-goal
