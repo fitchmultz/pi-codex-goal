@@ -14,7 +14,7 @@ Do not leave project-local installs of this package in this repo. In particular,
 
 ```sh
 pi install -l npm:pi-codex-goal
-pi install -l https://github.com/fitchmultz/pi-codex-goal@vX.Y.Z
+pi install -l https://github.com/fitchmultz/pi-codex-goal
 ```
 
 Those write duplicate package entries under `.pi/` for the current project, causing `get_goal`, `create_goal`, and `update_goal` tool-registration conflicts with the global local-checkout install. For install-path release verification, use an isolated temp project/config directory or remove the project-local entries immediately after the check. Pass `--approve` for isolated project-local package install/list/non-interactive smoke commands when those commands must load `.pi/settings.json`. If conflicts appear, inspect `pi list --approve` and `.pi/settings.json`, then remove any project-local `pi-codex-goal` npm/GitHub installs so only the global local-checkout package remains active.
@@ -33,7 +33,7 @@ Registered context and native lifecycle keepers own continuation rewriting and d
 
 Pi 1.0.0 remains the support floor. Locked Pi/TypeBox development dependencies are reproducible snapshots, not validation targets. Qualification must select the latest stable official Pi and latest maintained fork main, resolving version/commit once per workflow run and retaining SDK/CLI evidence. Use each selected host's actual companion graph rather than inferring runtime compatibility from a development bump. Preserve native custom-entry recovery, per-loop guarded continuation and final settlement; do not replace `agent_end` with notification-only `agent_settled`. Use native finalized events/tool correlation for exact-once usage and never assume `message_end` or boundary drafts have already appended. No removed fork checkpoint, recordUsage or metadata/revision API is a supported requirement. Run host-sensitive native suites/packed CLI qualification against the latest maintained fork's exact revision on every qualification run.
 
-Historical release channels are owned npm `pi-codex-goal` plus GitHub releases; proposed new version 0.6.0. Parent controls independent review/merge/release; no live activation.
+Release channels are the owned npm package `pi-codex-goal` and GitHub releases. Follow the shared release workflow after required checks and reviews.
 
 ## Layout
 

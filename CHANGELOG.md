@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 0.7.0
+
+- Show the current goal's status and objective below the editor; `/goal` still shows the full details.
 - Add model-declared `waiting` goals for named background work that delivers its own result, stopping hidden continuation loops and active time while waiting (#105). Reactivate on new user/steering/extension input or explicit `/goal resume`, preserve waiting reasons across sessions, and keep goal bookkeeping from waking a wait.
 - Keep sent Goal messages unchanged in provider requests so continuations and goal changes can reuse the cached prefix. New custom Goal controls for an inactive goal are cancelled once at delivery. User messages are not rewritten, and existing JSONL is not migrated.
 - Remove repeated custom Goal controls only from compaction input copies. Keep objectives, user messages (including pasted Goal markers), substantive work, and compaction boundaries. Custom summarizers opt in by loading after Goal or emitting `pi-codex-goal:compaction-input` before summarizing.

@@ -2,7 +2,7 @@
 
 pi-codex-goal adds a persistent goal to [Pi](https://github.com/earendil-works/pi). The extension prompts Pi to continue an active goal across turns.
 
-![Goal flow: create a task, work in Pi, save session state, and stop at completion, pause, a blocker, or a token limit.](.github/readme/goal-workflow.png)
+![Goal flow: create a task, work in Pi, save session state, and stop at completion, pause, a blocker, or a token limit.](https://raw.githubusercontent.com/fitchmultz/pi-codex-goal/main/.github/readme/goal-workflow.png)
 
 ## Install and start
 
@@ -67,9 +67,9 @@ Ask the agent to use `create_goal`, `get_goal`, and `update_goal` for headless r
 
 ## Details
 
-Read the [reference](docs/reference.md) for installation options, budget policy, tools, and recovery.
+Read the [reference](https://github.com/fitchmultz/pi-codex-goal/blob/main/docs/reference.md) for installation options, budget policy, tools, and recovery.
 
-Read the [development guide](docs/development.md) for checks, compatibility qualification, smoke tests, and releases.
+Read the [development guide](https://github.com/fitchmultz/pi-codex-goal/blob/main/docs/development.md) for checks, compatibility qualification, smoke tests, and releases.
 
 See the [changelog](CHANGELOG.md) for version history. Report problems in [Issues](https://github.com/fitchmultz/pi-codex-goal/issues).
 
