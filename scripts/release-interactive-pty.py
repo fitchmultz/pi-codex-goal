@@ -19,15 +19,15 @@ parser.add_argument("--node", type=Path, required=True)
 parser.add_argument("--host", type=Path, required=True, help="Exact installed pi-coding-agent package directory")
 parser.add_argument("--candidate", type=Path, required=True, help="Candidate npm tarball")
 parser.add_argument("--output", type=Path, required=True, help="New private evidence directory")
-parser.add_argument("--model", default="openrouter/openrouter/auto")
+parser.add_argument("--model", default="zai/glm-5.3-flash")
 args = parser.parse_args()
 node = args.node.resolve()
 host = args.host.resolve()
 candidate = args.candidate.resolve()
 out = args.output.resolve()
 cli = host / "dist/bundle/cli.js"
-if not os.environ.get("OPENROUTER_API_KEY"):
-    raise SystemExit("OPENROUTER_API_KEY is required for the live model proof")
+if not os.environ.get("ZAI_API_KEY"):
+    raise SystemExit("ZAI_API_KEY is required for the live model proof")
 with tarfile.open(candidate, "r:gz") as archive:
     package = json.load(archive.extractfile("package/package.json"))
 if package["name"] != "pi-codex-goal":
@@ -47,7 +47,7 @@ env = {
     "PI_CODING_AGENT_DIR": str(out / "agent"),
     "PI_OFFLINE": "1",
     "PI_TELEMETRY": "0",
-    "OPENROUTER_API_KEY": os.environ["OPENROUTER_API_KEY"],
+    "ZAI_API_KEY": os.environ["ZAI_API_KEY"],
     "NPM_CONFIG_USERCONFIG": str(out / "user.npmrc"),
     "NPM_CONFIG_GLOBALCONFIG": str(out / "global.npmrc"),
     "NPM_CONFIG_REGISTRY": "https://registry.npmjs.org/",
@@ -182,7 +182,8 @@ try:
     observed_content = file.read_text()
     assert observed_content.strip() == "PI_GOAL_RELEASE_OK", "filesystem content did not match"
     last = [message for message in messages if message.get("role") == "assistant"][-1]
-    assert last.get("provider") == "openrouter", "the requested live provider was not used"
+    assert last.get("provider") == "zai", "the requested live provider was not used"
+    assert last.get("model") == args.model.removeprefix("zai/"), "the requested live model was not used"
     final = "\n".join(part.get("text", "") for part in last.get("content", []) if part.get("type") == "text")
     assert str(file) in final and "PI_GOAL_RELEASE_OK" in final and "complet" in final.lower()
     session = next((out / "sessions").glob("*.jsonl"))
