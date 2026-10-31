@@ -32,7 +32,7 @@ Host-supplied runtime imports belong in optional wildcard peers **and** pinned d
 
 ## Compatibility qualification
 
-Pull-request CI runs `check:compat` against the latest stable official Pi and latest maintained fork `main` on Ubuntu/Node 24. Version/commit identities are resolved once per workflow run and retained with exact SDK/CLI evidence. Both hosts are required. Qualification also checks clean Git and npm consumer installs through the native Pi CLI. Hosted CI does not call a model.
+Pull-request CI runs `check:compat` against the latest stable official Pi and latest maintained fork `main` on Ubuntu/Node 24. Version/commit identities are resolved once per workflow run and retained with exact SDK/CLI evidence. Both hosts are required. Qualification also checks clean Git and npm consumer installs through the native Pi CLI, then packs the pull-request source and runs the delivery-identity, role, and regular, draft-restoration and fullscreen PTY probes against that tarball on both hosts. The compatibility workflow does not call a model.
 
 Run the shared native Git/packed consumer qualification locally:
 
@@ -73,7 +73,7 @@ The script uses isolated sessions, forces one threshold compaction, checks four 
 
 These checks exercise the interactive `/goal` command, hidden continuation, bridged goal tools, filesystem verification, and final `update_goal` completion.
 
-Release-sensitive changes touching slash-command parsing, TUI submission, goal command behavior, hidden continuation, or post-tool completion require manual interactive `/goal` evidence before release. Record the command, model, session directory, final assistant evidence, and confirmation that the session JSONL contains the `/goal` command path, file verification, and `update_goal` completion.
+Release-sensitive changes touching slash-command parsing, TUI submission, goal command behavior, hidden continuation, or post-tool completion require real interactive `/goal` evidence before release. Record the command, model, session directory, final assistant evidence, and confirmation that the session JSONL contains the `/goal` command path, file verification, and `update_goal` completion.
 
 Pi must be authenticated to a capable model in your local setup. Start Pi from this repository:
 
@@ -132,5 +132,9 @@ If a run appears stuck on `Working...` after a built-in `read` result, capture t
 ## Automatic npm releases
 
 The [shared release workflow](https://github.com/fitchmultz/.github#automatic-npm-releases) publishes matching npm and GitHub releases from reviewed changes on `main`. Compatibility checks and candidate-tarball qualification must pass. Complete package-specific evidence before publication, including [interactive smoke tests](#interactive-smoke-tests) for release-sensitive changes.
+
+The package release qualification checks the prepared tarball and source identities, rebuilds the two selected host graphs, and matches their CLI, SDK, cohort, companion, lockfile and runtime-graph identities to the candidate receipt. The delivery-identity and role probes and the regular, draft-restoration and fullscreen PTY probes run against that tarball on both hosts. A comparison with the previous published source records whether live interactive evidence is required; an unavailable or incomparable baseline requires it.
+
+When required, `scripts/release-interactive-pty.py` drives the actual interactive Pi TUI with `/goal` and CSI-u Enter on both selected hosts. The calling workflow passes `OPENROUTER_API_KEY` by name; the main-protected `release` environment supplies its value for OpenRouter's automatic model router. The retained evidence includes the candidate hash, requested and responding models, command, native session JSONL, file read, `update_goal` completion and final response. This is the interactive smoke path, not print-mode or an offline-provider substitute; non-runtime metadata-only releases do not require a paid model call.
 
 Follow the shared procedure for retries. Set `NPM_RELEASE_ENABLED` to anything other than `true` to stop new release plans; cancel pending runs separately when needed. Verify the actual npm and GitHub releases; workflow validation alone is not evidence of a completed OIDC publication.
