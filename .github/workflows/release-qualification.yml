@@ -23,6 +23,10 @@ on:
         description: Maintained Pi fork commit selected for the candidate
         required: true
         type: string
+    secrets:
+      OPENROUTER_API_KEY:
+        description: The main-protected release environment's live-model credential
+        required: true
 
 permissions:
   contents: read
