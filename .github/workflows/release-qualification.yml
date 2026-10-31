@@ -1,0 +1,145 @@
+name: Goal release qualification
+
+on:
+  workflow_call:
+    inputs:
+      automation-ref:
+        description: Exact reviewed shared automation revision
+        required: true
+        type: string
+      source-ref:
+        description: Exact candidate commit
+        required: true
+        type: string
+      release-source:
+        description: Original main commit represented by the candidate
+        required: true
+        type: string
+      official-version:
+        description: Official Pi version selected for the candidate
+        required: true
+        type: string
+      fork-ref:
+        description: Maintained Pi fork commit selected for the candidate
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  goal:
+    name: Goal candidate evidence
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.source-ref }}
+          path: extension
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: fitchmultz/.github
+          ref: ${{ inputs.automation-ref }}
+          path: automation
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '24'
+          check-latest: true
+          package-manager-cache: false
+      - name: Use the package's reviewed npm
+        run: |
+          PM="$(node -p 'require("./extension/package.json").packageManager')"
+          npm exec --yes --package="$PM" -- npm install --global "$PM"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: npm-candidate-${{ inputs.source-ref }}
+          path: ${{ runner.temp }}/npm-candidate
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: npm-fork-host-${{ inputs.source-ref }}
+          path: ${{ runner.temp }}/fork-package
+      - name: Qualify the candidate against both exact host graphs
+        env:
+          SOURCE_REF: ${{ inputs.source-ref }}
+          RELEASE_SOURCE: ${{ inputs.release-source }}
+          OFFICIAL_VERSION: ${{ inputs.official-version }}
+          FORK_REF: ${{ inputs.fork-ref }}
+        run: |
+          node extension/scripts/release-offline-candidate.mjs \
+            --artifact "$RUNNER_TEMP/npm-candidate" --fork-artifact "$RUNNER_TEMP/fork-package" \
+            --automation "$GITHUB_WORKSPACE/automation" --repository "$GITHUB_REPOSITORY" --source-ref "$SOURCE_REF" \
+            --release-source "$RELEASE_SOURCE" --official-version "$OFFICIAL_VERSION" \
+            --fork-ref "$FORK_REF" --output "$RUNNER_TEMP/goal-evidence"
+      - name: Determine whether live interactive evidence is required
+        id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_REF: ${{ inputs.source-ref }}
+        run: |
+          version="$(node -p 'require(process.env.RUNNER_TEMP + "/npm-candidate/release.json").version')"
+          node extension/scripts/release-live-scope.mjs --repository "$GITHUB_REPOSITORY" \
+            --source-ref "$SOURCE_REF" --version "$version" --output "$RUNNER_TEMP/goal-evidence/scope.json"
+          printf 'live=%s\n' "$(node -p 'require(process.env.RUNNER_TEMP + "/goal-evidence/scope.json").required')" >> "$GITHUB_OUTPUT"
+      - name: Verify the real interactive goal on both hosts
+        if: steps.scope.outputs.live == 'true'
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+        run: |
+          filename="$(node -p 'require(process.env.RUNNER_TEMP + "/npm-candidate/release.json").filename')"
+          for host in official fork; do
+            python3 extension/scripts/release-interactive-pty.py \
+              --node "$(command -v node)" \
+              --host "$RUNNER_TEMP/goal-evidence/hosts/$host/node_modules/@earendil-works/pi-coding-agent" \
+              --candidate "$RUNNER_TEMP/npm-candidate/$filename" \
+              --output "$RUNNER_TEMP/goal-evidence/$host/live"
+          done
+      - name: Bind evidence to the candidate and host identities
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import { createHash } from 'node:crypto';
+          import { readFileSync } from 'node:fs';
+          import { join } from 'node:path';
+          const root = process.env.RUNNER_TEMP;
+          const read = (file) => JSON.parse(readFileSync(file, 'utf8'));
+          const release = read(join(root, 'npm-candidate/release.json'));
+          const offline = read(join(root, 'goal-evidence/report.json'));
+          const scope = read(join(root, 'goal-evidence/scope.json'));
+          const hash = createHash('sha256').update(readFileSync(join(root, 'npm-candidate', release.filename))).digest('hex');
+          assert.equal(hash, release.sha256);
+          assert.equal(offline.candidateSha256, hash);
+          assert.equal(scope.source, release.source);
+          assert.equal(typeof scope.required, 'boolean');
+          if (scope.required) for (const host of ['official', 'fork']) {
+            const dir = join(root, 'goal-evidence', host, 'live');
+            const live = read(join(dir, 'verification.json'));
+            const invocation = read(join(dir, 'invocation.json'));
+            assert.equal(live.candidateSha256, hash);
+            assert.equal(invocation.hostCliSha256, offline.hosts[host].cliSha256);
+          }
+          NODE
+      - name: Retain candidate and native-session evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: goal-release-evidence-${{ inputs.source-ref }}
+          path: |
+            ${{ runner.temp }}/goal-evidence/report.json
+            ${{ runner.temp }}/goal-evidence/scope.json
+            ${{ runner.temp }}/goal-evidence/*.log
+            ${{ runner.temp }}/goal-evidence/*/identity
+            ${{ runner.temp }}/goal-evidence/*/role
+            ${{ runner.temp }}/goal-evidence/*/deliver
+            ${{ runner.temp }}/goal-evidence/*/restore
+            ${{ runner.temp }}/goal-evidence/*/fullscreen
+            ${{ runner.temp }}/goal-evidence/*/live/*.json
+            ${{ runner.temp }}/goal-evidence/*/live/*.txt
+            ${{ runner.temp }}/goal-evidence/*/live/*.ansi
+            ${{ runner.temp }}/goal-evidence/*/live/*.log
+            ${{ runner.temp }}/goal-evidence/*/live/sessions/*.jsonl
+          if-no-files-found: error
+          retention-days: 14
