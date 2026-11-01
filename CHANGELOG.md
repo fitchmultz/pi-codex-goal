@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.7.2 - 2026-11-01
+
+<!-- npm-release:unreleased:start -->
+<!-- npm-release:unreleased:end -->
+
+- Skip inference for Goal release-harness changes (#115) ([45099c0](https://github.com/fitchmultz/pi-codex-goal/commit/45099c01307e33d8453dce7b7f892d903189fff1))
+
+### What's Changed
+* Skip inference for Goal release-harness changes by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/115
+
+
+**Full Changelog**: https://github.com/fitchmultz/pi-codex-goal/compare/v0.7.1...v0.7.2
+
 ## 0.7.1 - 2026-11-01
 
 <!-- npm-release:unreleased:start -->
