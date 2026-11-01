@@ -20,33 +20,28 @@ const report = { source: values["source-ref"], required: true, changedPaths: [],
 function inspect() {
   const releases = run("gh", ["api", "--paginate", `repos/${values.repository}/releases?per_page=100`, "--jq",
     ".[] | select(.draft == false and .prerelease == false) | .tag_name"]);
-  if (releases.status !== 0) return "Could not resolve the prior published release";
+  assert.equal(releases.status, 0, `Could not resolve the prior published release: ${releases.stderr}`);
   const tag = releases.stdout.split("\n").find((value) => value && value !== `v${values.version}` && value !== values.version);
   if (!tag) return "No prior published release exists";
   report.baselineTag = tag;
   const base = run("git", ["rev-parse", "--verify", `refs/tags/${tag}^{commit}`]);
-  if (base.status !== 0) return "The prior published tag is unavailable in this checkout";
+  assert.equal(base.status, 0, `The prior published tag is unavailable in this checkout: ${base.stderr}`);
   report.baseline = base.stdout.trim();
   const ancestor = run("git", ["merge-base", "--is-ancestor", report.baseline, report.source]);
-  if (ancestor.status !== 0) return "The prior published source is not an ancestor of the candidate";
+  assert.equal(ancestor.status, 0, "The prior published source is not an ancestor of the candidate");
   const diff = run("git", ["diff", "--name-only", "-z", report.baseline, report.source]);
-  if (diff.status !== 0) return "Could not compare the candidate with its published baseline";
+  assert.equal(diff.status, 0, `Could not compare the candidate with its published baseline: ${diff.stderr}`);
   report.changedPaths = diff.stdout.split("\0").filter(Boolean);
   const prefixes = ["src/", "extensions/", "prompts/"];
-  const proof = new Set(["scripts/release-interactive-pty.py", ".github/workflows/release-qualification.yml"]);
-  report.relevantPaths = report.changedPaths.filter((path) => prefixes.some((prefix) => path.startsWith(prefix)) || proof.has(path));
+  report.relevantPaths = report.changedPaths.filter((path) => prefixes.some((prefix) => path.startsWith(prefix)));
   if (report.changedPaths.includes("package.json")) {
     const previous = run("git", ["show", `${report.baseline}:package.json`]);
     const current = run("git", ["show", `${report.source}:package.json`]);
-    if (previous.status !== 0 || current.status !== 0) return "Could not compare package runtime metadata";
-    let left, right;
-    try {
-      left = JSON.parse(previous.stdout);
-      right = JSON.parse(current.stdout);
-    } catch {
-      return "Could not parse package runtime metadata";
-    }
-    const runtime = ["type", "main", "module", "exports", "imports", "bin", "files", "engines",
+    assert.equal(previous.status, 0, `Could not read published package metadata: ${previous.stderr}`);
+    assert.equal(current.status, 0, `Could not read candidate package metadata: ${current.stderr}`);
+    const left = JSON.parse(previous.stdout);
+    const right = JSON.parse(current.stdout);
+    const runtime = ["type", "main", "module", "exports", "imports", "bin", "engines",
       "dependencies", "optionalDependencies", "peerDependencies", "peerDependenciesMeta", "bundledDependencies"];
     const normalize = (value) => {
       if (Array.isArray(value)) return value.map(normalize);
