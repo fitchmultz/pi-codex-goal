@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.7.1 - 2026-11-01
+
+<!-- npm-release:unreleased:start -->
+<!-- npm-release:unreleased:end -->
+
+- Automate qualified Goal npm releases (3/3) (#113) ([73440d2](https://github.com/fitchmultz/pi-codex-goal/commit/73440d28a039eb42bb8941aa18fb91f0d7c4c24f))
+
+### What's Changed
+* Automate native Goal release qualification (1/3) by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/111
+* Use Z.ai for interactive Goal qualification (2/3) by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/112
+* Automate qualified Goal npm releases (3/3) by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/113
+
+
+**Full Changelog**: https://github.com/fitchmultz/pi-codex-goal/compare/v0.7.0...v0.7.1
+
 ## 0.7.0
 
 - Show the current goal's status and objective below the editor; `/goal` still shows the full details.
