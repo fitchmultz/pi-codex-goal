@@ -26,7 +26,7 @@ on:
     secrets:
       ZAI_API_KEY:
         description: The main-protected release environment's live-model credential
-        required: true
+        required: false
 
 permissions:
   contents: read
