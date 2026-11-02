@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.7.3 - 2026-11-02
+
+<!-- npm-release:unreleased:start -->
+<!-- npm-release:unreleased:end -->
+
+- Raise the Pi floor to 1.5.0 (#117) ([423753a](https://github.com/fitchmultz/pi-codex-goal/commit/423753a660590611842c4fbd98f567e47d2d1b3a))
+
+### What's Changed
+* Raise the Pi floor to 1.5.0 by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/117
+
+
+**Full Changelog**: https://github.com/fitchmultz/pi-codex-goal/compare/v0.7.2...v0.7.3
+
 ## 0.7.2 - 2026-11-01
 
 <!-- npm-release:unreleased:start -->
