@@ -27,11 +27,11 @@ npm run check
 
 Runs the full Node test suite (`test/*.test.ts`, via Node's native type stripping), `tsc`, and an `npm pack` dry run. Relative imports use `.ts`; there is no build step, and the npm artifact ships `extensions/` and `src/` as TypeScript.
 
-## Pi 1.0 contracts
+## Pi contracts
 
 Registered context and native lifecycle keepers own continuation rewriting and delivery. Keep distinct terminal inputs and domain guards; do not duplicate index-only reducer calls under stop-reason names or simulate host recovery receipts in the test harness.
 
-Pi 1.0.0 remains the support floor. Locked Pi/TypeBox development dependencies are reproducible snapshots, not validation targets. Qualification must select the latest stable official Pi and latest maintained fork main, resolving version/commit once per workflow run and retaining SDK/CLI evidence. Use each selected host's actual companion graph rather than inferring runtime compatibility from a development bump. Preserve native custom-entry recovery, per-loop guarded continuation and final settlement; do not replace `agent_end` with notification-only `agent_settled`. Use native finalized events/tool correlation for exact-once usage and never assume `message_end` or boundary drafts have already appended. No removed fork checkpoint, recordUsage or metadata/revision API is a supported requirement. Run host-sensitive native suites/packed CLI qualification against the latest maintained fork's exact revision on every qualification run.
+Pi 1.5.0 is the support floor. Locked Pi/TypeBox development dependencies are reproducible snapshots, not validation targets. Qualification must select the latest stable official Pi and latest maintained fork main, resolving version/commit once per workflow run and retaining SDK/CLI evidence. Use each selected host's actual companion graph rather than inferring runtime compatibility from a development bump. Preserve native custom-entry recovery, per-loop guarded continuation and final settlement; do not replace `agent_end` with notification-only `agent_settled`. Use native finalized events/tool correlation for exact-once usage and never assume `message_end` or boundary drafts have already appended. No removed fork checkpoint, recordUsage or metadata/revision API is a supported requirement. Run host-sensitive native suites/packed CLI qualification against the latest maintained fork's exact revision on every qualification run.
 
 Release channels are the owned npm package `pi-codex-goal` and GitHub releases. Follow the shared release workflow after required checks and reviews.
 

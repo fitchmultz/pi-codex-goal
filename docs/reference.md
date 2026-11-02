@@ -4,7 +4,7 @@
 
 ## Installation options
 
-Requires Pi 1.0.0 or later (official releases and the [fitchmultz Pi fork](https://github.com/fitchmultz/pi)) and Node.js 24 or later.
+Requires Pi 1.5.0 or later (official releases and the [fitchmultz Pi fork](https://github.com/fitchmultz/pi)) and Node.js 24 or later.
 
 ```sh
 # Latest npm release
@@ -116,6 +116,6 @@ Turn accounting consumes the current native response once, including a status-ch
 
 ## Compatibility contract
 
-The extension uses the shared public Pi 1.0 extension API. Pi-bundled runtime packages remain optional wildcard peers supplied by the host. Locked development dependencies are reproducible snapshots rather than validation targets. Qualification selects the latest stable official Pi cohort and the latest maintained fork's actual graph, including host-supplied TypeBox; a development update does not change the host's bundled dependencies.
+The extension uses the shared public Pi extension API. Pi-bundled runtime packages remain optional wildcard peers supplied by the host. Locked development dependencies are reproducible snapshots rather than validation targets. Qualification selects the latest stable official Pi cohort and the latest maintained fork's actual graph, including host-supplied TypeBox; a development update does not change the host's bundled dependencies.
 
 Per-loop `agent_end` drives guarded goal continuation; it is not final completion. Native `waitForIdle`/`agent_settled` includes queued goal work, tool receipts, and host compaction/retry. No checkpoint, `recordUsage`, metadata/revision, or extra fork RPC/TUI API is required. Each run qualifies the maintained fork's exact current revision; historical coverage does not certify a new host.
