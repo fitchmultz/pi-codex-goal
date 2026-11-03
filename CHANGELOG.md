@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.7.4 - 2026-11-02
+
+<!-- npm-release:unreleased:start -->
+<!-- npm-release:unreleased:end -->
+
+- Recheck unreported Cursor reviews in automatic releases (#119) ([b883a00](https://github.com/fitchmultz/pi-codex-goal/commit/b883a001e0a07af0e76a6cc56f0c280e1aa2eab8))
+
+### What's Changed
+* Recheck unreported Cursor reviews in automatic releases by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/119
+
+
+**Full Changelog**: https://github.com/fitchmultz/pi-codex-goal/compare/v0.7.3...v0.7.4
+
 ## 0.7.3 - 2026-11-02
 
 <!-- npm-release:unreleased:start -->
