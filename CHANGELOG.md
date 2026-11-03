@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.7.6 - 2026-11-03
+
+<!-- npm-release:unreleased:start -->
+<!-- npm-release:unreleased:end -->
+
+- Merge pull request #122 from fitchmultz/restore-npm-queue-max ([1b89cb0](https://github.com/fitchmultz/pi-codex-goal/commit/1b89cb00881ec3a26d2342cf05c18a4e9d877a47))
+
+**Full Changelog**: https://github.com/fitchmultz/pi-codex-goal/compare/v0.7.5...v0.7.6
+
 ## 0.7.5 - 2026-11-03
 
 <!-- npm-release:unreleased:start -->
