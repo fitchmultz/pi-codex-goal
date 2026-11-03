@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## 0.7.5 - 2026-11-03
+
+<!-- npm-release:unreleased:start -->
+<!-- npm-release:unreleased:end -->
+
+- Merge pull request #121 from fitchmultz/npm-version-queue-1 ([77bc43d](https://github.com/fitchmultz/pi-codex-goal/commit/77bc43d1d0185b774ef5671972b223d4b8a5ac62))
+
+### What's Changed
+* Coalesce queued npm version runs by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/121
+* Restore queue: max and the final newline in npm-version.yml by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/122
+
+
+**Full Changelog**: https://github.com/fitchmultz/pi-codex-goal/compare/v0.7.4...v0.7.5
+
 ## 0.7.4 - 2026-11-02
 
 <!-- npm-release:unreleased:start -->
