@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.7.7 - 2026-11-03
+
+<!-- npm-release:unreleased:start -->
+<!-- npm-release:unreleased:end -->
+
+- Skip no-op releases and restate malformed remediation dispositions (#125) ([2a285fc](https://github.com/fitchmultz/pi-codex-goal/commit/2a285fc0046ff6934582f53e25f8fed2186335f7))
+
+### What's Changed
+* Skip no-op releases and restate malformed remediation dispositions by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/125
+
+
+**Full Changelog**: https://github.com/fitchmultz/pi-codex-goal/compare/v0.7.6...v0.7.7
+
 ## 0.7.6 - 2026-11-03
 
 <!-- npm-release:unreleased:start -->
