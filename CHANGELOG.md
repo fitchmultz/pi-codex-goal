@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.7.6 - 2026-11-03
+
+<!-- npm-release:unreleased:start -->
+<!-- npm-release:unreleased:end -->
+
+- Metadata-only release: no shipped-code changes since 0.7.5. The version bump source ([1b89cb0](https://github.com/fitchmultz/pi-codex-goal/commit/1b89cb00881ec3a26d2342cf05c18a4e9d877a47), merge of #122) is already included in the 0.7.5 release, so 0.7.6 changes only package.json, package-lock.json, and this changelog.
+
+**Full Changelog**: https://github.com/fitchmultz/pi-codex-goal/compare/v0.7.5...v0.7.6
+
 ## 0.7.5 - 2026-11-03
 
 <!-- npm-release:unreleased:start -->
