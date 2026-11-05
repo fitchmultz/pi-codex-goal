@@ -23,15 +23,15 @@ Run `/reload` if Pi is already open. Enter a task in the Pi editor:
 
 ## Goal controls
 
-| Command | Action |
-| --- | --- |
-| `/goal` | Show the objective, status, token budget, usage, and active time. |
-| `/goal <objective>` | Set the exact objective. Confirm replacement of an unfinished goal. |
-| `/goal pause` | Pause an active or waiting goal. |
-| `/goal resume` | Continue a paused, blocked, or waiting goal. |
-| `/goal resume cancel` | Cancel a scheduled provider-limit retry. |
-| `/goal copy` | Copy the objective to the system clipboard. |
-| `/goal clear` | Remove the current goal. |
+| Command               | Action                                                              |
+| --------------------- | ------------------------------------------------------------------- |
+| `/goal`               | Show the objective, status, token budget, usage, and active time.   |
+| `/goal <objective>`   | Set the exact objective. Confirm replacement of an unfinished goal. |
+| `/goal pause`         | Pause an active or waiting goal.                                    |
+| `/goal resume`        | Continue a paused, blocked, or waiting goal.                        |
+| `/goal resume cancel` | Cancel a scheduled provider-limit retry.                            |
+| `/goal copy`          | Copy the objective to the system clipboard.                         |
+| `/goal clear`         | Remove the current goal.                                            |
 
 Press Esc to stop the current assistant turn and pause its active goal.
 

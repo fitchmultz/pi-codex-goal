@@ -1,4 +1,8 @@
-import type { AgentEndEvent, AgentStartEvent, ExtensionHandler } from "@earendil-works/pi-coding-agent";
+import type {
+  AgentEndEvent,
+  AgentStartEvent,
+  ExtensionHandler,
+} from "@earendil-works/pi-coding-agent";
 
 import { assistantTurnTokens, isAbortedAssistantMessage } from "./goal-accounting.ts";
 import { isErrorAssistantMessage, type AssistantErrorMessage } from "./recovery.ts";
@@ -9,9 +13,14 @@ import {
   shouldPauseStatusInspectionOnlyContinuation,
   STATUS_INSPECTION_ONLY_CONTINUATION_REASON,
 } from "./goal-runtime-event-utils.ts";
-import type { GoalRuntimeAgentHandlerContext } from "./goal-runtime-event-handler-types.ts";
+import type {
+  GoalRuntimeAgentHandlerContext,
+  GoalRuntimeEventHandlers,
+} from "./goal-runtime-event-handler-types.ts";
 
-export function createAgentEventHandlers(deps: GoalRuntimeAgentHandlerContext) {
+export function createAgentEventHandlers(
+  deps: GoalRuntimeAgentHandlerContext,
+): Pick<GoalRuntimeEventHandlers, "onAgentStart" | "onAgentEnd"> {
   const { runtimeState, stateController, continuation, goalAccounting, resetErrorRecovery } = deps;
 
   return {
@@ -22,9 +31,17 @@ export function createAgentEventHandlers(deps: GoalRuntimeAgentHandlerContext) {
     }) satisfies ExtensionHandler<AgentStartEvent>,
 
     onAgentEnd: (async (event, ctx) => {
-      if (deps.deliveries.retireQueued()) continuation.requireFullGoal();
+      if (deps.deliveries.retireQueued()) {
+        continuation.requireFullGoal();
+      }
       continuation.clearContinuationState();
-      if (runStaleQueuedWorkPlan(runtimeState.staleQueuedWorkGuard.planAgentEnd(event.messages), ctx, deps)) {
+      if (
+        runStaleQueuedWorkPlan(
+          runtimeState.staleQueuedWorkGuard.planAgentEnd(event.messages),
+          ctx,
+          deps,
+        )
+      ) {
         continuation.maybeContinueAfterCurrentEvent(ctx);
         return;
       }

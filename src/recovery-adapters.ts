@@ -24,13 +24,16 @@ function stopReasonFromAssistantError(stopReason: string | undefined): StopReaso
     case "error":
     case "aborted":
       return stopReason;
+    case undefined:
     default:
       return "error";
   }
 }
 
 /** Single adapter for pi-ai overflow checks; keeps AssistantMessage casts out of recovery logic. */
-export function assistantMessageForOverflowCheck(message: OverflowCheckAssistantMessage): AssistantMessage {
+export function assistantMessageForOverflowCheck(
+  message: OverflowCheckAssistantMessage,
+): AssistantMessage {
   const usage = message.usage ?? { input: 0, output: 0 };
   const cacheRead = usage.cacheRead ?? 0;
   const cacheWrite = usage.cacheWrite ?? 0;

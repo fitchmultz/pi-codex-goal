@@ -51,12 +51,12 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '24'
+          node-version: "24"
           check-latest: true
           package-manager-cache: false
       - name: Use the package's reviewed npm
         run: |
-          PM="$(node -p 'require("./extension/package.json").packageManager')"
+          PM="$(jq -r '.packageManager' extension/package.json)"
           npm exec --yes --package="$PM" -- npm install --global "$PM"
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -74,7 +74,7 @@ jobs:
           OFFICIAL_VERSION: ${{ inputs.official-version }}
           FORK_REF: ${{ inputs.fork-ref }}
         run: |
-          node extension/scripts/release-offline-candidate.mjs \
+          node extension/scripts/release-offline-candidate.ts \
             --artifact "$RUNNER_TEMP/npm-candidate" --fork-artifact "$RUNNER_TEMP/fork-package" \
             --automation "$GITHUB_WORKSPACE/automation" --repository "$GITHUB_REPOSITORY" --source-ref "$SOURCE_REF" \
             --release-source "$RELEASE_SOURCE" --official-version "$OFFICIAL_VERSION" \
@@ -85,16 +85,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SOURCE_REF: ${{ inputs.source-ref }}
         run: |
-          version="$(node -p 'require(process.env.RUNNER_TEMP + "/npm-candidate/release.json").version')"
-          node extension/scripts/release-live-scope.mjs --repository "$GITHUB_REPOSITORY" \
+          version="$(jq -r '.version' "$RUNNER_TEMP/npm-candidate/release.json")"
+          node extension/scripts/release-live-scope.ts --repository "$GITHUB_REPOSITORY" \
             --source-ref "$SOURCE_REF" --version "$version" --output "$RUNNER_TEMP/goal-evidence/scope.json"
-          printf 'live=%s\n' "$(node -p 'require(process.env.RUNNER_TEMP + "/goal-evidence/scope.json").required')" >> "$GITHUB_OUTPUT"
+          printf 'live=%s\n' "$(jq -r '.required' "$RUNNER_TEMP/goal-evidence/scope.json")" >> "$GITHUB_OUTPUT"
       - name: Verify the real interactive goal on both hosts
         if: steps.scope.outputs.live == 'true'
         env:
           ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
         run: |
-          filename="$(node -p 'require(process.env.RUNNER_TEMP + "/npm-candidate/release.json").filename')"
+          filename="$(jq -r '.filename' "$RUNNER_TEMP/npm-candidate/release.json")"
           for host in official fork; do
             python3 extension/scripts/release-interactive-pty.py \
               --node "$(command -v node)" \
@@ -104,29 +104,7 @@ jobs:
           done
       - name: Bind evidence to the candidate and host identities
         run: |
-          node --input-type=module <<'NODE'
-          import assert from 'node:assert/strict';
-          import { createHash } from 'node:crypto';
-          import { readFileSync } from 'node:fs';
-          import { join } from 'node:path';
-          const root = process.env.RUNNER_TEMP;
-          const read = (file) => JSON.parse(readFileSync(file, 'utf8'));
-          const release = read(join(root, 'npm-candidate/release.json'));
-          const offline = read(join(root, 'goal-evidence/report.json'));
-          const scope = read(join(root, 'goal-evidence/scope.json'));
-          const hash = createHash('sha256').update(readFileSync(join(root, 'npm-candidate', release.filename))).digest('hex');
-          assert.equal(hash, release.sha256);
-          assert.equal(offline.candidateSha256, hash);
-          assert.equal(scope.source, release.source);
-          assert.equal(typeof scope.required, 'boolean');
-          if (scope.required) for (const host of ['official', 'fork']) {
-            const dir = join(root, 'goal-evidence', host, 'live');
-            const live = read(join(dir, 'verification.json'));
-            const invocation = read(join(dir, 'invocation.json'));
-            assert.equal(live.candidateSha256, hash);
-            assert.equal(invocation.hostCliSha256, offline.hosts[host].cliSha256);
-          }
-          NODE
+          node extension/scripts/release-verify-evidence.ts --root "$RUNNER_TEMP"
       - name: Retain candidate and native-session evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

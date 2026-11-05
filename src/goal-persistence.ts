@@ -15,19 +15,22 @@ interface GoalPersistenceDeps {
   pi: Pick<ExtensionAPI, "appendEntry">;
 }
 
-function canPersistRuntimeUsageEntry(goal: ThreadGoal, lastPersistedGoal: ThreadGoal | null): boolean {
+function canPersistRuntimeUsageEntry(
+  goal: ThreadGoal,
+  lastPersistedGoal: ThreadGoal | null,
+): boolean {
   return Boolean(
     lastPersistedGoal &&
-      goal.goalId === lastPersistedGoal.goalId &&
-      goal.objective === lastPersistedGoal.objective &&
-      goal.tokenBudget === lastPersistedGoal.tokenBudget &&
-      goal.createdAt === lastPersistedGoal.createdAt &&
-      isRuntimeUsageGoalStatus(goal.status) &&
-      isRuntimeUsageGoalStatus(lastPersistedGoal.status),
+    goal.goalId === lastPersistedGoal.goalId &&
+    goal.objective === lastPersistedGoal.objective &&
+    goal.tokenBudget === lastPersistedGoal.tokenBudget &&
+    goal.createdAt === lastPersistedGoal.createdAt &&
+    isRuntimeUsageGoalStatus(goal.status) &&
+    isRuntimeUsageGoalStatus(lastPersistedGoal.status),
   );
 }
 
-export function createGoalPersistence(deps: GoalPersistenceDeps) {
+export function createGoalPersistence(deps: GoalPersistenceDeps): GoalPersistence {
   let goal: ThreadGoal | null = null;
   let lastPersistedGoal: ThreadGoal | null = null;
   let lastRuntimePersistAt: number | null = null;
@@ -94,4 +97,11 @@ export function createGoalPersistence(deps: GoalPersistenceDeps) {
   };
 }
 
-export type GoalPersistence = ReturnType<typeof createGoalPersistence>;
+export interface GoalPersistence {
+  appendClearEntry: (goalId: string | null, source: GoalEntrySource) => void;
+  flushGoalPersistence: (source: GoalEntrySource) => boolean;
+  getGoal: () => ThreadGoal | null;
+  maybeFlushRuntimePersistence: (source: GoalEntrySource) => void;
+  setGoalSnapshot: (goal: ThreadGoal | null) => void;
+  syncPersistedSnapshot: (goal: ThreadGoal | null) => void;
+}

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test as nodeTest } from "node:test";
 
 import { createStaleQueuedWorkGuard } from "../src/stale-queued-work-guard.ts";
 
@@ -10,7 +10,9 @@ function effectTypes(plan: { effects: Array<{ type: string }> }): string[] {
 type GuardTransitionCase = {
   label: string;
   steps: Array<(guard: ReturnType<typeof createStaleQueuedWorkGuard>) => void>;
-  act: (guard: ReturnType<typeof createStaleQueuedWorkGuard>) => { skip: boolean; effects: string[] } | null;
+  act: (
+    guard: ReturnType<typeof createStaleQueuedWorkGuard>,
+  ) => { skip: boolean; effects: string[] } | null;
   lifecycle: string;
   result: { skip: boolean; effects: string[] } | null;
 };
@@ -68,7 +70,7 @@ const guardTransitionCases: GuardTransitionCase[] = [
 ];
 
 for (const testCase of guardTransitionCases) {
-  test(`stale queued-work reducer transition: ${testCase.label}`, () => {
+  nodeTest(`stale queued-work reducer transition: ${testCase.label}`, () => {
     const guard = createStaleQueuedWorkGuard();
     for (const step of testCase.steps) {
       step(guard);
@@ -79,14 +81,14 @@ for (const testCase of guardTransitionCases) {
   });
 }
 
-test("idle -> observingTurn when stale work is noted", () => {
+nodeTest("idle -> observingTurn when stale work is noted", () => {
   const guard = createStaleQueuedWorkGuard();
   guard.noteStaleWorkStarted("goal-1");
 
   assert.equal(guard.lifecycleKind(), "observingTurn");
 });
 
-test("idle -> observingTurn when runnable work is noted", () => {
+nodeTest("idle -> observingTurn when runnable work is noted", () => {
   const guard = createStaleQueuedWorkGuard();
   guard.noteRunnableWorkStarted();
 
@@ -94,7 +96,7 @@ test("idle -> observingTurn when runnable work is noted", () => {
   assert.equal(guard.planContextAbort(0), null);
 });
 
-test("observingTurn: mixed stale and current work does not abort", () => {
+nodeTest("observingTurn: mixed stale and current work does not abort", () => {
   const guard = createStaleQueuedWorkGuard();
   guard.noteStaleWorkStarted("stale-goal");
   guard.noteRunnableWorkStarted();
@@ -104,7 +106,7 @@ test("observingTurn: mixed stale and current work does not abort", () => {
   assert.equal(guard.isBlockingContinuation(), false);
 });
 
-test("observingTurn -> idle on turn_start clears observation", () => {
+nodeTest("observingTurn -> idle on turn_start clears observation", () => {
   const guard = createStaleQueuedWorkGuard();
   guard.noteStaleWorkStarted("goal-1");
   guard.noteRunnableWorkStarted();
@@ -114,7 +116,7 @@ test("observingTurn -> idle on turn_start clears observation", () => {
   assert.equal(guard.lifecycleKind(), "idle");
 });
 
-test("observingTurn -> abortingTurn on context abort with stale-only work", () => {
+nodeTest("observingTurn -> abortingTurn on context abort with stale-only work", () => {
   const guard = createStaleQueuedWorkGuard();
   guard.noteStaleWorkStarted("goal-1");
   assert.equal(guard.lifecycleKind(), "observingTurn");
@@ -126,7 +128,7 @@ test("observingTurn -> abortingTurn on context abort with stale-only work", () =
   assert.equal(guard.isBlockingContinuation(), true);
 });
 
-test("planTurnStart clears aborting turn without refreshUi", () => {
+nodeTest("planTurnStart clears aborting turn without refreshUi", () => {
   const guard = createStaleQueuedWorkGuard();
   guard.noteStaleWorkStarted("goal-1");
   guard.planContextAbort(4);
@@ -136,14 +138,14 @@ test("planTurnStart clears aborting turn without refreshUi", () => {
   assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
 });
 
-test("planTurnStart is a no-op when idle", () => {
+nodeTest("planTurnStart is a no-op when idle", () => {
   const guard = createStaleQueuedWorkGuard();
   const plan = guard.planTurnStart();
   assert.deepEqual(plan, { skip: false, effects: [] });
   assert.equal(guard.lifecycleKind(), "idle");
 });
 
-test("abortingTurn skips tool execution and compaction handlers", () => {
+nodeTest("abortingTurn skips tool execution and compaction handlers", () => {
   const guard = createStaleQueuedWorkGuard();
   guard.noteStaleWorkStarted("goal-1");
   guard.planContextAbort(0);
@@ -158,7 +160,7 @@ test("abortingTurn skips tool execution and compaction handlers", () => {
   }
 });
 
-test("planSessionShutdown clears aborting state", () => {
+nodeTest("planSessionShutdown clears aborting state", () => {
   const guard = createStaleQueuedWorkGuard();
   guard.noteStaleWorkStarted("goal-1");
   guard.planContextAbort(0);
@@ -168,7 +170,7 @@ test("planSessionShutdown clears aborting state", () => {
   assert.equal(guard.lifecycleKind(), "idle");
 });
 
-test("planExtensionContinuationClearAbort applies clearAccounting only", () => {
+nodeTest("planExtensionContinuationClearAbort applies clearAccounting only", () => {
   const guard = createStaleQueuedWorkGuard();
   guard.noteStaleWorkStarted("goal-1");
   guard.planContextAbort(2);
@@ -178,7 +180,7 @@ test("planExtensionContinuationClearAbort applies clearAccounting only", () => {
   assert.equal(guard.lifecycleKind(), "awaitingTerminalCleanup");
 });
 
-test("planBeforeAgentStartClearAbort matches extension clear", () => {
+nodeTest("planBeforeAgentStartClearAbort matches extension clear", () => {
   const guard = createStaleQueuedWorkGuard();
   guard.noteStaleWorkStarted("goal-1");
   guard.planContextAbort(2);

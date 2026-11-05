@@ -38,16 +38,16 @@ Current selected hosts (resolved once for this round):
 - Maintained fork **`b02d6a8e6d3e4b9b4c4ae45b371bfed95c71dc8e`**, actual bundled companion graph (TypeBox 1.3.37).
 - Node **24.22.1**, isolated agent/HOME/session directories. No live provider credentials, package installation or runtime selector changes.
 
-| Contract | Native proof |
-| --- | --- |
-| Bubble / pending queue | Real CLI PTY: in-flight pause/resume, regular and fullscreen; no ownership envelope or automated native user row; genuine follow-up row remains |
-| Alt+Up / resubmission | Real PTY keyboard flow restores genuine queued input plus existing editor draft, never Goal automation; resubmitted text reaches provider |
-| Genuine normalization | Leading literal legacy envelope, caption and real 3000×8 PNG reaches provider once with native resize note; text-only and ordinary-prefix controls retained |
-| Owned normalization | Actual finalized custom continuation includes native normalized caption/image/coordinate-note blocks; full objective changes only the owned control block |
-| Identity | Pause/resume same goal, stale generations, newer queued delivery, genuine pending image, duplicates and replay after reload; only current activation delivers, real input survives |
-| Queue discard | Actual native editor queue restoration discards custom work without making it editable; active Goal requeues valid work, paused Goal stays paused |
-| Overflow | Actual native exhausted recovery pauses Goal without a manufactured reset; later genuine input receives native recovery, including after reload |
-| Cache / refresh | Stable provider-history prefixes; one-time persisted cancellation; pending and consumed full-objective refresh survive native compaction/reload |
+| Contract               | Native proof                                                                                                                                                                       |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Bubble / pending queue | Real CLI PTY: in-flight pause/resume, regular and fullscreen; no ownership envelope or automated native user row; genuine follow-up row remains                                    |
+| Alt+Up / resubmission  | Real PTY keyboard flow restores genuine queued input plus existing editor draft, never Goal automation; resubmitted text reaches provider                                          |
+| Genuine normalization  | Leading literal legacy envelope, caption and real 3000×8 PNG reaches provider once with native resize note; text-only and ordinary-prefix controls retained                        |
+| Owned normalization    | Actual finalized custom continuation includes native normalized caption/image/coordinate-note blocks; full objective changes only the owned control block                          |
+| Identity               | Pause/resume same goal, stale generations, newer queued delivery, genuine pending image, duplicates and replay after reload; only current activation delivers, real input survives |
+| Queue discard          | Actual native editor queue restoration discards custom work without making it editable; active Goal requeues valid work, paused Goal stays paused                                  |
+| Overflow               | Actual native exhausted recovery pauses Goal without a manufactured reset; later genuine input receives native recovery, including after reload                                    |
+| Cache / refresh        | Stable provider-history prefixes; one-time persisted cancellation; pending and consumed full-objective refresh survive native compaction/reload                                    |
 
 `test/native-lifecycle.test.ts` is the primary native lifecycle owner. Existing guard tests retain separate per-delivery terminal-correlation/order coverage. `scripts/delivery-identity-proof.ts` exercises the original concrete lost-input case, not a substitute mock. `scripts/delivery-role-proof.ts` independently verifies native custom/user overflow differences without Goal.
 

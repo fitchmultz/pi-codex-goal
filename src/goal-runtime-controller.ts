@@ -15,193 +15,262 @@ import { createGoalRuntimeStatus, type StatusContext } from "./goal-runtime-stat
 import { createGoalStateController } from "./goal-state-controller.ts";
 import { createProviderLimitAutoResumeScheduler } from "./provider-limit-auto-resume.ts";
 import { createGoalRecoveryRuntime } from "./recovery-runtime.ts";
-import {
-  clearActiveHostOverflowRecovery,
-  recoveryPhaseNeedsUserStartTurn,
-  resetRecoveryMachine,
-  setRecoveryPausedAttention,
-} from "./recovery-machine.ts";
+import { recoveryPhaseNeedsUserStartTurn } from "./recovery-machine.ts";
 import { goalWithLiveUsage, updateGoalStatus } from "./state.ts";
 import { registerGoalTools } from "./tools.ts";
 import type { GoalEntrySource, GoalResult, ThreadGoal } from "./types.ts";
 
 export interface GoalRuntimeController extends GoalRuntimeEventHandlers {
-  getGoalForDisplay(): ThreadGoal | null;
-  queueGoalTurn(goal: ThreadGoal, kind: GoalDeliveryKind, ctx: StatusContext): GoalResult;
-  setGoal(goal: ThreadGoal, source: GoalEntrySource, ctx: ExtensionContext): void;
-  clearGoal(source: GoalEntrySource, ctx: ExtensionContext): void;
-  updateGoal(source: GoalEntrySource, ctx: ExtensionContext, toolCallId: string, status: "complete" | "blocked" | "waiting", reason?: string): GoalResult;
-  cancelProviderLimitAutoResume(goalId: string, ctx: StatusContext): void;
-  resumeGoalWithContinuation(goalId: string, source: GoalEntrySource, ctx: StatusContext): GoalResult;
+  getGoalForDisplay: () => ThreadGoal | null;
+  queueGoalTurn: (goal: ThreadGoal, kind: GoalDeliveryKind, ctx: StatusContext) => GoalResult;
+  setGoal: (goal: ThreadGoal, source: GoalEntrySource, ctx: StatusContext) => void;
+  clearGoal: (source: GoalEntrySource, ctx: StatusContext) => void;
+  updateGoal: (
+    ctx: ExtensionContext,
+    toolCallId: string,
+    status: "complete" | "blocked" | "waiting",
+    reason?: string,
+  ) => GoalResult;
+  cancelProviderLimitAutoResume: (goalId: string, ctx: StatusContext) => void;
+  resumeGoalWithContinuation: (
+    goalId: string,
+    source: GoalEntrySource,
+    ctx: StatusContext,
+  ) => GoalResult;
 }
 
 export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeController {
-  const runtimeState = createGoalRuntimeState();
-  const persistence = createGoalPersistence({ pi });
-  const deliveries = createGoalDeliveries(pi, persistence.getGoal);
+  const controller = new RuntimeController(pi);
+  return {
+    getGoalForDisplay: controller.getGoalForDisplay,
+    queueGoalTurn: controller.queueGoalTurn,
+    setGoal: controller.setGoal,
+    clearGoal: controller.clearGoal,
+    cancelProviderLimitAutoResume: controller.cancelProviderLimitAutoResume,
+    updateGoal: controller.updateGoal,
+    resumeGoalWithContinuation: controller.resumeGoalWithContinuation,
+    ...controller.getEventHandlers(),
+  };
+}
 
-  const clearActiveAccounting = (): void => {
-    runtimeState.accounting.activeGoalId = null;
-    runtimeState.accounting.lastAccountedAt = null;
-    runtimeState.accounting.lastSampledAt = null;
+class RuntimeController {
+  private readonly pi: ExtensionAPI;
+  private readonly runtimeState = createGoalRuntimeState();
+  private readonly persistence: ReturnType<typeof createGoalPersistence>;
+  private readonly deliveries: ReturnType<typeof createGoalDeliveries>;
+  private autoResumeContext: ExtensionContext | null = null;
+  private readonly providerLimitAutoResume: ReturnType<
+    typeof createProviderLimitAutoResumeScheduler
+  >;
+  private readonly status: ReturnType<typeof createGoalRuntimeStatus>;
+  private readonly continuation: ReturnType<typeof createContinuationScheduler>;
+  private readonly stateController: ReturnType<typeof createGoalStateController>;
+  private readonly goalAccounting: ReturnType<typeof createGoalAccounting>;
+  private readonly recoveryRuntime: ReturnType<typeof createGoalRecoveryRuntime<ExtensionContext>>;
+  constructor(pi: ExtensionAPI) {
+    this.pi = pi;
+    this.persistence = createGoalPersistence({ pi: this.pi });
+    this.deliveries = createGoalDeliveries(this.pi, this.persistence.getGoal);
+    this.providerLimitAutoResume = createProviderLimitAutoResumeScheduler({
+      onTimer: (goalId) => {
+        if (
+          !this.autoResumeContext ||
+          !this.autoResumeContext.isIdle() ||
+          this.autoResumeContext.hasPendingMessages()
+        ) {
+          return false;
+        }
+        this.resumeGoalWithContinuation(goalId, "runtime", this.autoResumeContext);
+        return true;
+      },
+    });
+    this.status = createGoalRuntimeStatus({
+      getGoalForDisplay: this.getGoalForDisplay,
+      getGoalStatus: () => this.persistence.getGoal()?.status ?? null,
+      getRecoveryAttention: () => this.runtimeState.recoveryState.attention,
+      isProviderLimitAutoResumeScheduled: this.providerLimitAutoResume.isScheduledFor,
+    });
+    this.continuation = createContinuationScheduler({
+      deliveries: this.deliveries,
+      getGoal: () => this.persistence.getGoal(),
+      getRecoveryState: () => this.runtimeState.recoveryState,
+      staleQueuedWorkGuard: this.runtimeState.staleQueuedWorkGuard,
+      getCurrentTurnIndex: () => this.runtimeState.currentTurnIndex,
+      getAgentRunSequence: () => this.runtimeState.agentRunSequence,
+    });
+    this.stateController = this.createStateController();
+    this.goalAccounting = createGoalAccounting({
+      getGoal: () => this.stateController.getGoal(),
+      getAccounting: () => this.runtimeState.accounting,
+      applyRuntimeAccountingTransition: (ctx, nextGoal) => {
+        this.stateController.applyGoalTransition({ kind: "runtime_accounting", nextGoal }, ctx);
+      },
+      sendMessage: this.pi.sendMessage.bind(this.pi),
+    });
+    this.recoveryRuntime = this.createRecoveryRuntime();
+  }
+  private readonly clearActiveAccounting = (): void => {
+    this.runtimeState.accounting.activeGoalId = null;
+    this.runtimeState.accounting.lastAccountedAt = null;
+    this.runtimeState.accounting.lastSampledAt = null;
   };
 
-  const resetErrorRecovery = (): void => {
-    resetRecoveryMachine(runtimeState.recoveryState);
+  private readonly resetErrorRecovery = (): void => {
+    this.runtimeState.recoveryState.resetRecoveryMachine();
   };
 
-  const goalForDisplay = () =>
+  getGoalForDisplay: () => ThreadGoal | null = () =>
     goalWithLiveUsage(
-      persistence.getGoal(),
-      runtimeState.accounting.activeGoalId,
-      runtimeState.accounting.lastAccountedAt,
+      this.persistence.getGoal(),
+      this.runtimeState.accounting.activeGoalId,
+      this.runtimeState.accounting.lastAccountedAt,
     );
 
-  let autoResumeContext: ExtensionContext | null = null;
-  const providerLimitAutoResume = createProviderLimitAutoResumeScheduler({
-    onTimer(goalId) {
-      if (!autoResumeContext || !autoResumeContext.isIdle() || autoResumeContext.hasPendingMessages()) {
-        return false;
-      }
-      resumeGoalWithContinuation(goalId, "runtime", autoResumeContext);
-      return true;
-    },
-  });
-
-  const status = createGoalRuntimeStatus({
-    getGoalForDisplay: goalForDisplay,
-    getGoalStatus: () => persistence.getGoal()?.status ?? null,
-    getRecoveryAttention: () => runtimeState.recoveryState.attention,
-    isProviderLimitAutoResumeScheduled: providerLimitAutoResume.isScheduledFor,
-  });
-
-  const continuation = createContinuationScheduler({
-    deliveries,
-    getGoal: () => persistence.getGoal(),
-    getRecoveryState: () => runtimeState.recoveryState,
-    staleQueuedWorkGuard: runtimeState.staleQueuedWorkGuard,
-    getCurrentTurnIndex: () => runtimeState.currentTurnIndex,
-    getAgentRunSequence: () => runtimeState.agentRunSequence,
-  });
-
-  const stateController = createGoalStateController({
-    pi,
-    persistence,
-    invalidateDeliveries: deliveries.invalidate,
-    getRecoveryState: () => runtimeState.recoveryState,
-    transitionEffectHandlers: {
-      clearContinuation: continuation.clearContinuationState,
-      clearActiveAccounting,
-      resetRecovery: resetErrorRecovery,
-      clearBudgetWarning: () => {
-        runtimeState.accounting.budgetWarningSentFor = null;
+  private createStateController(): ReturnType<typeof createGoalStateController> {
+    return createGoalStateController({
+      pi: this.pi,
+      persistence: this.persistence,
+      invalidateDeliveries: this.deliveries.invalidate,
+      getRecoveryState: () => this.runtimeState.recoveryState,
+      transitionEffectHandlers: {
+        clearContinuation: this.continuation.clearContinuationState,
+        clearActiveAccounting: this.clearActiveAccounting,
+        resetRecovery: this.resetErrorRecovery,
+        clearBudgetWarning: () => {
+          this.runtimeState.accounting.budgetWarningSentFor = null;
+        },
+        clearHostOverflowRecovery: () => {
+          this.runtimeState.recoveryState.clearActiveHostOverflowRecovery();
+        },
+        setRecoveryPausedAttention: (reason: string) => {
+          this.runtimeState.recoveryState.setRecoveryPausedAttention(reason);
+        },
+        markContinuationQueued: this.continuation.markContinuationQueued,
+        stopStatusRefresh: () => this.status.stopStatusRefresh(),
       },
-      clearHostOverflowRecovery: () => {
-        clearActiveHostOverflowRecovery(runtimeState.recoveryState);
+      refreshUi: (ctx) => this.status.refreshUi(ctx),
+    });
+  }
+
+  private createRecoveryRuntime(): ReturnType<typeof createGoalRecoveryRuntime<ExtensionContext>> {
+    return createGoalRecoveryRuntime({
+      getGoal: () => this.stateController.getGoal(),
+      getRecoveryState: () => this.runtimeState.recoveryState,
+      clearContinuationState: this.continuation.clearContinuationState,
+      pauseGoalForRecovery: (ctx, recoveryReason) => {
+        this.stateController.pauseForRecovery(ctx, recoveryReason);
       },
-      setRecoveryPausedAttention: (reason: string) => {
-        setRecoveryPausedAttention(runtimeState.recoveryState, reason);
+      refreshUi: this.status.refreshUi,
+      maybeContinue: this.continuation.maybeContinue,
+      scheduleProviderLimitAutoResume: (goalId, ctx) => {
+        this.autoResumeContext = ctx;
+        this.providerLimitAutoResume.schedule(goalId);
+        this.status.refreshUi(ctx);
       },
-      markContinuationQueued: continuation.markContinuationQueued,
-      stopStatusRefresh: () => status.stopStatusRefresh(),
-    },
-    refreshUi: (ctx) => status.refreshUi(ctx),
-  });
+    });
+  }
 
-  const goalAccounting = createGoalAccounting({
-    getGoal: () => stateController.getGoal(),
-    getAccounting: () => runtimeState.accounting,
-    applyRuntimeAccountingTransition(ctx, nextGoal) {
-      stateController.applyGoalTransition({ kind: "runtime_accounting", nextGoal }, ctx);
-    },
-    sendMessage: pi.sendMessage.bind(pi),
-  });
-
-  const recoveryRuntime = createGoalRecoveryRuntime({
-    getGoal: () => stateController.getGoal(),
-    getRecoveryState: () => runtimeState.recoveryState,
-    clearContinuationState: continuation.clearContinuationState,
-    pauseGoalForRecovery(ctx, recoveryReason) {
-      stateController.pauseForRecovery(ctx, recoveryReason);
-    },
-    refreshUi: status.refreshUi,
-    maybeContinue: continuation.maybeContinue,
-    scheduleProviderLimitAutoResume(goalId, ctx) {
-      autoResumeContext = ctx;
-      providerLimitAutoResume.schedule(goalId);
-      status.refreshUi(ctx);
-    },
-  });
-
-  const queueGoalTurn = (goal: ThreadGoal, kind: GoalDeliveryKind, ctx: StatusContext): GoalResult => {
-    if (recoveryPhaseNeedsUserStartTurn(runtimeState.recoveryState.phase)) {
-      const message = "Goal cannot restart native overflow recovery. Reduce context or switch models, then send a genuine user message before /goal resume.";
-      stateController.pauseForRecovery(ctx, message);
-      return { ok: false, message, goal: stateController.getGoal() };
+  queueGoalTurn = (goal: ThreadGoal, kind: GoalDeliveryKind, ctx: StatusContext): GoalResult => {
+    if (recoveryPhaseNeedsUserStartTurn(this.runtimeState.recoveryState.phase)) {
+      const message =
+        "Goal cannot restart native overflow recovery. Reduce context or switch models, then send a genuine user message before /goal resume.";
+      this.stateController.pauseForRecovery(ctx, message);
+      return { ok: false, message, goal: this.stateController.getGoal() };
     }
-    continuation.markContinuationQueued(goal.goalId);
-    deliveries.send(goal, kind);
+    this.continuation.markContinuationQueued(goal.goalId);
+    this.deliveries.send(goal, kind);
     return { ok: true, message: "Goal follow-up queued.", goal };
   };
 
-  const resumeGoalWithContinuation = (
+  private checkResumeGoal(
+    current: ThreadGoal | null,
+    goalId: string,
+    source: GoalEntrySource,
+    ctx: StatusContext,
+  ): GoalResult | null {
+    if (current?.status === "blocked" && source !== "command") {
+      return { ok: false, message: "Blocked goals require explicit /goal resume.", goal: current };
+    }
+    if (
+      current?.goalId === goalId &&
+      recoveryPhaseNeedsUserStartTurn(this.runtimeState.recoveryState.phase)
+    ) {
+      return this.queueGoalTurn(current, "command_resume", ctx);
+    }
+    return null;
+  }
+
+  resumeGoalWithContinuation = (
     goalId: string,
     source: GoalEntrySource,
     ctx: StatusContext,
   ): GoalResult => {
-    const current = stateController.getGoal();
-    if (current?.status === "blocked" && source !== "command") {
-      return { ok: false, message: "Blocked goals require explicit /goal resume.", goal: current };
-    }
-    if (current?.goalId === goalId && recoveryPhaseNeedsUserStartTurn(runtimeState.recoveryState.phase)) {
-      return queueGoalTurn(current, "command_resume", ctx);
+    const current = this.stateController.getGoal();
+    const guarded = this.checkResumeGoal(current, goalId, source, ctx);
+    if (guarded !== null) {
+      return guarded;
     }
     const result = updateGoalStatus(current, "active");
     if (!result.ok || !result.goal || result.goal.goalId !== goalId) {
       return result;
     }
-    providerLimitAutoResume.clear();
-    if (current?.status === "blocked") {
-      stateController.applyGoalTransition({ kind: "set", nextGoal: result.goal, source }, ctx);
-    } else if (current?.status === "waiting") {
-      stateController.resumeWaitingGoal(ctx);
-    } else {
-      stateController.resumePausedGoal(ctx);
+    this.providerLimitAutoResume.clear();
+    switch (current?.status) {
+      case "blocked":
+        this.stateController.applyGoalTransition(
+          { kind: "set", nextGoal: result.goal, source },
+          ctx,
+        );
+        break;
+      case "waiting":
+        this.stateController.resumeWaitingGoal(ctx);
+        break;
+      case "active":
+      case "paused":
+      case "complete":
+      case "budgetLimited":
+      case undefined:
+        this.stateController.resumePausedGoal(ctx);
     }
-    const resumedGoal = stateController.getGoal();
+    const resumedGoal = this.stateController.getGoal();
     if (resumedGoal?.status === "active" && resumedGoal.goalId === goalId) {
-      return queueGoalTurn(resumedGoal, "command_resume", ctx);
+      return this.queueGoalTurn(resumedGoal, "command_resume", ctx);
     }
     return result;
   };
 
-  const eventHandlers = createGoalRuntimeEventHandlers({
-    pi,
-    deliveries,
-    runtimeState,
-    stateController,
-    continuation,
-    goalAccounting,
-    recoveryRuntime,
-    status,
-    providerLimitAutoResume,
-    clearActiveAccounting,
-    resetErrorRecovery,
-    resumeGoalWithContinuation,
-  });
+  getEventHandlers = (): GoalRuntimeEventHandlers =>
+    createGoalRuntimeEventHandlers({
+      pi: this.pi,
+      deliveries: this.deliveries,
+      runtimeState: this.runtimeState,
+      stateController: this.stateController,
+      continuation: this.continuation,
+      goalAccounting: this.goalAccounting,
+      recoveryRuntime: this.recoveryRuntime,
+      status: this.status,
+      providerLimitAutoResume: this.providerLimitAutoResume,
+      clearActiveAccounting: this.clearActiveAccounting,
+      resetErrorRecovery: this.resetErrorRecovery,
+      resumeGoalWithContinuation: this.resumeGoalWithContinuation,
+    });
 
-  const updateGoal = (
-    source: GoalEntrySource,
+  updateGoal = (
     ctx: ExtensionContext,
     toolCallId: string,
     status: "complete" | "blocked" | "waiting",
     reason?: string,
   ): GoalResult => {
-    const goal = stateController.getGoal();
-    if (goal && runtimeState.completionGoalId !== null && runtimeState.completionGoalId !== goal.goalId) {
+    const goal = this.stateController.getGoal();
+    if (
+      goal &&
+      this.runtimeState.completionGoalId !== null &&
+      this.runtimeState.completionGoalId !== goal.goalId
+    ) {
       return {
         ok: false,
-        message: "Goal changed while this response was running; inspect the current goal before updating its status.",
+        message:
+          "Goal changed while this response was running; inspect the current goal before updating its status.",
         goal,
       };
     }
@@ -209,56 +278,54 @@ export function createGoalRuntimeController(pi: ExtensionAPI): GoalRuntimeContro
     if (!validation.ok) {
       return validation;
     }
-    providerLimitAutoResume.clear();
+    this.providerLimitAutoResume.clear();
     if (status === "blocked" || status === "waiting") {
-      continuation.clearPostCompactContinuationFallback();
+      this.continuation.clearPostCompactContinuationFallback();
     }
-    const completedTurnTokens = assistantTurnTokensForToolCall(ctx.sessionManager.getBranch(), toolCallId);
-    goalAccounting.accountProgress(ctx, false, completedTurnTokens, true);
+    const completedTurnTokens = assistantTurnTokensForToolCall(
+      ctx.sessionManager.getBranch(),
+      toolCallId,
+    );
+    this.goalAccounting.accountProgress(ctx, false, completedTurnTokens, true);
     // A command can resume the goal before sibling tools finish and turn_end arrives.
-    runtimeState.accounting.turnGoalId = null;
-    return stateController.updateGoal(source, ctx, status, reason);
+    this.runtimeState.accounting.turnGoalId = null;
+    return this.stateController.updateGoal("tool", ctx, status, reason);
   };
 
-  return {
-    getGoalForDisplay: goalForDisplay,
-    queueGoalTurn,
-    setGoal(nextGoal, source, ctx) {
-      providerLimitAutoResume.clear();
-      stateController.applyGoalTransition({ kind: "set", nextGoal, source }, ctx);
-      // A tool-created goal is known to this response, unlike a concurrent /goal replacement.
-      if (source === "tool") {
-        runtimeState.completionGoalId = nextGoal.goalId;
-      }
-    },
-    clearGoal(source, ctx) {
-      providerLimitAutoResume.clear();
-      stateController.applyGoalTransition({ kind: "clear", source }, ctx);
-    },
-    cancelProviderLimitAutoResume(_goalId, ctx) {
-      providerLimitAutoResume.clear();
-      status.refreshUi(ctx);
-    },
-    updateGoal,
-    resumeGoalWithContinuation,
-    ...eventHandlers,
+  setGoal = (nextGoal: ThreadGoal, source: GoalEntrySource, ctx: StatusContext): void => {
+    this.providerLimitAutoResume.clear();
+    this.stateController.applyGoalTransition({ kind: "set", nextGoal, source }, ctx);
+    // A tool-created goal is known to this response, unlike a concurrent /goal replacement.
+    if (source === "tool") {
+      this.runtimeState.completionGoalId = nextGoal.goalId;
+    }
+  };
+
+  clearGoal = (source: GoalEntrySource, ctx: StatusContext): void => {
+    this.providerLimitAutoResume.clear();
+    this.stateController.applyGoalTransition({ kind: "clear", source }, ctx);
+  };
+
+  cancelProviderLimitAutoResume = (_goalId: string, ctx: StatusContext): void => {
+    this.providerLimitAutoResume.clear();
+    this.status.refreshUi(ctx);
   };
 }
 
 export function registerGoalRuntimeController(pi: ExtensionAPI): void {
   const controller = createGoalRuntimeController(pi);
   registerGoalTools(pi, {
-    getGoal: () => controller.getGoalForDisplay(),
-    setGoal: controller.setGoal.bind(controller),
-    updateGoal: controller.updateGoal.bind(controller),
+    getGoal: controller.getGoalForDisplay,
+    setGoal: controller.setGoal,
+    updateGoal: controller.updateGoal,
   });
   registerGoalCommand(pi, {
-    getGoal: () => controller.getGoalForDisplay(),
-    queueGoalTurn: controller.queueGoalTurn.bind(controller),
-    setGoal: controller.setGoal.bind(controller),
-    clearGoal: controller.clearGoal.bind(controller),
-    cancelProviderLimitAutoResume: controller.cancelProviderLimitAutoResume.bind(controller),
-    resumeGoalWithContinuation: controller.resumeGoalWithContinuation.bind(controller),
+    getGoal: controller.getGoalForDisplay,
+    queueGoalTurn: controller.queueGoalTurn,
+    setGoal: controller.setGoal,
+    clearGoal: controller.clearGoal,
+    cancelProviderLimitAutoResume: controller.cancelProviderLimitAutoResume,
+    resumeGoalWithContinuation: controller.resumeGoalWithContinuation,
   });
   registerGoalRuntimeEvents(pi, controller);
 }

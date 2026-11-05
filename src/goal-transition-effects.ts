@@ -25,7 +25,12 @@ function goalTransitionEffectKey(effect: GoalTransitionEffect): string {
       return `${effect.type}:${effect.reason}`;
     case "markContinuationQueued":
       return `${effect.type}:${effect.goalId}`;
-    default:
+    case "clearContinuation":
+    case "clearActiveAccounting":
+    case "resetRecovery":
+    case "clearBudgetWarning":
+    case "clearHostOverflowRecovery":
+    case "stopStatusRefresh":
       return effect.type;
   }
 }

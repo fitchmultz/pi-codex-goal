@@ -35,33 +35,23 @@ export function markAllObligationsOlder(cleanup: TerminalCleanup): void {
   }
 }
 
-export function dropActiveObligations(cleanup: TerminalCleanup): void {
-  cleanup.pendingAgentEndObligations = cleanup.pendingAgentEndObligations.filter(
-    (obligation) => obligation.phase !== "active",
-  );
-}
-
 export function consumePendingStaleAgentEnd(
   cleanup: TerminalCleanup,
   messages: AgentEndMessage[],
 ): boolean {
   const pendingGoalIds = pendingGoalIdsFromObligations(cleanup.pendingAgentEndObligations);
   const matchedGoalIds = pendingStaleQueuedGoalWorkIdsFromMessages(messages, pendingGoalIds);
-  const goalMatch = consumeGoalBearingTerminal(
-    cleanup.pendingAgentEndObligations,
-    matchedGoalIds,
-    ["older", "active"],
-  );
+  const goalMatch = consumeGoalBearingTerminal(cleanup.pendingAgentEndObligations, matchedGoalIds, [
+    "older",
+    "active",
+  ]);
   if (goalMatch.consumed) {
     return true;
   }
   if (!matchesAnonymousStaleAgentEnd(messages)) {
     return false;
   }
-  return consumeAnonymousTerminal(
-    cleanup.pendingAgentEndObligations,
-    ["older", "active"],
-  ).consumed;
+  return consumeAnonymousTerminal(cleanup.pendingAgentEndObligations, ["older", "active"]).consumed;
 }
 
 export type AbortingAgentEndConsumption = {
@@ -191,10 +181,15 @@ function emptyConsumptionResult(): ConsumptionResult {
   return { consumed: false, consumedOlder: false, consumedActive: false };
 }
 
-function recordConsumedObligation(result: ConsumptionResult, obligation: AgentEndObligation): void {
-  result.consumed = true;
-  result.consumedOlder ||= obligation.phase === "older";
-  result.consumedActive ||= obligation.phase === "active";
+function recordConsumedObligation(
+  result: ConsumptionResult,
+  obligation: AgentEndObligation,
+): ConsumptionResult {
+  return {
+    consumed: true,
+    consumedOlder: result.consumedOlder || obligation.phase === "older",
+    consumedActive: result.consumedActive || obligation.phase === "active",
+  };
 }
 
 function consumeObligationAt(
@@ -210,34 +205,27 @@ function consumeGoalBearingTerminal(
   matchedGoalIds: readonly string[],
   phaseOrder: readonly TerminalObligationPhase[],
 ): ConsumptionResult {
-  const result = emptyConsumptionResult();
+  let result = emptyConsumptionResult();
   const remainingGoalIds = new Set(matchedGoalIds);
-
   for (const phase of phaseOrder) {
-    for (let index = 0; index < obligations.length; ) {
-      const obligation = obligations[index]!;
-      if (
-        obligation.phase !== phase ||
-        remainingGoalIds.size === 0 ||
-        !obligationMatchesAnyGoal(obligation, remainingGoalIds)
-      ) {
-        index += 1;
-        continue;
+    while (remainingGoalIds.size > 0) {
+      const index = obligations.findIndex(
+        (obligation) =>
+          obligation.phase === phase && obligationMatchesAnyGoal(obligation, remainingGoalIds),
+      );
+      if (index < 0) {
+        break;
       }
-
       const consumed = consumeObligationAt(obligations, index);
-      if (consumed) {
-        recordConsumedObligation(result, consumed);
-        for (const goalId of consumed.goalIds) {
-          remainingGoalIds.delete(goalId);
-        }
+      if (!consumed) {
+        break;
       }
-      if (remainingGoalIds.size === 0) {
-        return result;
+      result = recordConsumedObligation(result, consumed);
+      for (const goalId of consumed.goalIds) {
+        remainingGoalIds.delete(goalId);
       }
     }
   }
-
   return result;
 }
 
@@ -247,11 +235,10 @@ function consumeAnonymousTerminal(
   options: { consumeFallbackPhase?: boolean } = {},
 ): ConsumptionResult {
   const result = emptyConsumptionResult();
-  const fallbackPhase = options.consumeFallbackPhase ? phaseOrder.at(-1) : undefined;
+  const fallbackPhase = options.consumeFallbackPhase === true ? phaseOrder.at(-1) : undefined;
 
   for (const phase of phaseOrder) {
-    for (let index = 0; index < obligations.length; index += 1) {
-      const obligation = obligations[index]!;
+    for (const [index, obligation] of obligations.entries()) {
       const matchesAnonymous = obligation.acceptsAnonymous || phase === fallbackPhase;
       if (obligation.phase !== phase || !matchesAnonymous) {
         continue;
@@ -259,7 +246,7 @@ function consumeAnonymousTerminal(
 
       const consumed = consumeObligationAt(obligations, index);
       if (consumed) {
-        recordConsumedObligation(result, consumed);
+        return recordConsumedObligation(result, consumed);
       }
       return result;
     }

@@ -62,7 +62,10 @@ export function isAssistantContextOverflow(
   return isContextOverflow(assistantMessageForOverflowCheck(message), contextWindow);
 }
 
-export function isContextOverflowError(errorMessage: string | undefined, provider?: string): boolean {
+export function isContextOverflowError(
+  errorMessage: string | undefined,
+  provider?: string,
+): boolean {
   return isContextOverflow(
     assistantMessageForOverflowCheck({
       stopReason: "error",
@@ -72,7 +75,7 @@ export function isContextOverflowError(errorMessage: string | undefined, provide
   );
 }
 
-export function isProviderLimitError(errorMessage: string | undefined): boolean {
+export function isProviderLimitError(errorMessage?: string): boolean {
   return /GoUsageLimitError|FreeUsageLimitError|Monthly usage limit reached|usage limit has been reached|available balance|insufficient_quota|out of budget|quota exceeded|billing/i.test(
     errorMessage ?? "",
   );
@@ -88,7 +91,7 @@ function isNonRetryableProviderLimitError(errorMessage: string): boolean {
  * Terminal quota, billing, and provider-limit errors are not retryable even when they contain 429 or rate-limit wording.
  */
 export function isRetryableTransientError(errorMessage: string | undefined): boolean {
-  if (!errorMessage) {
+  if (errorMessage === undefined || errorMessage.length === 0) {
     return false;
   }
   if (isContextOverflowError(errorMessage)) {
@@ -110,7 +113,7 @@ function normalizeTransientSignature(line: string): string {
     .slice(0, 200);
 }
 
-export function failureSignature(errorMessage: string | undefined): string {
+export function failureSignature(errorMessage?: string): string {
   if (isContextOverflowError(errorMessage)) {
     return CONTEXT_OVERFLOW_SIGNATURE;
   }
@@ -169,7 +172,9 @@ export function isRecoveryPendingAttention(
   return attention?.kind === "pending";
 }
 
-export function reasonFromRecoveryPendingAttention(attention: RecoveryAttention | null): string | null {
+export function reasonFromRecoveryPendingAttention(
+  attention: RecoveryAttention | null,
+): string | null {
   return attention?.kind === "pending" ? attention.reason : null;
 }
 

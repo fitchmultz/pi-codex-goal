@@ -1,13 +1,4 @@
-import {
-  onRecoverySessionCompact,
-  onRecoverySuccessfulTurn,
-  onRecoveryUserInput,
-  planRecoveryForAssistantError,
-  planRecoveryForSilentContextOverflow,
-  setRecoveryPendingAttention,
-  type GoalRecoveryMachineState,
-  type RecoveryAction,
-} from "./recovery-machine.ts";
+import type { GoalRecoveryMachineState, RecoveryAction } from "./recovery-machine.ts";
 import { isProviderLimitError, type AssistantErrorMessage } from "./recovery.ts";
 import type { ThreadGoal } from "./types.ts";
 
@@ -21,7 +12,21 @@ interface RecoveryRuntimeDeps<TContext> {
   scheduleProviderLimitAutoResume: (goalId: string, ctx: TContext) => void;
 }
 
-export function createGoalRecoveryRuntime<TContext>(deps: RecoveryRuntimeDeps<TContext>) {
+interface GoalRecoveryRuntime<TContext> {
+  onUserInput: () => void;
+  onSessionCompact: () => void;
+  handlePersistentAssistantError: (message: AssistantErrorMessage, ctx: TContext) => void;
+  handleSilentContextOverflow: (ctx: TContext) => void;
+  finishSuccessfulAssistantTurn: (
+    message: AssistantErrorMessage,
+    ctx: TContext,
+    options?: { continueGoal?: boolean },
+  ) => void;
+}
+
+export function createGoalRecoveryRuntime<TContext>(
+  deps: RecoveryRuntimeDeps<TContext>,
+): GoalRecoveryRuntime<TContext> {
   const pauseForRecoveryAttention = (ctx: TContext, reason: string): void => {
     const goal = deps.getGoal();
     if (!goal || goal.status !== "active") {
@@ -41,7 +46,7 @@ export function createGoalRecoveryRuntime<TContext>(deps: RecoveryRuntimeDeps<TC
           return;
         }
         deps.clearContinuationState();
-        setRecoveryPendingAttention(deps.getRecoveryState(), action.reason);
+        deps.getRecoveryState().setRecoveryPendingAttention(action.reason);
         deps.refreshUi(ctx);
         return;
       }
@@ -58,7 +63,7 @@ export function createGoalRecoveryRuntime<TContext>(deps: RecoveryRuntimeDeps<TC
     }
 
     const wasProviderLimit = isProviderLimitError(message.errorMessage);
-    const action = planRecoveryForAssistantError(deps.getRecoveryState(), message);
+    const action = deps.getRecoveryState().planRecoveryForAssistantError(message);
     applyRecoveryAction(action, ctx);
     const currentGoal = deps.getGoal();
     if (
@@ -77,7 +82,7 @@ export function createGoalRecoveryRuntime<TContext>(deps: RecoveryRuntimeDeps<TC
       return;
     }
 
-    applyRecoveryAction(planRecoveryForSilentContextOverflow(deps.getRecoveryState()), ctx);
+    applyRecoveryAction(deps.getRecoveryState().planRecoveryForSilentContextOverflow(), ctx);
   };
 
   const finishSuccessfulAssistantTurn = (
@@ -85,7 +90,7 @@ export function createGoalRecoveryRuntime<TContext>(deps: RecoveryRuntimeDeps<TC
     ctx: TContext,
     options?: { continueGoal?: boolean },
   ): void => {
-    if (onRecoverySuccessfulTurn(deps.getRecoveryState(), message)) {
+    if (deps.getRecoveryState().onRecoverySuccessfulTurn(message)) {
       deps.refreshUi(ctx);
       if (options?.continueGoal !== false) {
         deps.maybeContinue(ctx);
@@ -94,11 +99,11 @@ export function createGoalRecoveryRuntime<TContext>(deps: RecoveryRuntimeDeps<TC
   };
 
   return {
-    onUserInput: () => {
-      onRecoveryUserInput(deps.getRecoveryState());
+    onUserInput: (): void => {
+      deps.getRecoveryState().onRecoveryUserInput();
     },
-    onSessionCompact: () => {
-      onRecoverySessionCompact(deps.getRecoveryState());
+    onSessionCompact: (): void => {
+      deps.getRecoveryState().onRecoverySessionCompact();
     },
     handlePersistentAssistantError,
     handleSilentContextOverflow,

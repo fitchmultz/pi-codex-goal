@@ -1,37 +1,54 @@
 import assert from "node:assert/strict";
-import { EventEmitter } from "node:events";
 import { mock } from "node:test";
-
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import type {
-  BeforeAgentStartEvent,
-  ExtensionAPI,
-  ExtensionCommandContext,
-  ExtensionContext,
-  ExtensionToolContext,
-  SessionMessageEntry,
+import {
+  createEventBus,
+  DefaultResourceLoader,
+  ExtensionRunner,
+  SessionManager,
+  SettingsManager,
+  type AgentToolResult,
+  type BeforeAgentStartEvent,
+  type Extension,
+  type ExtensionAPI,
+  type EventBusController,
+  type ExtensionCommandContext,
+  type ExtensionContext,
+  type ExtensionToolContext,
+  type SessionMessageEntry,
 } from "@earendil-works/pi-coding-agent";
 
 import goalExtension from "../../src/index.ts";
 import { CONTINUATION_RETRY_MS, PROVIDER_LIMIT_AUTO_RESUME_MS } from "../../src/runtime-config.ts";
 import { isGoalCustomEntry, reconstructGoal } from "../../src/state.ts";
-import type { QueuedGoalContextCarrier } from "./context-messages.ts";
+import { isQueuedGoalContextCarrier, type QueuedGoalContextCarrier } from "./context-messages.ts";
+import { isRecord } from "../../src/validation.ts";
 import { CUSTOM_ENTRY_TYPE } from "../../src/types.ts";
+import { testModel, testModelRegistry, testUi } from "./sdk-fixture.ts";
 
-type EventHandler = (event: object, ctx: ExtensionContext) => unknown | Promise<unknown>;
-
-export function userBeforeAgentStartEvent(prompt: string, systemPrompt = "") {
+export function userBeforeAgentStartEvent(
+  prompt: string,
+  systemPrompt = "",
+): BeforeAgentStartEvent & { messageType: "user" } {
   const systemPromptOptions = {
-    cwd: "/tmp", selectedTools: [], hiddenTools: [], toolSnippets: {}, toolGuidelines: {},
-    promptGuidelines: [], appendSystemPrompt: "", sections: {}, contextFiles: [], skills: [],
+    cwd: "/tmp",
+    selectedTools: [],
+    hiddenTools: [],
+    toolSnippets: {},
+    toolGuidelines: {},
+    promptGuidelines: [],
+    appendSystemPrompt: "",
+    sections: {},
+    contextFiles: [],
+    skills: [],
   };
   return {
-    type: "before_agent_start", messageType: "user", prompt, systemPrompt, systemPromptOptions,
+    type: "before_agent_start",
+    messageType: "user",
+    prompt,
+    systemPrompt,
+    systemPromptOptions,
   } satisfies BeforeAgentStartEvent & { messageType: "user" };
-}
-
-function unsupportedHarnessMethod(name: string): never {
-  throw new Error(`${name} is not implemented in this test harness.`);
 }
 
 export interface SentMessage {
@@ -98,7 +115,7 @@ export function sessionShutdownEvent(
   return { type: "session_shutdown", reason };
 }
 
-export function createRuntimeHarness(options: {
+interface HarnessOptions {
   theme?: ExtensionCommandContext["ui"]["theme"];
   idle?: boolean;
   pendingMessages?: boolean;
@@ -106,359 +123,249 @@ export function createRuntimeHarness(options: {
   compactCompletion?: "immediate" | "manual";
   contextWindow?: number;
   contextUsage?: ReturnType<ExtensionContext["getContextUsage"]>;
-} = {}) {
-  const entries: ReturnType<ExtensionCommandContext["sessionManager"]["getBranch"]> = [];
-  const handlers = new Map<string, EventHandler[]>();
-  const eventBus = new EventEmitter();
-  const sentMessages: SentMessage[] = [];
-  const sentUserMessages: SentUserMessage[] = [];
-  const tools = new Map<string, (toolCallId: string, params: Record<string, unknown>) => Promise<unknown>>();
-  const compactCalls: Array<{
-    customInstructions?: string;
-    onComplete?: (result: {
-      summary: string;
-      tokensBefore: number;
-      firstKeptEntryId: string;
-    }) => void;
-    onError?: (error: Error) => void;
-  }> = [];
-  const footerStatuses: Array<string | undefined> = [];
-  const runtime = {
-    abortCount: 0,
-    idle: options.idle ?? true,
-    pendingMessages: options.pendingMessages ?? false,
-    compactBehavior: options.compactBehavior ?? "success",
-    compactCompletion: options.compactCompletion ?? "immediate",
-    contextUsage: options.contextUsage,
+}
+
+type HarnessContext = ExtensionCommandContext &
+  ExtensionToolContext & {
+    runInBackground: (customType: string, work: unknown) => never;
   };
-  let commandHandler: ((args: string, ctx: ExtensionCommandContext) => void | Promise<void>) | null = null;
-  let ctx: ExtensionCommandContext & ExtensionToolContext;
-  let entryIndex = 0;
+type CompactCall = NonNullable<Parameters<ExtensionContext["compact"]>[0]>;
 
-  const on = ((event: string, handler: EventHandler) => {
-    const currentHandlers = handlers.get(event) ?? [];
-    currentHandlers.push(handler);
-    handlers.set(event, currentHandlers);
-  }) as ExtensionAPI["on"];
+export async function createRuntimeHarness(options: HarnessOptions = {}): Promise<RuntimeHarness> {
+  const eventBus = createEventBus();
+  const loader = new DefaultResourceLoader({
+    cwd: "/tmp",
+    agentDir: "/tmp/pi-goal-harness",
+    settingsManager: SettingsManager.inMemory(),
+    eventBus,
+    noExtensions: true,
+    noSkills: true,
+    noThemes: true,
+    noPromptTemplates: true,
+    noContextFiles: true,
+    extensionFactories: [goalExtension],
+  });
+  await loader.reload();
+  return new RuntimeHarness(loader, eventBus, options);
+}
 
-  const registerCommand: ExtensionAPI["registerCommand"] = (name, options) => {
-    if (name === "goal") {
-      commandHandler = options.handler;
-    }
+export class RuntimeHarness {
+  readonly entries: ReturnType<ExtensionCommandContext["sessionManager"]["getBranch"]> = [];
+  readonly sentMessages: SentMessage[] = [];
+  readonly sentUserMessages: SentUserMessage[] = [];
+  readonly compactCalls: CompactCall[] = [];
+  readonly footerStatuses: Array<string | undefined> = [];
+  readonly ui: ExtensionCommandContext["ui"];
+  readonly context: HarnessContext;
+  private readonly loader: DefaultResourceLoader;
+  private readonly eventBus: EventBusController;
+  private extension: Extension;
+  private entryIndex = 0;
+  private readonly runtime: {
+    abortCount: number;
+    idle: boolean;
+    pendingMessages: boolean;
+    compactBehavior: NonNullable<HarnessOptions["compactBehavior"]>;
+    compactCompletion: NonNullable<HarnessOptions["compactCompletion"]>;
+    contextUsage: HarnessOptions["contextUsage"];
   };
 
-  const pi: ExtensionAPI = {
-    ...{
-      refreshTools() {
-        unsupportedHarnessMethod("pi.refreshTools");
+  constructor(
+    loader: DefaultResourceLoader,
+    eventBus: EventBusController,
+    options: HarnessOptions,
+  ) {
+    this.eventBus = eventBus;
+    this.loader = loader;
+    this.extension = this.loadedExtension();
+    this.runtime = {
+      abortCount: 0,
+      idle: options.idle ?? true,
+      pendingMessages: options.pendingMessages ?? false,
+      compactBehavior: options.compactBehavior ?? "success",
+      compactCompletion: options.compactCompletion ?? "immediate",
+      contextUsage: options.contextUsage,
+    };
+    const sessionManager = SessionManager.inMemory("/tmp");
+    sessionManager.getBranch = () => this.entries;
+    sessionManager.getEntries = () => this.entries;
+    sessionManager.buildContextEntries = () => this.entries;
+    this.bindActions();
+    const runner = new ExtensionRunner(
+      [this.extension],
+      loader.getExtensions().runtime,
+      "/tmp",
+      sessionManager,
+      testModelRegistry,
+    );
+    this.ui = {
+      ...testUi(),
+      ...(options.theme ? { theme: options.theme } : {}),
+      setStatus: (_key, status) => {
+        this.footerStatuses.push(status);
       },
-      registerProviderAuthFallback() {
-        return unsupportedHarnessMethod("pi.registerProviderAuthFallback");
+    };
+    const native = runner.createCommandContext();
+    this.context = {
+      ...native,
+      runInBackground: (_customType: string, _work: unknown): never => {
+        throw new Error("ctx.runInBackground is not implemented in this test harness.");
       },
-      registerToolRenderer() {
-        unsupportedHarnessMethod("pi.registerToolRenderer");
+      tools: [],
+      executeTool: () => {
+        throw new Error("ctx.executeTool is not implemented in this test harness.");
       },
-    },
-    getSettings() { return unsupportedHarnessMethod("pi.getSettings"); },
-    registerMcpServer() { unsupportedHarnessMethod("pi.registerMcpServer"); },
-    unregisterMcpServer() { unsupportedHarnessMethod("pi.unregisterMcpServer"); },
-    getMcpServers() { return unsupportedHarnessMethod("pi.getMcpServers"); },
-    registerVirtualModel() { unsupportedHarnessMethod("pi.registerVirtualModel"); },
-    unregisterVirtualModel() { unsupportedHarnessMethod("pi.unregisterVirtualModel"); },
-    appendEntry(customType: string, data: unknown) {
-      entries.push({
+      abort: () => {
+        this.runtime.abortCount += 1;
+      },
+      compact: this.compact,
+      getContextUsage: () => this.runtime.contextUsage,
+      getSystemPrompt: () => "",
+      getSystemPromptOptions: () => ({ cwd: "/tmp" }),
+      hasPendingMessages: () => this.runtime.pendingMessages,
+      isIdle: () => this.runtime.idle,
+      isProjectTrusted: () => true,
+      hasUI: true,
+      mode: "tui",
+      model: options.contextWindow === undefined ? undefined : testModel(options.contextWindow),
+      ui: this.ui,
+    };
+  }
+
+  private loadedExtension(): Extension {
+    const loaded = this.loader.getExtensions();
+    assert.deepEqual(loaded.errors, []);
+    assert.equal(loaded.extensions.length, 1);
+    const [extension] = loaded.extensions;
+    assert.ok(extension);
+    return extension;
+  }
+
+  private bindActions(): void {
+    const runtime = this.loader.getExtensions().runtime;
+    runtime.appendEntry = (customType, data) => {
+      this.entries.push({
         type: "custom",
-        id: `entry-${++entryIndex}`,
+        id: `entry-${++this.entryIndex}`,
         parentId: null,
         timestamp: new Date(0).toISOString(),
         customType,
         data,
       });
-    },
-    events: {
-      emit(event, data) { eventBus.emit(event, data); },
-      on(event, handler) {
-        eventBus.on(event, handler);
-        return () => { eventBus.off(event, handler); };
-      },
-    },
-    exec: async () => ({ stdout: "", stderr: "", code: 0, killed: false, truncated: false }),
-    getActiveTools: () => [],
-    getAllTools: () => [],
-    getCommands: () => [],
-    getFlag: () => undefined,
-    getSessionName: () => undefined,
-    getThinkingLevel: () => "medium",
-    on,
-    registerCommand,
-    registerEntryRenderer() {
-      unsupportedHarnessMethod("pi.registerEntryRenderer");
-    },
-    registerFlag() {
-      unsupportedHarnessMethod("pi.registerFlag");
-    },
-    registerMessageRenderer() {
-      unsupportedHarnessMethod("pi.registerMessageRenderer");
-    },
-    registerMarkdownTransformer() {
-      unsupportedHarnessMethod("pi.registerMarkdownTransformer");
-    },
-    registerProvider() {
-      unsupportedHarnessMethod("pi.registerProvider");
-    },
-    registerShortcut() {},
-    registerTool(tool) {
-      tools.set(tool.name, (toolCallId, params) =>
-        tool.execute(
-          toolCallId,
-          params as Parameters<typeof tool.execute>[1],
-          undefined,
-          undefined,
-          ctx,
-        ),
-      );
-    },
-    sendMessage(message, options) {
-      sentMessages.push({ message, options });
-    },
-    sendUserMessage(content, options) {
-      sentUserMessages.push({ content, options });
-    },
-    setActiveTools() {
-      unsupportedHarnessMethod("pi.setActiveTools");
-    },
-    setLabel() {
-      unsupportedHarnessMethod("pi.setLabel");
-    },
-    setModel: async () => false,
-    setSessionName() {
-      unsupportedHarnessMethod("pi.setSessionName");
-    },
-    setThinkingLevel() {
-      unsupportedHarnessMethod("pi.setThinkingLevel");
-    },
-    unregisterProvider() {
-      unsupportedHarnessMethod("pi.unregisterProvider");
-    },
+    };
+    runtime.sendMessage = (message, options) => {
+      this.sentMessages.push({ message, options });
+    };
+    runtime.sendUserMessage = (content, options) => {
+      this.sentUserMessages.push({ content, options });
+    };
+    runtime.getThinkingLevel = () => "medium";
+  }
+
+  private readonly compact: ExtensionContext["compact"] = (options) => {
+    const call: CompactCall = {};
+    if (options?.customInstructions !== undefined) {
+      call.customInstructions = options.customInstructions;
+    }
+    if (options?.onComplete) {
+      call.onComplete = options.onComplete;
+    }
+    if (options?.onError) {
+      call.onError = options.onError;
+    }
+    this.compactCalls.push(call);
+    if (this.runtime.compactBehavior === "unavailable") {
+      throw new Error("ctx.compact is not implemented in this test harness.");
+    }
+    if (this.runtime.compactBehavior === "error") {
+      options?.onError?.(new Error("compaction failed"));
+      return;
+    }
+    if (this.runtime.compactCompletion === "immediate") {
+      options?.onComplete?.({
+        summary: "compact summary",
+        tokensBefore: 100,
+        firstKeptEntryId: "entry-1",
+      });
+    }
   };
 
-  const sessionManager: ExtensionCommandContext["sessionManager"] = {
-    buildSessionProjection() {
-      return unsupportedHarnessMethod("sessionManager.buildSessionProjection");
-    },
-    buildContextEntries: () => entries,
-    getBranch: () => entries,
-    getCwd: () => "/tmp",
-    getEntries: () => entries,
-    getEntry: () => undefined,
-    getHeader: () => null,
-    getLabel: () => undefined,
-    getLeafEntry: () => undefined,
-    getLeafId: () => null,
-    getSessionDir: () => "/tmp",
-    getSessionFile: () => undefined,
-    getSessionId: () => "session",
-    getSessionName: () => undefined,
-    getTree: () => [],
-  };
-
-  const ui: ExtensionCommandContext["ui"] = {
-    addAutocompleteProvider() {},
-    confirm: async () => true,
-    custom: async () => {
-      throw new Error("custom UI is not implemented in this test harness.");
-    },
-    editor: async () => undefined,
-    getAllThemes: () => [],
-    getEditorComponent: () => undefined,
-    getEditorText: () => "",
-    getTheme: () => undefined,
-    getToolsExpanded: () => false,
-    input: async () => undefined,
-    notify() {},
-    onTerminalInput: () => () => {},
-    pasteToEditor() {},
-    select: async () => undefined,
-    setEditorComponent() {},
-    setEditorText() {},
-    setFooter() {},
-    setHeader() {},
-    setHiddenThinkingLabel() {},
-    setStatus(_key, status) {
-      footerStatuses.push(status);
-    },
-    setTheme: () => ({ success: false }),
-    setTitle() {},
-    setToolsExpanded() {},
-    setWidget() {},
-    setWorkingIndicator() {},
-    setWorkingMessage() {},
-    setWorkingVisible() {},
-    theme: options.theme ?? {} as ExtensionCommandContext["ui"]["theme"],
-  };
-
-  ctx = {
-    ...{
-      runInBackground() {
-        return unsupportedHarnessMethod("ctx.runInBackground");
-      },
-      isBashRunning() {
-        return unsupportedHarnessMethod("ctx.isBashRunning");
-      },
-      hasPendingSteeringMessages() {
-        return unsupportedHarnessMethod("ctx.hasPendingSteeringMessages");
-      },
-      getPendingNextTurnCount() {
-        return unsupportedHarnessMethod("ctx.getPendingNextTurnCount");
-      },
-      getPendingInputCount() {
-        return unsupportedHarnessMethod("ctx.getPendingInputCount");
-      },
-      getCompactionSettings() {
-        return unsupportedHarnessMethod("ctx.getCompactionSettings");
-      },
-    },
-    tools: [],
-    executeTool() { return unsupportedHarnessMethod("ctx.executeTool"); },
-    abort() {
-      runtime.abortCount += 1;
-    },
-    cwd: "/tmp",
-    fork: async () => ({ cancelled: false }),
-    getContextUsage: () => runtime.contextUsage,
-    getSystemPrompt: () => "",
-    getSystemPromptOptions: () => ({ cwd: ctx.cwd }),
-    hasUI: true,
-    compact(options) {
-      const call: (typeof compactCalls)[number] = {};
-      if (options?.customInstructions !== undefined) {
-        call.customInstructions = options.customInstructions;
-      }
-      if (options?.onComplete) {
-        call.onComplete = (result) => options.onComplete?.(result);
-      }
-      if (options?.onError) {
-        call.onError = (error) => options.onError?.(error);
-      }
-      compactCalls.push(call);
-      if (runtime.compactBehavior === "unavailable") {
-        unsupportedHarnessMethod("ctx.compact");
-      }
-      if (runtime.compactBehavior === "error") {
-        options?.onError?.(new Error("compaction failed"));
-        return;
-      }
-      if (runtime.compactCompletion === "immediate") {
-        options?.onComplete?.({
-          summary: "compact summary",
-          tokensBefore: 100,
-          firstKeptEntryId: "entry-1",
-        });
-      }
-    },
-    hasPendingMessages: () => runtime.pendingMessages,
-    isIdle: () => runtime.idle,
-    isProjectTrusted: () => true,
-    mode: "tui",
-    model: undefined,
-    scopedModels: [],
-    modelRegistry: {} as ExtensionCommandContext["modelRegistry"],
-    navigateTree: async () => ({ cancelled: false }),
-    newSession: async () => ({ cancelled: false }),
-    reload: async () => {},
-    sessionManager,
-    shutdown() {},
-    signal: undefined,
-    switchSession: async () => ({ cancelled: false }),
-    ui,
-    waitForIdle: async () => {},
-  } satisfies ExtensionCommandContext & ExtensionToolContext;
-
-  if (options.contextWindow !== undefined) {
-    ctx.model = {
-      id: "test-model",
-      provider: "test",
-      contextWindow: options.contextWindow,
-    } as ExtensionCommandContext["model"];
+  async reloadSession(reason: "startup" | "reload" | "resume" = "startup"): Promise<void> {
+    this.eventBus.clear();
+    await this.loader.reload();
+    this.extension = this.loadedExtension();
+    this.bindActions();
+    await this.emit("session_start", { type: "session_start", reason });
   }
 
-  goalExtension(pi);
-
-  function reloadExtension(): void {
-    handlers.clear();
-    eventBus.removeAllListeners();
-    goalExtension(pi);
+  async runCommand(args: string): Promise<void> {
+    const command = this.extension.commands.get("goal");
+    assert.ok(command);
+    await command.handler(args, this.context);
   }
 
-  async function reloadSession(reason: "startup" | "reload" | "resume" = "startup"): Promise<void> {
-    reloadExtension();
-    await emit("session_start", { type: "session_start", reason });
-  }
-
-  async function runCommand(args: string): Promise<void> {
-    assert.ok(commandHandler);
-    await commandHandler(args, ctx);
-  }
-
-  async function emit(event: string, payload: object): Promise<unknown[]> {
+  async emit(event: string, payload: object): Promise<unknown[]> {
     const results: unknown[] = [];
-    for (const handler of handlers.get(event) ?? []) {
-      results.push(await handler(payload, ctx));
+    for (const handler of this.extension.handlers.get(event) ?? []) {
+      results.push(await handler(payload, this.context));
     }
     return results;
   }
 
-  async function runTool(name: string, params: Record<string, unknown>, toolCallId = "tool-call") {
-    const tool = tools.get(name);
+  async runTool(
+    name: string,
+    params: Record<string, unknown>,
+    toolCallId = "tool-call",
+  ): Promise<AgentToolResult<unknown>> {
+    const tool = this.extension.tools.get(name);
     assert.ok(tool, `Expected tool ${name} to be registered.`);
-    return tool(toolCallId, params);
+    return tool.definition.execute(
+      toolCallId,
+      params,
+      this.context.signal,
+      undefined,
+      this.context,
+    );
   }
 
-  function appendMessage(message: SessionMessageEntry["message"]): void {
-    entries.push({
+  appendMessage(message: SessionMessageEntry["message"]): void {
+    this.entries.push({
       type: "message",
-      id: `entry-${++entryIndex}`,
+      id: `entry-${++this.entryIndex}`,
       parentId: null,
       timestamp: new Date(0).toISOString(),
       message,
     });
   }
 
-  return {
-    appendMessage,
-    context: ctx,
-    compactCalls,
-    footerStatuses,
-    ui,
-    emit,
-    entries,
-    runCommand,
-    runTool,
-    reloadExtension,
-    reloadSession,
-    sentMessages,
-    sentUserMessages,
-    setIdle(idle: boolean) {
-      runtime.idle = idle;
-    },
-    setPendingMessages(pendingMessages: boolean) {
-      runtime.pendingMessages = pendingMessages;
-    },
-    setContextUsage(contextUsage: ReturnType<ExtensionContext["getContextUsage"]>) {
-      runtime.contextUsage = contextUsage;
-    },
-    setContextWindow(contextWindow: number) {
-      ctx.model = {
-        id: "test-model",
-        provider: "test",
-        contextWindow,
-      } as ExtensionCommandContext["model"];
-    },
-    get abortCount() {
-      return runtime.abortCount;
-    },
-    snapshot: () => reconstructGoal(entries),
-  };
+  clearSentMessages(): void {
+    this.sentMessages.length = 0;
+  }
+  clearSentUserMessages(): void {
+    this.sentUserMessages.length = 0;
+  }
+  replaceBranch(entries: readonly (typeof this.entries)[number][]): void {
+    this.entries.splice(0, this.entries.length, ...entries);
+  }
+
+  setIdle(idle: boolean): void {
+    this.runtime.idle = idle;
+  }
+  setPendingMessages(pendingMessages: boolean): void {
+    this.runtime.pendingMessages = pendingMessages;
+  }
+  setContextUsage(contextUsage: ReturnType<ExtensionContext["getContextUsage"]>): void {
+    this.runtime.contextUsage = contextUsage;
+  }
+  setContextWindow(contextWindow: number): void {
+    this.context.model = testModel(contextWindow);
+  }
+  get abortCount(): number {
+    return this.runtime.abortCount;
+  }
+  snapshot(): ReturnType<typeof reconstructGoal> {
+    return reconstructGoal(this.entries);
+  }
 }
 
 export interface TestAssistantUsage {
@@ -507,7 +414,7 @@ export function countGoalUsageEntries(
   }).length;
 }
 
-export async function emitToolExecutionEnd(harness: ReturnType<typeof createRuntimeHarness>): Promise<void> {
+export async function emitToolExecutionEnd(harness: RuntimeHarness): Promise<void> {
   await harness.emit("tool_execution_end", {
     type: "tool_execution_end",
     toolCallId: "tool-call",
@@ -529,7 +436,10 @@ export function queuedCustomMessage(sent: SentMessage, timestamp = 1): QueuedGoa
   };
 }
 
-export async function deliverQueuedMessage(harness: RuntimeHarness, sent: SentMessage): Promise<QueuedGoalContextCarrier> {
+export async function deliverQueuedMessage(
+  harness: RuntimeHarness,
+  sent: SentMessage,
+): Promise<QueuedGoalContextCarrier> {
   const message = queuedCustomMessage(sent);
   await harness.emit("message_start", { type: "message_start", message });
   await emitMessageEnd(harness, message);
@@ -563,14 +473,17 @@ function parseProviderContextHandlerResult(result: unknown): ProviderContextHand
     return undefined;
   }
 
-  assert.ok(result && typeof result === "object", "Expected provider context handler result object.");
-  const candidate = result as { messages?: unknown };
+  assert.ok(isRecord(result), "Expected provider context handler result object.");
+  const candidate = result;
   assert.ok(Array.isArray(candidate.messages), "Expected provider context handler messages array.");
 
   const messages: QueuedGoalContextCarrier[] = [];
   for (const [index, message] of candidate.messages.entries()) {
-    assert.ok(message && typeof message === "object" && typeof message.timestamp === "number", `Expected provider context message ${index} to include a numeric timestamp.`);
-    messages.push(message as QueuedGoalContextCarrier);
+    assert.ok(
+      isQueuedGoalContextCarrier(message),
+      `Expected provider context message ${index} to include a numeric timestamp.`,
+    );
+    messages.push(message);
   }
 
   return { messages };
@@ -593,8 +506,6 @@ export async function emitProviderContext(
   return results.map(parseProviderContextHandlerResult);
 }
 
-export type RuntimeHarness = ReturnType<typeof createRuntimeHarness>;
-
 export async function emitQueuedTurnThroughContext(
   harness: RuntimeHarness,
   messages: QueuedGoalContextCarrier[],
@@ -610,15 +521,21 @@ export async function emitQueuedTurnThroughContext(
 }
 
 /** Emits `message_end` and, like Pi, replaces the delivered message in place with any handler replacement. */
-export async function emitMessageEnd(harness: RuntimeHarness, message: QueuedGoalContextCarrier): Promise<void> {
+export async function emitMessageEnd(
+  harness: RuntimeHarness,
+  message: QueuedGoalContextCarrier,
+): Promise<void> {
   const results = await harness.emit("message_end", { type: "message_end", message });
   for (const result of results) {
     if (result === undefined) {
       continue;
     }
-    assert.ok(result && typeof result === "object" && "message" in result, "Expected a message_end replacement result.");
+    assert.ok(
+      isRecord(result) && "message" in result,
+      "Expected a message_end replacement result.",
+    );
     const replacement = result.message;
-    assert.ok(replacement && typeof replacement === "object", "Expected a replacement message.");
+    assert.ok(isRecord(replacement), "Expected a replacement message.");
     for (const key of Object.keys(message)) {
       Reflect.deleteProperty(message, key);
     }
@@ -661,7 +578,7 @@ export function assistantMessage(
 }
 
 export async function emitPersistentAssistantError(
-  harness: ReturnType<typeof createRuntimeHarness>,
+  harness: RuntimeHarness,
   turnIndex: number,
   errorMessage: string,
 ): Promise<void> {

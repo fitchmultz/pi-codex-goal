@@ -10,11 +10,11 @@ on:
       official-version:
         description: Official stable version resolved for this run; blank resolves latest
         type: string
-        default: ''
+        default: ""
       fork-ref:
         description: Maintained fork commit resolved for this run; blank resolves main
         type: string
-        default: ''
+        default: ""
 
 permissions:
   contents: read
@@ -68,10 +68,10 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '24'
+          node-version: "24"
           package-manager-cache: false
       - name: Use the reviewed npm version
-        run: npm install --global "$(node -p 'require("./automation/package.json").packageManager')"
+        run: npm install --global "$(jq -r '.packageManager' automation/package.json)"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         id: fork
         with:
@@ -80,7 +80,7 @@ jobs:
           path: fork
           persist-credentials: false
       - name: Use the extension npm version
-        run: npm install --global "$(node -p 'require("./extension/package.json").packageManager')"
+        run: npm install --global "$(jq -r '.packageManager' extension/package.json)"
       - name: Qualify official Pi
         env:
           OFFICIAL_VERSION: ${{ needs.resolve.outputs.official-version }}
@@ -88,13 +88,13 @@ jobs:
           node automation/scripts/qualify.mjs --repo pi-codex-goal --source "$GITHUB_WORKSPACE/extension" \
             --host official --target "$OFFICIAL_VERSION" --output "$RUNNER_TEMP/official-evidence"
       - name: Use the reviewed npm version for the fork build
-        run: npm install --global "$(node -p 'require("./automation/package.json").packageManager')"
+        run: npm install --global "$(jq -r '.packageManager' automation/package.json)"
       - name: Build fork once
         working-directory: fork
         env:
           FORK_REF: ${{ steps.fork.outputs.commit }}
-          PI_OFFLINE: '1'
-          PI_TELEMETRY: '0'
+          PI_OFFLINE: "1"
+          PI_TELEMETRY: "0"
         run: |
           npm ci --ignore-scripts --no-audit --no-fund
           npm run hydrate:model-data
@@ -103,7 +103,7 @@ jobs:
           node ../automation/scripts/pack-fork.mjs . "$RUNNER_TEMP/fork-package" "$FORK_REF"
           git diff --exit-code
       - name: Use the extension npm version
-        run: npm install --global "$(node -p 'require("./extension/package.json").packageManager')"
+        run: npm install --global "$(jq -r '.packageManager' extension/package.json)"
       - name: Qualify fork Pi
         env:
           PI_COMPAT_FORK_REF: ${{ steps.fork.outputs.commit }}
@@ -116,7 +116,7 @@ jobs:
           OFFICIAL_VERSION: ${{ needs.resolve.outputs.official-version }}
           FORK_REF: ${{ steps.fork.outputs.commit }}
         run: |
-          node extension/scripts/pr-delivery-candidate.mjs \
+          node extension/scripts/pr-delivery-candidate.ts \
             --automation "$GITHUB_WORKSPACE/automation" --fork-artifact "$RUNNER_TEMP/fork-package" \
             --source-ref "$(git -C extension rev-parse HEAD)" --official-version "$OFFICIAL_VERSION" \
             --fork-ref "$FORK_REF" --output "$RUNNER_TEMP/goal-pr-evidence"

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { isRecord } from "../src/validation.ts";
+import { test as nodeTest } from "node:test";
 
 import { RUNTIME_PERSIST_INTERVAL_MS } from "../src/runtime-config.ts";
 import {
@@ -21,8 +22,8 @@ import {
   sessionShutdownEvent,
 } from "./support/runtime-harness.ts";
 
-test("duplicate update_goal complete appends only one complete entry", async () => {
-  const harness = createRuntimeHarness();
+nodeTest("duplicate update_goal complete appends only one complete entry", async () => {
+  const harness = await createRuntimeHarness();
   await harness.runCommand("ship it");
 
   await harness.runTool("update_goal", { status: "complete" });
@@ -41,8 +42,8 @@ test("duplicate update_goal complete appends only one complete entry", async () 
   assert.equal(harness.snapshot().goal?.status, "complete");
 });
 
-test("compaction after complete does not append duplicate runtime entries", async () => {
-  const harness = createRuntimeHarness();
+nodeTest("compaction after complete does not append duplicate runtime entries", async () => {
+  const harness = await createRuntimeHarness();
   await harness.runCommand("ship it");
   await harness.runTool("update_goal", { status: "complete" });
   const entryCountAfterComplete = harness.entries.length;
@@ -54,38 +55,41 @@ test("compaction after complete does not append duplicate runtime entries", asyn
   assert.equal(harness.snapshot().goal?.status, "complete");
 });
 
-test("repeated tool_execution_end events coalesce runtime persistence when usage is unchanged", async () => {
-  const originalNow = Date.now;
-  let now = 1_000;
-  Date.now = () => now;
-  try {
-    const harness = createRuntimeHarness();
-    await harness.runCommand("ship it");
-    const goalId = harness.snapshot().goal?.goalId;
-    assert.ok(goalId);
-    const initialSetEntries = countGoalSetEntries(harness.entries, goalId);
-    assert.equal(initialSetEntries, 1);
+nodeTest(
+  "repeated tool_execution_end events coalesce runtime persistence when usage is unchanged",
+  async () => {
+    const originalNow = Date.now;
+    let now = 1_000;
+    Date.now = () => now;
+    try {
+      const harness = await createRuntimeHarness();
+      await harness.runCommand("ship it");
+      const goalId = harness.snapshot().goal?.goalId;
+      assert.ok(goalId !== undefined && goalId.length > 0);
+      const initialSetEntries = countGoalSetEntries(harness.entries, goalId);
+      assert.equal(initialSetEntries, 1);
 
-    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+      await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
 
-    for (let index = 0; index < 5; index += 1) {
-      now += 2_000;
-      await emitToolExecutionEnd(harness);
+      for (let index = 0; index < 5; index += 1) {
+        now += 2_000;
+        await emitToolExecutionEnd(harness);
+      }
+
+      assert.equal(countGoalSetEntries(harness.entries, goalId), initialSetEntries);
+      assert.match(harness.footerStatuses.at(-1) ?? "", /Pursuing goal/);
+    } finally {
+      Date.now = originalNow;
     }
+  },
+);
 
-    assert.equal(countGoalSetEntries(harness.entries, goalId), initialSetEntries);
-    assert.match(harness.footerStatuses.at(-1) ?? "", /Pursuing goal/);
-  } finally {
-    Date.now = originalNow;
-  }
-});
-
-test("subsecond tool time survives turns without charging the gap", async () => {
+nodeTest("subsecond tool time survives turns without charging the gap", async () => {
   const originalNow = Date.now;
   let now = 1_000;
   Date.now = () => now;
   try {
-    const harness = createRuntimeHarness();
+    const harness = await createRuntimeHarness();
     await harness.runCommand("ship it");
     await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
 
@@ -117,15 +121,15 @@ test("subsecond tool time survives turns without charging the gap", async () => 
   }
 });
 
-test("turn_end flushes coalesced runtime usage to session entries", async () => {
+nodeTest("turn_end flushes coalesced runtime usage to session entries", async () => {
   const originalNow = Date.now;
   let now = 1_000;
   Date.now = () => now;
   try {
-    const harness = createRuntimeHarness();
+    const harness = await createRuntimeHarness();
     await harness.runCommand("ship it");
     const goalId = harness.snapshot().goal?.goalId;
-    assert.ok(goalId);
+    assert.ok(goalId !== undefined && goalId.length > 0);
 
     await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
     now += 5_000;
@@ -143,21 +147,21 @@ test("turn_end flushes coalesced runtime usage to session entries", async () => 
     assert.equal(countGoalUsageEntries(harness.entries, goalId), 1);
     const goal = harness.snapshot().goal;
     assert.equal(goal?.usage.tokensUsed, 12);
-    assert.equal(goal?.usage.activeSeconds, 5);
+    assert.equal(goal.usage.activeSeconds, 5);
   } finally {
     Date.now = originalNow;
   }
 });
 
-test("session_shutdown flushes pending runtime usage", async () => {
+nodeTest("session_shutdown flushes pending runtime usage", async () => {
   const originalNow = Date.now;
   let now = 1_000;
   Date.now = () => now;
   try {
-    const harness = createRuntimeHarness();
+    const harness = await createRuntimeHarness();
     await harness.runCommand("ship it");
     const goalId = harness.snapshot().goal?.goalId;
-    assert.ok(goalId);
+    assert.ok(goalId !== undefined && goalId.length > 0);
 
     await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
     now += 4_000;
@@ -175,101 +179,107 @@ test("session_shutdown flushes pending runtime usage", async () => {
   }
 });
 
-test("runtime persistence interval flush appends one entry then coalesces until turn_end", async () => {
-  const originalNow = Date.now;
-  let now = 1_000;
-  Date.now = () => now;
-  try {
-    const harness = createRuntimeHarness();
-    await harness.runCommand("ship it");
-    const goalId = harness.snapshot().goal?.goalId;
-    assert.ok(goalId);
-    const initialSetEntries = countGoalSetEntries(harness.entries, goalId);
-    assert.equal(initialSetEntries, 1);
+nodeTest(
+  "runtime persistence interval flush appends one entry then coalesces until turn_end",
+  async () => {
+    const originalNow = Date.now;
+    let now = 1_000;
+    Date.now = () => now;
+    try {
+      const harness = await createRuntimeHarness();
+      await harness.runCommand("ship it");
+      const goalId = harness.snapshot().goal?.goalId;
+      assert.ok(goalId !== undefined && goalId.length > 0);
+      const initialSetEntries = countGoalSetEntries(harness.entries, goalId);
+      assert.equal(initialSetEntries, 1);
 
-    await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
+      await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
 
-    now += RUNTIME_PERSIST_INTERVAL_MS + 1_000;
-    await emitToolExecutionEnd(harness);
-
-    assert.equal(countGoalSetEntries(harness.entries, goalId), initialSetEntries);
-    assert.equal(countGoalUsageEntries(harness.entries, goalId), 1);
-    const afterIntervalFlush = harness.snapshot().goal;
-    assert.equal(
-      afterIntervalFlush?.usage.activeSeconds,
-      Math.floor((RUNTIME_PERSIST_INTERVAL_MS + 1_000) / 1_000),
-    );
-
-    for (let index = 0; index < 3; index += 1) {
-      now += 2_000;
+      now += RUNTIME_PERSIST_INTERVAL_MS + 1_000;
       await emitToolExecutionEnd(harness);
+
+      assert.equal(countGoalSetEntries(harness.entries, goalId), initialSetEntries);
+      assert.equal(countGoalUsageEntries(harness.entries, goalId), 1);
+      const afterIntervalFlush = harness.snapshot().goal;
+      assert.equal(
+        afterIntervalFlush?.usage.activeSeconds,
+        Math.floor((RUNTIME_PERSIST_INTERVAL_MS + 1_000) / 1_000),
+      );
+
+      for (let index = 0; index < 3; index += 1) {
+        now += 2_000;
+        await emitToolExecutionEnd(harness);
+      }
+
+      assert.equal(countGoalSetEntries(harness.entries, goalId), initialSetEntries);
+      assert.equal(countGoalUsageEntries(harness.entries, goalId), 1);
+
+      await harness.emit("turn_end", {
+        type: "turn_end",
+        turnIndex: 0,
+        message: assistantMessage("toolUse", { input: 10, output: 2 }),
+        toolResults: [],
+      });
+
+      assert.equal(countGoalSetEntries(harness.entries, goalId), initialSetEntries);
+      assert.equal(countGoalUsageEntries(harness.entries, goalId), 2);
+      const goal = harness.snapshot().goal;
+      assert.equal(goal?.usage.tokensUsed, 12);
+      assert.equal(
+        goal.usage.activeSeconds,
+        Math.floor((RUNTIME_PERSIST_INTERVAL_MS + 1_000 + 6_000) / 1_000),
+      );
+    } finally {
+      Date.now = originalNow;
     }
+  },
+);
 
-    assert.equal(countGoalSetEntries(harness.entries, goalId), initialSetEntries);
-    assert.equal(countGoalUsageEntries(harness.entries, goalId), 1);
+nodeTest(
+  "reconstructGoal uses the latest snapshot across dense legacy and coalesced entries",
+  () => {
+    const goal = createThreadGoal("ship it", 100);
+    const denseEntries = Array.from({ length: 20 }, (_, index) => ({
+      type: "custom" as const,
+      customType: CUSTOM_ENTRY_TYPE,
+      data: setEntry(
+        {
+          ...goal,
+          usage: { tokensUsed: index + 1, activeSeconds: index },
+          updatedAt: goal.updatedAt + index,
+        },
+        "runtime",
+        goal.updatedAt + index,
+      ),
+    }));
+    const coalescedEntry = {
+      type: "custom" as const,
+      customType: CUSTOM_ENTRY_TYPE,
+      data: runtimeUsageEntry(
+        {
+          ...goal,
+          usage: { tokensUsed: 99, activeSeconds: 42 },
+          status: "active",
+          updatedAt: goal.updatedAt + 100,
+        },
+        goal.updatedAt + 100,
+      ),
+    };
 
-    await harness.emit("turn_end", {
-      type: "turn_end",
-      turnIndex: 0,
-      message: assistantMessage("toolUse", { input: 10, output: 2 }),
-      toolResults: [],
-    });
+    const reconstructed = reconstructGoal([...denseEntries, coalescedEntry]).goal;
+    assert.ok(reconstructed);
+    assert.equal(reconstructed.tokenBudget, 100);
+    assert.equal(reconstructed.usage.tokensUsed, 99);
+    assert.equal(reconstructed.usage.activeSeconds, 42);
+  },
+);
 
-    assert.equal(countGoalSetEntries(harness.entries, goalId), initialSetEntries);
-    assert.equal(countGoalUsageEntries(harness.entries, goalId), 2);
-    const goal = harness.snapshot().goal;
-    assert.equal(goal?.usage.tokensUsed, 12);
-    assert.equal(
-      goal?.usage.activeSeconds,
-      Math.floor((RUNTIME_PERSIST_INTERVAL_MS + 1_000 + 6_000) / 1_000),
-    );
-  } finally {
-    Date.now = originalNow;
-  }
-});
-
-test("reconstructGoal uses the latest snapshot across dense legacy and coalesced entries", () => {
-  const goal = createThreadGoal("ship it", 100);
-  const denseEntries = Array.from({ length: 20 }, (_, index) => ({
-    type: "custom" as const,
-    customType: CUSTOM_ENTRY_TYPE,
-    data: setEntry(
-      {
-        ...goal,
-        usage: { tokensUsed: index + 1, activeSeconds: index },
-        updatedAt: goal.updatedAt + index,
-      },
-      "runtime",
-      goal.updatedAt + index,
-    ),
-  }));
-  const coalescedEntry = {
-    type: "custom" as const,
-    customType: CUSTOM_ENTRY_TYPE,
-    data: runtimeUsageEntry(
-      {
-        ...goal,
-        usage: { tokensUsed: 99, activeSeconds: 42 },
-        status: "active",
-        updatedAt: goal.updatedAt + 100,
-      },
-      goal.updatedAt + 100,
-    ),
-  };
-
-  const reconstructed = reconstructGoal([...denseEntries, coalescedEntry]).goal;
-  assert.ok(reconstructed);
-  assert.equal(reconstructed.tokenBudget, 100);
-  assert.equal(reconstructed.usage.tokensUsed, 99);
-  assert.equal(reconstructed.usage.activeSeconds, 42);
-});
-
-test("compaction with unchanged paused goal appends no new entry", async () => {
-  const harness = createRuntimeHarness();
+nodeTest("compaction with unchanged paused goal appends no new entry", async () => {
+  const harness = await createRuntimeHarness();
   await harness.runCommand("ship it");
   await harness.runCommand("pause");
   const goalId = harness.snapshot().goal?.goalId;
-  assert.ok(goalId);
+  assert.ok(goalId !== undefined && goalId.length > 0);
   const entryCountAfterPause = harness.entries.length;
 
   await harness.emit("session_before_compact", sessionBeforeCompactEvent());
@@ -280,15 +290,15 @@ test("compaction with unchanged paused goal appends no new entry", async () => {
   assert.equal(countGoalSetEntries(harness.entries, goalId), 2);
 });
 
-test("compaction with unchanged budgetLimited goal appends no new entry", async () => {
+nodeTest("compaction with unchanged budgetLimited goal appends no new entry", async () => {
   const originalNow = Date.now;
   let now = 1_000;
   Date.now = () => now;
   try {
-    const harness = createRuntimeHarness();
+    const harness = await createRuntimeHarness();
     await harness.runTool("create_goal", { objective: "ship it", token_budget: 500_000 });
     const goalId = harness.snapshot().goal?.goalId;
-    assert.ok(goalId);
+    assert.ok(goalId !== undefined && goalId.length > 0);
 
     await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
     await harness.emit("turn_end", {
@@ -300,8 +310,8 @@ test("compaction with unchanged budgetLimited goal appends no new entry", async 
 
     const goal = harness.snapshot().goal;
     assert.equal(goal?.status, "budgetLimited");
-    assert.equal(goal?.usage.tokensUsed, 500_001);
-    const activeSecondsAtBudgetLimit = goal?.usage.activeSeconds ?? 0;
+    assert.equal(goal.usage.tokensUsed, 500_001);
+    const activeSecondsAtBudgetLimit = goal.usage.activeSeconds;
     const entryCountAfterBudgetLimit = harness.entries.length;
     const setEntriesAfterBudgetLimit = countGoalSetEntries(harness.entries, goalId);
     const usageEntriesAfterBudgetLimit = countGoalUsageEntries(harness.entries, goalId);
@@ -324,15 +334,15 @@ test("compaction with unchanged budgetLimited goal appends no new entry", async 
   }
 });
 
-test("session_shutdown with unchanged budgetLimited goal appends no new entry", async () => {
+nodeTest("session_shutdown with unchanged budgetLimited goal appends no new entry", async () => {
   const originalNow = Date.now;
   let now = 1_000;
   Date.now = () => now;
   try {
-    const harness = createRuntimeHarness();
+    const harness = await createRuntimeHarness();
     await harness.runTool("create_goal", { objective: "ship it", token_budget: 500_000 });
     const goalId = harness.snapshot().goal?.goalId;
-    assert.ok(goalId);
+    assert.ok(goalId !== undefined && goalId.length > 0);
 
     await harness.emit("turn_start", { type: "turn_start", turnIndex: 0, timestamp: 1 });
     await harness.emit("turn_end", {
@@ -344,8 +354,8 @@ test("session_shutdown with unchanged budgetLimited goal appends no new entry", 
 
     const goal = harness.snapshot().goal;
     assert.equal(goal?.status, "budgetLimited");
-    assert.equal(goal?.usage.tokensUsed, 500_001);
-    const activeSecondsAtBudgetLimit = goal?.usage.activeSeconds ?? 0;
+    assert.equal(goal.usage.tokensUsed, 500_001);
+    const activeSecondsAtBudgetLimit = goal.usage.activeSeconds;
     const entryCountAfterBudgetLimit = harness.entries.length;
     const setEntriesAfterBudgetLimit = countGoalSetEntries(harness.entries, goalId);
     const usageEntriesAfterBudgetLimit = countGoalUsageEntries(harness.entries, goalId);
@@ -367,52 +377,59 @@ test("session_shutdown with unchanged budgetLimited goal appends no new entry", 
   }
 });
 
-test("create_goal creates a new goal when explicit replacement is requested without an existing goal", async () => {
-  const harness = createRuntimeHarness();
+nodeTest(
+  "create_goal creates a new goal when explicit replacement is requested without an existing goal",
+  async () => {
+    const harness = await createRuntimeHarness();
 
-  const created = (await harness.runTool("create_goal", {
-    objective: "new objective",
-    replace_existing: true,
-  })) as { details: Record<string, unknown> };
+    const created = await harness.runTool("create_goal", {
+      objective: "new objective",
+      replace_existing: true,
+    });
+    assert.ok(isRecord(created.details) && isRecord(created.details.goal));
 
-  assert.equal((created.details.goal as { objective?: string }).objective, "new objective");
-  assert.equal(harness.snapshot().goal?.objective, "new objective");
-  assert.equal(harness.snapshot().goal?.status, "active");
-});
+    assert.equal(created.details.goal.objective, "new objective");
+    assert.equal(harness.snapshot().goal?.objective, "new objective");
+    assert.equal(harness.snapshot().goal?.status, "active");
+  },
+);
 
-test("create_goal replaces a completed goal", async () => {
-  const harness = createRuntimeHarness();
+nodeTest("create_goal replaces a completed goal", async () => {
+  const harness = await createRuntimeHarness();
   await harness.runCommand("ship it");
   const completedGoalId = harness.snapshot().goal?.goalId;
   await harness.runTool("update_goal", { status: "complete" });
 
-  const created = (await harness.runTool("create_goal", { objective: "next objective" })) as {
-    details: Record<string, unknown>;
-  };
+  const created = await harness.runTool("create_goal", { objective: "next objective" });
+  assert.ok(isRecord(created.details) && isRecord(created.details.goal));
 
-  assert.equal((created.details.goal as { objective?: string }).objective, "next objective");
+  assert.equal(created.details.goal.objective, "next objective");
   assert.equal(harness.snapshot().goal?.status, "active");
   assert.notEqual(harness.snapshot().goal?.goalId, completedGoalId);
 });
 
-test("create_goal can explicitly replace a non-complete goal", async () => {
-  const harness = createRuntimeHarness();
+nodeTest("create_goal can explicitly replace a non-complete goal", async () => {
+  const harness = await createRuntimeHarness();
   await harness.runCommand("ship it");
   const originalGoalId = harness.snapshot().goal?.goalId;
 
-  const created = (await harness.runTool("create_goal", {
+  const created = await harness.runTool("create_goal", {
     objective: "replacement",
     replace_existing: true,
-  })) as { details: Record<string, unknown> };
+  });
+  assert.ok(isRecord(created.details) && isRecord(created.details.goal));
 
-  assert.equal((created.details.goal as { objective?: string }).objective, "replacement");
+  assert.equal(created.details.goal.objective, "replacement");
   assert.equal(harness.snapshot().goal?.status, "active");
   assert.notEqual(harness.snapshot().goal?.goalId, originalGoalId);
 });
 
-test("failed create_goal throws so pi marks the tool result as an error", async () => {
-  const harness = createRuntimeHarness();
+nodeTest("failed create_goal throws so pi marks the tool result as an error", async () => {
+  const harness = await createRuntimeHarness();
   await harness.runCommand("ship it");
 
-  await assert.rejects(() => harness.runTool("create_goal", { objective: "duplicate" }), /already has a non-complete goal/);
+  await assert.rejects(
+    () => harness.runTool("create_goal", { objective: "duplicate" }),
+    /already has a non-complete goal/,
+  );
 });

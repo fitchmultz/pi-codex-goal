@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { test as nodeTest } from "node:test";
+import { testUi } from "./support/sdk-fixture.ts";
+import { goalDeliveryDetails, createGoalDeliveries } from "../src/goal-delivery.ts";
 
 import {
   handleGoalCommand,
@@ -9,7 +11,6 @@ import {
   type GoalCommandPi,
 } from "../src/commands.ts";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { createGoalDeliveries } from "../src/goal-delivery.ts";
 import { applyUsage, updateGoalStatus } from "../src/state.ts";
 import { CUSTOM_ENTRY_TYPE, type GoalEntrySource, type ThreadGoal } from "../src/types.ts";
 
@@ -30,7 +31,9 @@ function createHarness() {
   const notifications: string[] = [];
 
   const pi: Pick<ExtensionAPI, "registerCommand" | "sendMessage" | "sendUserMessage"> = {
-    registerCommand() {},
+    registerCommand() {
+      /* Commands are exercised through handleGoalCommand in this fixture. */
+    },
     sendMessage(message: SentMessage["message"], options: SentMessage["options"]) {
       sentMessages.push({ message, options });
     },
@@ -48,7 +51,9 @@ function createHarness() {
     clearGoal() {
       goal = null;
     },
-    cancelProviderLimitAutoResume() {},
+    cancelProviderLimitAutoResume() {
+      /* This command fixture owns no provider timer. */
+    },
     queueGoalTurn(current, kind) {
       deliveries.send(current, kind);
       return { ok: true, message: "Goal follow-up queued.", goal: current };
@@ -67,13 +72,10 @@ function createHarness() {
     mode: "tui",
     hasUI: true,
     ui: {
+      ...testUi(),
       notify(message: string) {
         notifications.push(message);
       },
-      confirm: async () => true,
-      setStatus: () => {},
-      setWidget() {},
-      theme: {} as GoalCommandContext["ui"]["theme"],
     },
   };
 
@@ -93,7 +95,7 @@ function createHarness() {
   };
 }
 
-test("/goal objective creates the goal and starts a hidden follow-up turn", async () => {
+nodeTest("/goal objective creates the goal and starts a hidden follow-up turn", async () => {
   const harness = createHarness();
 
   await handleGoalCommand(harness.host, "ship the feature", harness.ctx);
@@ -105,7 +107,10 @@ test("/goal objective creates the goal and starts a hidden follow-up turn", asyn
   assert.ok(sentMessage);
   assert.equal(sentMessage.message.customType, CUSTOM_ENTRY_TYPE);
   assert.equal(sentMessage.message.display, false);
-  assert.equal((sentMessage.message.details as { kind: string }).kind, "command_start");
+  assert.equal(
+    goalDeliveryDetails({ role: "custom", ...sentMessage.message })?.kind,
+    "command_start",
+  );
   const content = sentMessage.message.content;
   if (typeof content !== "string") {
     assert.fail("Expected queued goal message content to be a string.");
@@ -114,7 +119,7 @@ test("/goal objective creates the goal and starts a hidden follow-up turn", asyn
   assert.deepEqual(sentMessage.options, { triggerTurn: true, deliverAs: "followUp" });
 });
 
-test("/goal completions include resume cancel", () => {
+nodeTest("/goal completions include resume cancel", () => {
   const harness = createHarness();
   let getArgumentCompletions: ((argumentPrefix: string) => unknown) | undefined;
   const pi: GoalCommandPi = {
@@ -135,7 +140,7 @@ test("/goal completions include resume cancel", () => {
   ]);
 });
 
-test("/goal copy copies the current goal objective", async () => {
+nodeTest("/goal copy copies the current goal objective", async () => {
   const harness = createHarness();
   const copied: string[] = [];
 
@@ -149,7 +154,7 @@ test("/goal copy copies the current goal objective", async () => {
   assert.equal(harness.notifications.at(-1), "Goal objective copied.");
 });
 
-test("/goal copy works for completed goals", async () => {
+nodeTest("/goal copy works for completed goals", async () => {
   const harness = createHarness();
   const copied: string[] = [];
 
@@ -168,7 +173,7 @@ test("/goal copy works for completed goals", async () => {
   assert.equal(harness.notifications.at(-1), "Goal objective copied.");
 });
 
-test("/goal copy reports missing clipboard support", async () => {
+nodeTest("/goal copy reports missing clipboard support", async () => {
   const harness = createHarness();
 
   await handleGoalCommand(harness.host, "ship the feature", harness.ctx);
@@ -177,10 +182,13 @@ test("/goal copy reports missing clipboard support", async () => {
     message: "clipboard unavailable",
   }));
 
-  assert.match(harness.notifications.at(-1) ?? "", /Could not copy goal objective: clipboard unavailable/);
+  assert.match(
+    harness.notifications.at(-1) ?? "",
+    /Could not copy goal objective: clipboard unavailable/,
+  );
 });
 
-test("/goal resume queues an automated custom follow-up", async () => {
+nodeTest("/goal resume queues an automated custom follow-up", async () => {
   const harness = createHarness();
 
   await handleGoalCommand(harness.host, "ship the feature", harness.ctx);
@@ -205,7 +213,7 @@ test("/goal resume queues an automated custom follow-up", async () => {
   assert.doesNotMatch(content, /pi_goal_delivery|pi_goal_continuation/);
 });
 
-test("/goal pause rejects completed and paused goals", async () => {
+nodeTest("/goal pause rejects completed and paused goals", async () => {
   const harness = createHarness();
 
   await handleGoalCommand(harness.host, "ship the feature", harness.ctx);
@@ -221,7 +229,7 @@ test("/goal pause rejects completed and paused goals", async () => {
   assert.equal(paused.ok, false);
 });
 
-test("/goal resume rejects completed and ordinarily active goals", async () => {
+nodeTest("/goal resume rejects completed and ordinarily active goals", async () => {
   const harness = createHarness();
 
   await handleGoalCommand(harness.host, "ship the feature", harness.ctx);
@@ -234,15 +242,18 @@ test("/goal resume rejects completed and ordinarily active goals", async () => {
   assert.match(harness.notifications.at(-1) ?? "", /Completed goals are terminal/);
 
   await handleGoalCommand(harness.host, "ship the feature", harness.ctx);
-  assert.equal(harness.goal?.status, "active");
+  assert.equal(harness.goal.status, "active");
   harness.sentMessages.length = 0;
 
   await handleGoalCommand(harness.host, "resume", harness.ctx);
-  assert.equal(harness.goal?.status, "active");
-  assert.match(harness.notifications.at(-1) ?? "", /Only paused, blocked, or waiting goals can be resumed/);
+  assert.equal(harness.goal.status, "active");
+  assert.match(
+    harness.notifications.at(-1) ?? "",
+    /Only paused, blocked, or waiting goals can be resumed/,
+  );
 });
 
-test("/goal objective replaces a completed goal without confirmation", async () => {
+nodeTest("/goal objective replaces a completed goal without confirmation", async () => {
   const harness = createHarness();
 
   await handleGoalCommand(harness.host, "old objective", harness.ctx);
@@ -254,16 +265,18 @@ test("/goal objective replaces a completed goal without confirmation", async () 
   await handleGoalCommand(harness.host, "new objective", harness.ctx);
 
   assert.equal(harness.goal?.objective, "new objective");
-  assert.equal(harness.goal?.status, "active");
-  assert.notEqual(harness.goal?.goalId, completed.goalId);
+  assert.equal(harness.goal.status, "active");
+  assert.notEqual(harness.goal.goalId, completed.goalId);
   assert.equal(harness.sentMessages.length, 1);
 });
 
-test("/goal resume does not restart an over-budget budget-limited goal", async () => {
+nodeTest("/goal resume does not restart an over-budget budget-limited goal", async () => {
   const harness = createHarness();
 
   await handleGoalCommand(harness.host, "ship the feature", harness.ctx);
-  const budgeted = { ...harness.goal, tokenBudget: 10 } as ThreadGoal;
+  const goal = harness.goal;
+  assert.ok(goal);
+  const budgeted: ThreadGoal = { ...goal, tokenBudget: 10 };
   const limited = applyUsage(budgeted, 10, 0).goal;
   assert.ok(limited);
   harness.sentMessages.length = 0;
@@ -271,6 +284,6 @@ test("/goal resume does not restart an over-budget budget-limited goal", async (
 
   await handleGoalCommand(harness.host, "resume", harness.ctx);
 
-  assert.equal(harness.goal?.status, "budgetLimited");
+  assert.equal(harness.goal.status, "budgetLimited");
   assert.equal(harness.sentMessages.length, 0);
 });

@@ -64,7 +64,12 @@ export function formatCompactTokenValue(value: number): string {
   }
 
   const scaled = normalized / unit.value;
-  const fractionDigits = scaled < 10 ? 2 : scaled < 100 ? 1 : 0;
+  let fractionDigits = 0;
+  if (scaled < 10) {
+    fractionDigits = 2;
+  } else if (scaled < 100) {
+    fractionDigits = 1;
+  }
   const compact = scaled.toLocaleString("en-US", {
     maximumFractionDigits: fractionDigits,
     minimumFractionDigits: 0,
@@ -121,11 +126,11 @@ export function formatGoalSummary(goal: ThreadGoal | null): string {
     lines.push(`Token budget: ${formatTokenValue(goal.tokenBudget)}`);
   }
   if (goal.status === "blocked") {
-    lines.push(`Blocked on: ${goal.blockedReason}`);
+    lines.push(`Blocked on: ${String(goal.blockedReason)}`);
   }
 
   if (goal.status === "waiting") {
-    lines.push(`Waiting for: ${goal.waitingReason}`);
+    lines.push(`Waiting for: ${String(goal.waitingReason)}`);
   }
 
   lines.push(`Hint: ${commandHint(goal.status)}`);
@@ -152,6 +157,34 @@ function compactBudgetUsage(goal: ThreadGoal): string {
   return `${formatCompactTokenValue(goal.usage.tokensUsed)} / ${formatCompactTokenValue(goal.tokenBudget)}`;
 }
 
+function formatGoalInterruption(
+  goal: ThreadGoal,
+  providerLimitAutoResumeScheduled: boolean,
+): string | null {
+  switch (goal.status) {
+    case "budgetLimited":
+      return goal.tokenBudget !== null
+        ? `Goal unmet (${compactBudgetUsage(goal)} tokens)`
+        : "Goal abandoned";
+    case "paused":
+      return providerLimitAutoResumeScheduled
+        ? "Goal paused because the provider usage limit was reached. Auto-resume will retry in about 5 minutes. Use /goal resume to resume now or /goal resume cancel to stop auto-resume."
+        : null;
+    case "blocked":
+      return "Goal blocked (/goal for reason; /goal resume)";
+    case "waiting": {
+      const reason = stripTerminalSequences(goal.waitingReason ?? "")
+        .replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      return `Goal waiting: ${reason} (/goal resume)`;
+    }
+    case "active":
+    case "complete":
+      return null;
+  }
+}
+
 export function formatFooterStatus(
   goal: ThreadGoal | null,
   recoveryAttention: RecoveryAttention | null = null,
@@ -161,55 +194,40 @@ export function formatFooterStatus(
     return undefined;
   }
 
-  if (goal.status === "budgetLimited") {
-    if (goal.tokenBudget !== null) {
-      return `Goal unmet (${compactBudgetUsage(goal)} tokens)`;
-    }
-    return "Goal abandoned";
+  const interruption = formatGoalInterruption(goal, providerLimitAutoResumeScheduled);
+  if (interruption !== null) {
+    return interruption;
   }
-
-  if (goal.status === "paused" && providerLimitAutoResumeScheduled) {
-    return "Goal paused because the provider usage limit was reached. Auto-resume will retry in about 5 minutes. Use /goal resume to resume now or /goal resume cancel to stop auto-resume.";
-  }
-
-  if (goal.status === "blocked") {
-    return "Goal blocked (/goal for reason; /goal resume)";
-  }
-  if (goal.status === "waiting") {
-    // Keep model-provided reasons on one terminal-safe footer line.
-    const reason = stripTerminalSequences(goal.waitingReason ?? "")
-      .replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-    return `Goal waiting: ${reason} (/goal resume)`;
-  }
-
   const recoveryAttentionMessage = formatRecoveryAttention(recoveryAttention);
-  if (recoveryAttentionMessage) {
+  if (recoveryAttentionMessage !== null && recoveryAttentionMessage.length > 0) {
     return recoveryAttentionMessage;
   }
 
   if (goal.status === "active") {
-    if (goal.tokenBudget !== null) {
-      return `Pursuing goal (${compactBudgetUsage(goal)})`;
-    }
-    if (goal.usage.activeSeconds > 0) {
-      return `Pursuing goal (${formatDuration(goal.usage.activeSeconds)})`;
-    }
-    return "Pursuing goal";
+    return formatActiveFooter(goal);
   }
-
   if (goal.status === "paused") {
     return "Goal paused (/goal resume)";
   }
+  return formatCompleteFooter(goal);
+}
 
+function formatActiveFooter(goal: ThreadGoal): string {
+  if (goal.tokenBudget !== null) {
+    return `Pursuing goal (${compactBudgetUsage(goal)})`;
+  }
+  return goal.usage.activeSeconds > 0
+    ? `Pursuing goal (${formatDuration(goal.usage.activeSeconds)})`
+    : "Pursuing goal";
+}
+
+function formatCompleteFooter(goal: ThreadGoal): string {
   if (goal.tokenBudget !== null) {
     return `Goal achieved (${formatCompactTokenValue(goal.usage.tokensUsed)} tokens)`;
   }
-  if (goal.usage.activeSeconds > 0) {
-    return `Goal achieved (${formatDuration(goal.usage.activeSeconds)})`;
-  }
-  return "Goal achieved";
+  return goal.usage.activeSeconds > 0
+    ? `Goal achieved (${formatDuration(goal.usage.activeSeconds)})`
+    : "Goal achieved";
 }
 
 export function toToolGoal(goal: ThreadGoal): GoalToolRecord {
@@ -247,7 +265,9 @@ export function completionBudgetReport(goal: ThreadGoal | null): string | null {
     parts.push(`time used: ${formatDuration(goal.usage.activeSeconds)}.`);
   }
   if (goal.tokenBudget !== null) {
-    parts.push(`tokens used: ${formatInteger(goal.usage.tokensUsed)} of ${formatInteger(goal.tokenBudget)}.`);
+    parts.push(
+      `tokens used: ${formatInteger(goal.usage.tokensUsed)} of ${formatInteger(goal.tokenBudget)}.`,
+    );
   } else if (goal.usage.tokensUsed > 0) {
     parts.push(`tokens used: ${formatInteger(goal.usage.tokensUsed)}.`);
   }
@@ -255,7 +275,10 @@ export function completionBudgetReport(goal: ThreadGoal | null): string | null {
   return `Goal achieved. Report final budget usage to the user: ${parts.join(" ")}`;
 }
 
-export function goalToolResponse(goal: ThreadGoal | null, includeCompletionBudgetReport = false): GoalToolResponse {
+export function goalToolResponse(
+  goal: ThreadGoal | null,
+  includeCompletionBudgetReport = false,
+): GoalToolResponse {
   return {
     goal: goal ? toToolGoal(goal) : null,
     remainingTokens: remainingTokens(goal),
