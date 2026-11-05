@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.7.8 - 2026-11-05
+
+<!-- npm-release:unreleased:start -->
+<!-- npm-release:unreleased:end -->
+
+- Adopt strict Oxlint/Oxfmt engineering standard (#127) ([ceee827](https://github.com/fitchmultz/pi-codex-goal/commit/ceee827d42ff4724ec41c8783c29dd4e08ec74c0))
+
+### What's Changed
+
+- Adopt strict Oxlint/Oxfmt engineering standard by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/127
+
+**Full Changelog**: https://github.com/fitchmultz/pi-codex-goal/compare/v0.7.7...v0.7.8
+
 ## 0.7.7 - 2026-11-03
 
 <!-- npm-release:unreleased:start -->
