@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isRecord } from "../src/validation.ts";
@@ -143,10 +143,10 @@ function checkCompiler(root: string, sources: string[], standard: string): void 
     command(root, process.execPath, [tsc, "--listFilesOnly"])
       .trim()
       .split(/\r?\n/)
-      .map((path) => resolve(path)),
+      .map((path) => realpathSync(path)),
   );
   for (const source of sources) {
-    assert.ok(files.has(resolve(root, source)), `Unowned compiler source: ${source}`);
+    assert.ok(files.has(realpathSync(join(root, source))), `Unowned compiler source: ${source}`);
     assert.ok(
       !/\.d\.[cm]?ts$/.test(source),
       `${source}: add an independently checked skipLibCheck:false declaration project before owning declarations`,
@@ -162,10 +162,10 @@ function checkCoverage(root: string, inventory: string[]): string[] {
     command(root, process.execPath, [lint, "--debug=files", "."])
       .trim()
       .split(/\r?\n/)
-      .map((file) => resolve(root, file)),
+      .map((file) => realpathSync(resolve(root, file))),
   );
   for (const file of sources) {
-    assert.ok(selected.has(resolve(root, file)), `Unowned lint source: ${file}`);
+    assert.ok(selected.has(realpathSync(join(root, file))), `Unowned lint source: ${file}`);
     if (/\.(?:test|spec)\.[cm]?[jt]sx?$/.test(file)) {
       assert.ok(
         /^test\/(?:quality\/)?[^/]+\.test\.ts$/.test(file),
@@ -215,6 +215,11 @@ export function checkPolicy(root: string): void {
   );
 }
 
-if (fileURLToPath(import.meta.url) === resolve(process.argv[1] ?? "")) {
+const entry = process.argv[1];
+if (
+  entry !== undefined &&
+  existsSync(entry) &&
+  realpathSync(fileURLToPath(import.meta.url)) === realpathSync(entry)
+) {
   checkPolicy(ROOT);
 }

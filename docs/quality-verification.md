@@ -18,6 +18,10 @@ npm run pack:check
 
 Local verification uses Node 24 on macOS with an isolated HOME, agent directory, and TMPDIR. TypeScript and oxlint-tsgolint do not publish Android binaries. Node behavior tests and Oxfmt also run on Termux. There is no emitted build. The dry run and existing native source, Git-production, and npm-artifact tests verify the shipped TypeScript package.
 
+`.gitattributes` keeps text checkouts at LF to match Oxfmt, including when `core.autocrlf=true`. Git retains binary-file detection. The checkout control uses the real repository and the normal formatter and policy commands.
+
+Policy checks compare real file paths so linked checkout paths retain compiler and lint ownership. The policy regression runs through a directory link and confirms that invalid settings still fail the CLI.
+
 ## Adoption controls
 
 Disposable projects use the repository's actual configurations, compiler, native lint, and formatter. They contain no runtime dependencies on invalid fixtures. Each failing native control checks its diagnostic identity, file, location, and exit status against a passing counterpart.

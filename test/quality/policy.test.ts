@@ -20,9 +20,13 @@ const root = resolve(import.meta.dirname, "../..");
 nodeTest(
   "the actual policy gate rejects category downgrades and omitted maintained compiler inputs",
   (t) => {
-    const directory = mkdtempSync(join(tmpdir(), "goal-policy-"));
+    const scratch = mkdtempSync(join(tmpdir(), "goal-policy-"));
+    const directory = join(scratch, "linked");
+    const source = join(scratch, "source");
+    mkdirSync(source);
+    symlinkSync(source, directory, "junction");
     t.after(() => {
-      rmSync(directory, { recursive: true, force: true });
+      rmSync(scratch, { recursive: true, force: true });
     });
     const inventory = spawnSync(
       "git",
@@ -42,6 +46,7 @@ nodeTest(
     const run = () =>
       spawnSync(process.execPath, [join(directory, "scripts/quality-policy.ts")], {
         cwd: directory,
+        env: { ...process.env, PWD: directory },
         encoding: "utf8",
       });
     const valid = run();
