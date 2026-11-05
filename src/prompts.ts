@@ -90,10 +90,7 @@ function budgetPromptLines(goal: ThreadGoal, includeRemaining: boolean): string[
 }
 
 export function escapeXmlText(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
+  return value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
 export function compactContinuationPrompt(goal: ThreadGoal): string {
@@ -106,7 +103,7 @@ export function compactContinuationPrompt(goal: ThreadGoal): string {
     "",
     "Avoid repeating work that is already done. Choose the next concrete action toward the objective.",
     "",
-    `Before marking the goal complete, audit progress against the objective and call ${goalToolReference("update_goal")} with status \"complete\" only when every requirement is verified.`,
+    `Before marking the goal complete, audit progress against the objective and call ${goalToolReference("update_goal")} with status "complete" only when every requirement is verified.`,
     WAITING_GUIDANCE,
     `If missing input or external work without a self-delivered result prevents meaningful progress, call ${goalToolReference("update_goal")} with status "blocked" and explain the dependency in reason; wait for explicit /goal resume.`,
     GOAL_TOOL_NAME_GUIDANCE,

@@ -1,4 +1,9 @@
-import { goalDeliveryDetails, type CancelledQueuedGoalWorkDetails, type GoalDeliveryDetails, type GoalDeliveryMessage } from "./goal-delivery.ts";
+import {
+  goalDeliveryDetails,
+  type CancelledQueuedGoalWorkDetails,
+  type GoalDeliveryDetails,
+  type GoalDeliveryMessage,
+} from "./goal-delivery.ts";
 
 export interface QueuedGoalWorkCancellation {
   text: string;
@@ -10,8 +15,11 @@ export function cancelQueuedGoalWork(details: GoalDeliveryDetails): QueuedGoalWo
   return {
     text: "A queued Goal follow-up was cancelled before running. Ignore this bookkeeping message; do not perform its work or mention this cancellation to the user.",
     details: {
-      kind: "stale_continuation", lifecycle: "cancelled",
-      goalId: details.goalId, generation: details.generation, deliveryId: details.deliveryId,
+      kind: "stale_continuation",
+      lifecycle: "cancelled",
+      goalId: details.goalId,
+      generation: details.generation,
+      deliveryId: details.deliveryId,
     },
   };
 }
@@ -20,7 +28,9 @@ export function queuedGoalDeliveryId(message: GoalDeliveryMessage): string | nul
   return goalDeliveryDetails(message)?.deliveryId ?? null;
 }
 
-export function agentEndMessagesIncludeQueuedGoalWork(messages: readonly GoalDeliveryMessage[]): boolean {
+export function agentEndMessagesIncludeQueuedGoalWork(
+  messages: readonly GoalDeliveryMessage[],
+): boolean {
   return messages.some((message) => queuedGoalDeliveryId(message) !== null);
 }
 
@@ -31,7 +41,9 @@ export function pendingStaleQueuedGoalWorkIdsFromMessages(
   const ids: string[] = [];
   for (const message of messages) {
     const id = queuedGoalDeliveryId(message);
-    if (id !== null && pendingDeliveryIds.has(id)) ids.push(id);
+    if (id !== null && pendingDeliveryIds.has(id)) {
+      ids.push(id);
+    }
   }
   return ids;
 }

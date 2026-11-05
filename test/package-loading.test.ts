@@ -1,11 +1,24 @@
 import assert from "node:assert/strict";
+import { isRecord } from "../src/validation.ts";
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test, type TestContext } from "node:test";
+import { test as nodeTest, type TestContext } from "node:test";
 
-import { InMemoryCredentialStore, validateToolArguments, type ToolCall } from "@earendil-works/pi-ai";
+import {
+  InMemoryCredentialStore,
+  validateToolArguments,
+  type ToolCall,
+} from "@earendil-works/pi-ai";
 import {
   createAgentSession,
   DefaultResourceLoader,
@@ -35,15 +48,24 @@ function copySource(root: string): string {
   mkdirSync(packageRoot);
   // No build output or adjacent dependencies: these must come from Pi itself.
   for (const path of ["package.json", "package-lock.json", "src", "extensions", "prompts"]) {
-    if (existsSync(path)) cpSync(path, join(packageRoot, path), { recursive: true });
+    if (existsSync(path)) {
+      cpSync(path, join(packageRoot, path), { recursive: true });
+    }
   }
   return packageRoot;
 }
 
-async function checkPackage(root: string, packageRoot: string, policy?: string, invalidPolicy = false): Promise<void> {
+async function checkPackage(
+  root: string,
+  packageRoot: string,
+  policy?: string,
+  invalidPolicy = false,
+): Promise<void> {
   const minimumBudget = policy === undefined || policy === "disabled" ? 500_000 : Number(policy);
   const disabled = policy === "disabled";
-  const budgetError = disabled ? /Explicit token budgets are disabled/ : new RegExp(`integer of at least ${minimumBudget}`);
+  const budgetError = disabled
+    ? /Explicit token budgets are disabled/
+    : new RegExp(`integer of at least ${minimumBudget}`);
   const cwd = join(root, "project");
   const agentDir = join(root, "agent");
   mkdirSync(cwd);
@@ -60,25 +82,39 @@ async function checkPackage(root: string, packageRoot: string, policy?: string, 
   });
   const previousPolicy = process.env.PI_CODEX_GOAL_TOKEN_BUDGET_POLICY;
   try {
-    if (policy === undefined) delete process.env.PI_CODEX_GOAL_TOKEN_BUDGET_POLICY;
-    else process.env.PI_CODEX_GOAL_TOKEN_BUDGET_POLICY = policy;
+    if (policy === undefined) {
+      delete process.env.PI_CODEX_GOAL_TOKEN_BUDGET_POLICY;
+    } else {
+      process.env.PI_CODEX_GOAL_TOKEN_BUDGET_POLICY = policy;
+    }
     await loader.reload();
   } finally {
-    if (previousPolicy === undefined) delete process.env.PI_CODEX_GOAL_TOKEN_BUDGET_POLICY;
-    else process.env.PI_CODEX_GOAL_TOKEN_BUDGET_POLICY = previousPolicy;
+    if (previousPolicy === undefined) {
+      delete process.env.PI_CODEX_GOAL_TOKEN_BUDGET_POLICY;
+    } else {
+      process.env.PI_CODEX_GOAL_TOKEN_BUDGET_POLICY = previousPolicy;
+    }
   }
   const loaded = loader.getExtensions();
   if (invalidPolicy) {
     assert.equal(loaded.extensions.length, 0);
     assert.equal(loaded.errors.length, 1);
-    assert.match(loaded.errors[0]!.error, /PI_CODEX_GOAL_TOKEN_BUDGET_POLICY must be a positive safe integer or disabled/);
+    const [error] = loaded.errors;
+    assert.ok(error);
+    assert.match(
+      error.error,
+      /PI_CODEX_GOAL_TOKEN_BUDGET_POLICY must be a positive safe integer or disabled/,
+    );
     return;
   }
   assert.deepEqual(loaded.errors, []);
   assert.equal(loaded.extensions.length, 1, "package must discover exactly one extension");
-  assert.ok(loaded.extensions[0]?.resolvedPath.endsWith(join("extensions", "index.ts")));
-  assert.deepEqual(loader.getPrompts().prompts.map((prompt) => prompt.name), ["create-goal"]);
-  assert.ok(loaded.extensions[0]?.commands.has("goal"));
+  assert.equal(loaded.extensions[0]?.resolvedPath.endsWith(join("extensions", "index.ts")), true);
+  assert.deepEqual(
+    loader.getPrompts().prompts.map((prompt) => prompt.name),
+    ["create-goal"],
+  );
+  assert.equal(loaded.extensions[0].commands.has("goal"), true);
 
   const modelRuntime = await ModelRuntime.create({
     allowModelNetwork: false,
@@ -88,7 +124,7 @@ async function checkPackage(root: string, packageRoot: string, policy?: string, 
   });
   const sessionManager = SessionManager.create(cwd, root);
   const sessionFile = sessionManager.getSessionFile();
-  assert.ok(sessionFile);
+  assert.ok(sessionFile !== undefined && sessionFile.length > 0);
   writeFileSync(sessionFile, `${JSON.stringify(sessionManager.getHeader())}\n`);
   sessionManager.setSessionFile(sessionFile);
   const { session } = await createAgentSession({
@@ -102,17 +138,31 @@ async function checkPackage(root: string, packageRoot: string, policy?: string, 
   });
   const runner = session.extensionRunner;
   try {
-    assert.deepEqual(session.getActiveToolNames().sort(), ["create_goal", "get_goal", "update_goal"]);
+    assert.deepEqual(session.getActiveToolNames().sort(), [
+      "create_goal",
+      "get_goal",
+      "update_goal",
+    ]);
     const call = async (name: string, params: Record<string, unknown>) => {
       const tool = runner.getToolDefinition(name);
       assert.ok(tool);
-      return tool.execute(name, params, undefined, undefined, runner.createToolContext(name, undefined));
+      return tool.execute(
+        name,
+        params,
+        undefined,
+        undefined,
+        runner.createToolContext(name, runner.createContext().signal),
+      );
     };
     const createGoal = runner.getToolDefinition("create_goal");
     assert.ok(createGoal);
-    const validateCreate = (args: ToolCall["arguments"]) => validateToolArguments(createGoal, {
-      type: "toolCall", id: "create", name: "create_goal", arguments: args,
-    });
+    const validateCreate = (args: ToolCall["arguments"]): unknown =>
+      validateToolArguments(createGoal, {
+        type: "toolCall",
+        id: "create",
+        name: "create_goal",
+        arguments: args,
+      });
     const rejectBudget = async (args: ToolCall["arguments"]) => {
       const before = await call("get_goal", {});
       const entries = structuredClone(sessionManager.getEntries());
@@ -125,22 +175,37 @@ async function checkPackage(root: string, packageRoot: string, policy?: string, 
       assert.equal(readFileSync(sessionFile, "utf8"), persisted);
     };
     await rejectBudget({ objective: "Too small", token_budget: minimumBudget - 1 });
-    await rejectBudget({ objective: "Too small after native conversion", token_budget: minimumBudget - 0.5 });
-    assert.partialDeepStrictEqual(createGoal.parameters, { required: ["objective"] });
-    if (!disabled) assert.partialDeepStrictEqual(createGoal.parameters, {
-      properties: { token_budget: { type: "integer", minimum: minimumBudget } },
+    await rejectBudget({
+      objective: "Too small after native conversion",
+      token_budget: minimumBudget - 0.5,
     });
+    assert.partialDeepStrictEqual(createGoal.parameters, { required: ["objective"] });
+    if (!disabled) {
+      assert.partialDeepStrictEqual(createGoal.parameters, {
+        properties: { token_budget: { type: "integer", minimum: minimumBudget } },
+      });
+    }
 
     const unlimited = { objective: "Verify the installed package" };
     assert.deepEqual(validateCreate(unlimited), unlimited);
     const created = await call("create_goal", unlimited);
     assert.partialDeepStrictEqual(created.details, {
-      goal: { objective: unlimited.objective, status: "active", tokenBudget: null }, remainingTokens: null,
+      goal: { objective: unlimited.objective, status: "active", tokenBudget: null },
+      remainingTokens: null,
     });
-    assert.partialDeepStrictEqual((await call("get_goal", {})).details, { goal: { status: "active" } });
-    assert.partialDeepStrictEqual((await call("update_goal", { status: "complete" })).details, { goal: { status: "complete" } });
-    assert.partialDeepStrictEqual((await call("get_goal", {})).details, { goal: { status: "complete" } });
-    await rejectBudget({ objective: "Too small after completion", token_budget: minimumBudget - 1 });
+    assert.partialDeepStrictEqual((await call("get_goal", {})).details, {
+      goal: { status: "active" },
+    });
+    assert.partialDeepStrictEqual((await call("update_goal", { status: "complete" })).details, {
+      goal: { status: "complete" },
+    });
+    assert.partialDeepStrictEqual((await call("get_goal", {})).details, {
+      goal: { status: "complete" },
+    });
+    await rejectBudget({
+      objective: "Too small after completion",
+      token_budget: minimumBudget - 1,
+    });
 
     const minimum = { objective: "Exact minimum", token_budget: minimumBudget };
     if (disabled) {
@@ -154,7 +219,8 @@ async function checkPackage(root: string, packageRoot: string, policy?: string, 
       assert.deepEqual(validateCreate(fractional), minimum);
       await assert.rejects(() => call("create_goal", fractional), budgetError);
       assert.partialDeepStrictEqual((await call("create_goal", minimum)).details, {
-        goal: { objective: minimum.objective, status: "active", tokenBudget: minimumBudget }, remainingTokens: minimumBudget,
+        goal: { objective: minimum.objective, status: "active", tokenBudget: minimumBudget },
+        remainingTokens: minimumBudget,
       });
     }
 
@@ -168,81 +234,141 @@ async function checkPackage(root: string, packageRoot: string, policy?: string, 
       updatedAt: 2,
     };
     sessionManager.appendCustomEntry("pi-codex-goal", {
-      version: 1, kind: "set", source: "tool", goal: legacyGoal, at: 2,
+      version: 1,
+      kind: "set",
+      source: "tool",
+      goal: legacyGoal,
+      at: 2,
     });
     const persisted = readFileSync(sessionFile, "utf8");
     sessionManager.setSessionFile(sessionFile);
     await runner.emit({ type: "session_start", reason: "reload" });
     assert.partialDeepStrictEqual((await call("get_goal", {})).details, {
       goal: {
-        goalId: legacyGoal.goalId, objective: legacyGoal.objective, status: "active", tokenBudget: 123,
-        tokensUsed: 50, timeUsedSeconds: 7, createdAt: 1, updatedAt: 2,
+        goalId: legacyGoal.goalId,
+        objective: legacyGoal.objective,
+        status: "active",
+        tokenBudget: 123,
+        tokensUsed: 50,
+        timeUsedSeconds: 7,
+        createdAt: 1,
+        updatedAt: 2,
       },
       remainingTokens: 73,
     });
     const afterReload = readFileSync(sessionFile, "utf8");
-    assert.ok(afterReload.startsWith(persisted), "reload must preserve every existing journal byte");
-    const goalEntries = (journal: string) => journal.split("\n").filter(Boolean)
-      .map((line) => JSON.parse(line) as { customType?: string })
-      .filter((entry) => entry.customType === "pi-codex-goal");
-    assert.deepEqual(goalEntries(afterReload), goalEntries(persisted), "reload must not migrate or rewrite saved goals");
-    await rejectBudget({ objective: "Too small replacement", token_budget: minimumBudget - 1, replace_existing: true });
+    assert.ok(
+      afterReload.startsWith(persisted),
+      "reload must preserve every existing journal byte",
+    );
+    const goalEntries = (journal: string) =>
+      journal
+        .split("\n")
+        .filter(Boolean)
+        .map((line): unknown => JSON.parse(line))
+        .filter((entry) => isRecord(entry) && entry.customType === "pi-codex-goal");
+    assert.deepEqual(
+      goalEntries(afterReload),
+      goalEntries(persisted),
+      "reload must not migrate or rewrite saved goals",
+    );
+    await rejectBudget({
+      objective: "Too small replacement",
+      token_budget: minimumBudget - 1,
+      replace_existing: true,
+    });
 
     if (!disabled) {
       const replacement = { ...minimum, replace_existing: true };
       assert.deepEqual(validateCreate(replacement), replacement);
       assert.partialDeepStrictEqual((await call("create_goal", replacement)).details, {
-        goal: { objective: minimum.objective, status: "active", tokenBudget: minimumBudget }, remainingTokens: minimumBudget,
+        goal: { objective: minimum.objective, status: "active", tokenBudget: minimumBudget },
+        remainingTokens: minimumBudget,
       });
     }
-    assert.partialDeepStrictEqual((await call("create_goal", { ...unlimited, replace_existing: true })).details, {
-      goal: { objective: unlimited.objective, status: "active", tokenBudget: null }, remainingTokens: null,
-    });
+    assert.partialDeepStrictEqual(
+      (await call("create_goal", { ...unlimited, replace_existing: true })).details,
+      {
+        goal: { objective: unlimited.objective, status: "active", tokenBudget: null },
+        remainingTokens: null,
+      },
+    );
   } finally {
     await runner.emit({ type: "session_shutdown", reason: "quit" });
     session.dispose();
   }
 }
 
-test("clean local source discovers and executes one goal extension without a build", async (t) => {
-  const root = tempRoot(t);
-  await checkPackage(root, copySource(root));
-});
-
-test("configured budget policies enforce native schema and execution without changing saved goals", async (t) => {
-  for (const policy of ["100000000", "200", "disabled"]) {
+nodeTest(
+  "clean local source discovers and executes one goal extension without a build",
+  async (t) => {
     const root = tempRoot(t);
-    await checkPackage(root, copySource(root), policy);
-  }
-});
+    await checkPackage(root, copySource(root));
+  },
+);
 
-test("invalid budget policies fail extension loading instead of weakening the guard", async (t) => {
-  for (const policy of ["", "0", "-1", "1.5", "1e6", "unlimited", "9007199254740992"]) {
+nodeTest(
+  "configured budget policies enforce native schema and execution without changing saved goals",
+  async (t) => {
+    for (const policy of ["100000000", "200", "disabled"]) {
+      const root = tempRoot(t);
+      await checkPackage(root, copySource(root), policy);
+    }
+  },
+);
+
+nodeTest(
+  "invalid budget policies fail extension loading instead of weakening the guard",
+  async (t) => {
+    for (const policy of ["", "0", "-1", "1.5", "1e6", "unlimited", "9007199254740992"]) {
+      const root = tempRoot(t);
+      await checkPackage(root, copySource(root), policy, true);
+    }
+  },
+);
+
+nodeTest(
+  "Pi Git production install discovers and executes one goal extension without tsc",
+  async (t) => {
     const root = tempRoot(t);
-    await checkPackage(root, copySource(root), policy, true);
-  }
-});
+    const packageRoot = copySource(root);
+    // Pi clones first, then runs npm install --omit=dev (not npm install <git-url>).
+    run(
+      "npm",
+      [
+        "install",
+        "--omit=dev",
+        "--offline",
+        "--no-audit",
+        "--no-fund",
+        "--cache",
+        join(root, "npm-cache"),
+      ],
+      packageRoot,
+    );
+    assert.equal(existsSync(join(packageRoot, "node_modules", "typescript")), false);
+    assert.equal(existsSync(join(packageRoot, "dist")), false);
+    await checkPackage(root, packageRoot);
+  },
+);
 
-test("Pi Git production install discovers and executes one goal extension without tsc", async (t) => {
-  const root = tempRoot(t);
-  const packageRoot = copySource(root);
-  // Pi clones first, then runs npm install --omit=dev (not npm install <git-url>).
-  run("npm", ["install", "--omit=dev", "--offline", "--no-audit", "--no-fund", "--cache", join(root, "npm-cache")], packageRoot);
-  assert.equal(existsSync(join(packageRoot, "node_modules", "typescript")), false);
-  assert.equal(existsSync(join(packageRoot, "dist")), false);
-  await checkPackage(root, packageRoot);
-});
-
-test("npm artifact discovers and executes one TypeScript goal extension without local peers", async (t) => {
-  const root = tempRoot(t);
-  // npm 11 prints an array; npm 12 prints an object keyed by package name.
-  const packs = Object.values(JSON.parse(run("npm", ["pack", "--json", "--pack-destination", root], process.cwd())) as Record<string, { filename: string }>);
-  assert.ok(packs[0]);
-  // A Windows drive colon in the archive argument means a remote host to GNU tar.
-  run("tar", ["-xzf", packs[0].filename], root);
-  const packageRoot = join(root, "package");
-  assert.equal(existsSync(join(packageRoot, "src", "index.ts")), true);
-  assert.equal(existsSync(join(packageRoot, "test")), false);
-  assert.equal(existsSync(join(packageRoot, "node_modules")), false);
-  await checkPackage(root, packageRoot);
-});
+nodeTest(
+  "npm artifact discovers and executes one TypeScript goal extension without local peers",
+  async (t) => {
+    const root = tempRoot(t);
+    // npm 11 prints an array; npm 12 prints an object keyed by package name.
+    const packed: unknown = JSON.parse(
+      run("npm", ["pack", "--json", "--pack-destination", root], process.cwd()),
+    );
+    assert.ok(isRecord(packed));
+    const [pack] = Object.values(packed);
+    assert.ok(isRecord(pack) && typeof pack.filename === "string");
+    // A Windows drive colon in the archive argument means a remote host to GNU tar.
+    run("tar", ["-xzf", pack.filename], root);
+    const packageRoot = join(root, "package");
+    assert.equal(existsSync(join(packageRoot, "src", "index.ts")), true);
+    assert.equal(existsSync(join(packageRoot, "test")), false);
+    assert.equal(existsSync(join(packageRoot, "node_modules")), false);
+    await checkPackage(root, packageRoot);
+  },
+);

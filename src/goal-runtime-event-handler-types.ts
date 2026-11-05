@@ -35,10 +35,10 @@ export type ToolExecutionEndEvent = Extract<ExtensionEvent, { type: "tool_execut
 
 export interface GoalRuntimeEventHandlers {
   onInput: ExtensionHandler<InputEvent, InputEventResult>;
-  onContext: ExtensionHandler<ContextEvent, undefined>;
+  onContext: ExtensionHandler<ContextEvent>;
   onSessionStart: ExtensionHandler<SessionStartEvent>;
   onSessionTree: ExtensionHandler<SessionTreeEvent>;
-  onBeforeAgentStart: ExtensionHandler<BeforeAgentStartEvent, undefined>;
+  onBeforeAgentStart: ExtensionHandler<BeforeAgentStartEvent>;
   onAgentStart: ExtensionHandler<AgentStartEvent>;
   onMessageStart: ExtensionHandler<MessageStartEvent>;
   onMessageEnd: ExtensionHandler<MessageEndEvent, MessageEndEventResult | undefined>;
@@ -153,10 +153,7 @@ export interface GoalRuntimeAgentHandlerContext extends StaleQueuedWorkEffectCon
   deliveries: GoalDeliveries;
   runtimeState: Pick<
     GoalRuntimeState,
-    | "agentRunFromContinuation"
-    | "agentRunSequence"
-    | "agentRunToolNames"
-    | "staleQueuedWorkGuard"
+    "agentRunFromContinuation" | "agentRunSequence" | "agentRunToolNames" | "staleQueuedWorkGuard"
   >;
   stateController: Pick<
     GoalStateController,
@@ -164,7 +161,10 @@ export interface GoalRuntimeAgentHandlerContext extends StaleQueuedWorkEffectCon
   >;
   continuation: Pick<
     GoalRuntimeContinuationPort,
-    "maybeContinue" | "clearContinuationState" | "maybeContinueAfterCurrentEvent" | "requireFullGoal"
+    | "maybeContinue"
+    | "clearContinuationState"
+    | "maybeContinueAfterCurrentEvent"
+    | "requireFullGoal"
   >;
   goalAccounting: Pick<GoalAccountingPort, "accountProgress">;
   recoveryRuntime: Pick<
@@ -178,14 +178,15 @@ export interface GoalRuntimeSessionHandlerContext extends StaleQueuedWorkEffectC
   deliveries: GoalDeliveries;
   runtimeState: Pick<
     GoalRuntimeState,
-    | "agentRunSequence"
-    | "currentTurnIndex"
-    | "recoveryState"
-    | "staleQueuedWorkGuard"
+    "agentRunSequence" | "currentTurnIndex" | "recoveryState" | "staleQueuedWorkGuard"
   >;
   stateController: Pick<
     GoalStateController,
-    "applyGoalTransition" | "flushGoalPersistence" | "getGoal" | "reloadFromSession" | "pauseForRecovery"
+    | "applyGoalTransition"
+    | "flushGoalPersistence"
+    | "getGoal"
+    | "reloadFromSession"
+    | "pauseForRecovery"
   >;
   continuation: Pick<
     GoalRuntimeContinuationPort,
@@ -200,7 +201,11 @@ export interface GoalRuntimeSessionHandlerContext extends StaleQueuedWorkEffectC
   goalAccounting: GoalAccountingPort;
   recoveryRuntime: Pick<RecoveryRuntimePort, "onSessionCompact">;
   resetErrorRecovery: () => void;
-  resumeGoalWithContinuation: (goalId: string, source: GoalEntrySource, ctx: StatusContext) => GoalResult;
+  resumeGoalWithContinuation: (
+    goalId: string,
+    source: GoalEntrySource,
+    ctx: StatusContext,
+  ) => GoalResult;
 }
 
 export interface GoalRuntimeOverflowRecoveryContext {
@@ -223,5 +228,9 @@ export interface GoalRuntimeEventContext {
   providerLimitAutoResume: ProviderLimitAutoResumePort;
   clearActiveAccounting: () => void;
   resetErrorRecovery: () => void;
-  resumeGoalWithContinuation: (goalId: string, source: GoalEntrySource, ctx: StatusContext) => GoalResult;
+  resumeGoalWithContinuation: (
+    goalId: string,
+    source: GoalEntrySource,
+    ctx: StatusContext,
+  ) => GoalResult;
 }

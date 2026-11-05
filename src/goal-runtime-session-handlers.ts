@@ -11,61 +11,88 @@ import type {
 
 import { filterGoalCompactionInput } from "./goal-compaction.ts";
 import {
-  clearActiveHostOverflowRecovery,
   recoveryPhaseBlocksContinuation,
   recoveryPhaseNeedsUserStartTurn,
+  type GoalRecoveryMachineState,
 } from "./recovery-machine.ts";
 import { isRecoveryPendingAttention, reasonFromRecoveryPendingAttention } from "./recovery.ts";
 import { applyStaleQueuedWorkEffects, runStaleQueuedWorkPlan } from "./goal-runtime-event-utils.ts";
-import type { GoalRuntimeSessionHandlerContext } from "./goal-runtime-event-handler-types.ts";
-import type { GoalRecoveryMachineState } from "./recovery-machine.ts";
+import type {
+  GoalRuntimeSessionHandlerContext,
+  GoalRuntimeEventHandlers,
+} from "./goal-runtime-event-handler-types.ts";
 import type { ThreadGoal } from "./types.ts";
 
-export function createSessionEventHandlers(deps: GoalRuntimeSessionHandlerContext) {
-  const {
-    runtimeState,
-    stateController,
-    continuation,
-    goalAccounting,
-    recoveryRuntime,
-    status,
-    resetErrorRecovery,
-    resumeGoalWithContinuation,
-  } = deps;
+export function createSessionEventHandlers(
+  deps: GoalRuntimeSessionHandlerContext,
+): Pick<
+  GoalRuntimeEventHandlers,
+  | "onSessionStart"
+  | "onSessionTree"
+  | "onSessionBeforeCompact"
+  | "onSessionCompact"
+  | "onSessionCompactFailed"
+  | "onSessionShutdown"
+> {
+  const handlers = new SessionEventHandlers(deps);
+  return {
+    onSessionStart: handlers.onSessionStart,
+    onSessionTree: handlers.onSessionTree,
+    onSessionBeforeCompact: handlers.onSessionBeforeCompact,
+    onSessionCompact: handlers.onSessionCompact,
+    onSessionCompactFailed: handlers.onSessionCompactFailed,
+    onSessionShutdown: handlers.onSessionShutdown,
+  };
+}
 
-  const pauseRestoredOverflow = (ctx: ExtensionContext): boolean => {
-    const goal = stateController.getGoal();
-    if ((goal?.status !== "active" && goal?.status !== "paused") ||
-        runtimeState.recoveryState.phase.kind !== "hostOverflowNeedsUserStart") return false;
-    stateController.pauseForRecovery(ctx,
-      "Restored overflow recovery is paused. Reduce context or switch models, then send a genuine user message before /goal resume.");
+class SessionEventHandlers {
+  private readonly deps: GoalRuntimeSessionHandlerContext;
+
+  constructor(deps: GoalRuntimeSessionHandlerContext) {
+    this.deps = deps;
+  }
+
+  private readonly pauseRestoredOverflow = (ctx: ExtensionContext): boolean => {
+    const goal = this.deps.stateController.getGoal();
+    if (
+      (goal?.status !== "active" && goal?.status !== "paused") ||
+      this.deps.runtimeState.recoveryState.phase.kind !== "hostOverflowNeedsUserStart"
+    ) {
+      return false;
+    }
+    this.deps.stateController.pauseForRecovery(
+      ctx,
+      "Restored overflow recovery is paused. Reduce context or switch models, then send a genuine user message before /goal resume.",
+    );
     return true;
   };
 
-  const schedulePostCompactContinuationFallback = (
+  private readonly schedulePostCompactContinuationFallback = (
     ctx: ExtensionContext,
     options: { clearHostOverflowRecovery: boolean },
   ): void => {
     const fallbackOptions = {
-      turnIndex: runtimeState.currentTurnIndex,
-      agentRunSequence: runtimeState.agentRunSequence,
+      turnIndex: this.deps.runtimeState.currentTurnIndex,
+      agentRunSequence: this.deps.runtimeState.agentRunSequence,
     };
-    continuation.maybeContinueAfterPostCompactFallback(
+    this.deps.continuation.maybeContinueAfterPostCompactFallback(
       ctx,
       options.clearHostOverflowRecovery
         ? {
             ...fallbackOptions,
             prepareContinuation: () => {
-              if (!recoveryPhaseBlocksContinuation(runtimeState.recoveryState.phase)) {
+              if (!recoveryPhaseBlocksContinuation(this.deps.runtimeState.recoveryState.phase)) {
                 return false;
               }
-              clearActiveHostOverflowRecovery(runtimeState.recoveryState);
-              if (recoveryPhaseNeedsUserStartTurn(runtimeState.recoveryState.phase)) {
-                stateController.pauseForRecovery(ctx,
-                  "Native overflow retry did not start. Goal cannot reset its allowance; send a genuine user message after reducing context or switching models, then /goal resume.");
+              this.deps.runtimeState.recoveryState.clearActiveHostOverflowRecovery();
+              if (recoveryPhaseNeedsUserStartTurn(this.deps.runtimeState.recoveryState.phase)) {
+                this.deps.stateController.pauseForRecovery(
+                  ctx,
+                  "Native overflow retry did not start. Goal cannot reset its allowance; send a genuine user message after reducing context or switching models, then /goal resume.",
+                );
                 return false;
               }
-              status.refreshUi(ctx);
+              this.deps.status.refreshUi(ctx);
               return true;
             },
           }
@@ -73,108 +100,124 @@ export function createSessionEventHandlers(deps: GoalRuntimeSessionHandlerContex
     );
   };
 
-  return {
-    onSessionStart: (async (event, ctx) => {
-      continuation.clearPostCompactContinuationFallback();
-      deps.providerLimitAutoResume.clear();
-      deps.clearActiveAccounting();
-      stateController.reloadFromSession(ctx);
-      continuation.restoreCompactionRefresh(ctx.sessionManager.getBranch());
-      goalAccounting.beginAccounting();
-      if (pauseRestoredOverflow(ctx)) return;
-      const goal = stateController.getGoal();
-      const pausedGoal = goal?.status === "paused" ? goal : null;
-      if (event.reason === "resume" && pausedGoal && ctx.hasUI) {
-        const shouldResume = await ctx.ui.confirm(
-          "Resume paused goal?",
-          `Goal: ${pausedGoal.objective}`,
-        );
-        if (shouldResume) {
-          resumeGoalWithContinuation(pausedGoal.goalId, "runtime", ctx);
-          goalAccounting.beginAccounting();
-          return;
-        }
-      }
-      continuation.maybeContinue(ctx);
-    }) satisfies ExtensionHandler<SessionStartEvent>,
-
-    onSessionTree: (async (_event, ctx) => {
-      continuation.clearPostCompactContinuationFallback();
-      deps.providerLimitAutoResume.clear();
-      deps.clearActiveAccounting();
-      stateController.reloadFromSession(ctx);
-      continuation.restoreCompactionRefresh(ctx.sessionManager.getBranch());
-      goalAccounting.beginAccounting();
-      if (pauseRestoredOverflow(ctx)) return;
-      continuation.maybeContinue(ctx);
-    }) satisfies ExtensionHandler<SessionTreeEvent>,
-
-    onSessionBeforeCompact: (async (event, ctx) => {
-      filterGoalCompactionInput(event.preparation);
-      if (
-        runStaleQueuedWorkPlan(
-          runtimeState.staleQueuedWorkGuard.planSessionBeforeCompact(),
-          ctx,
-          deps,
-        )
-      ) {
-        return;
-      }
-
-      goalAccounting.accountProgress(ctx, false, 0, true);
-      stateController.flushGoalPersistence("runtime");
-    }) satisfies ExtensionHandler<SessionBeforeCompactEvent>,
-
-    onSessionCompact: (async (event, ctx) => {
-      continuation.requireFullGoal();
-      if (runStaleQueuedWorkPlan(runtimeState.staleQueuedWorkGuard.planSessionCompact(), ctx, deps)) {
-        return;
-      }
-
-      stateController.flushGoalPersistence("runtime");
-      const wasRecoveringFromHostOverflow = recoveryPhaseBlocksContinuation(
-        runtimeState.recoveryState.phase,
+  onSessionStart = (async (event, ctx) => {
+    this.deps.continuation.clearPostCompactContinuationFallback();
+    this.deps.providerLimitAutoResume.clear();
+    this.deps.clearActiveAccounting();
+    this.deps.stateController.reloadFromSession(ctx);
+    this.deps.continuation.restoreCompactionRefresh(ctx.sessionManager.getBranch());
+    this.deps.goalAccounting.beginAccounting();
+    if (this.pauseRestoredOverflow(ctx)) {
+      return;
+    }
+    const goal = this.deps.stateController.getGoal();
+    const pausedGoal = goal?.status === "paused" ? goal : null;
+    if (event.reason === "resume" && pausedGoal && ctx.hasUI) {
+      const shouldResume = await ctx.ui.confirm(
+        "Resume paused goal?",
+        `Goal: ${pausedGoal.objective}`,
       );
-      recoveryRuntime.onSessionCompact();
-      status.refreshUi(ctx);
-      if (event.willRetry) {
-        schedulePostCompactContinuationFallback(ctx, {
-          clearHostOverflowRecovery: wasRecoveringFromHostOverflow,
-        });
+      if (shouldResume) {
+        this.deps.resumeGoalWithContinuation(pausedGoal.goalId, "runtime", ctx);
+        this.deps.goalAccounting.beginAccounting();
         return;
       }
-      if (!recoveryPhaseBlocksContinuation(runtimeState.recoveryState.phase)) {
-        continuation.maybeContinueAfterCurrentEvent(ctx);
-      } else if (wasRecoveringFromHostOverflow) {
-        schedulePostCompactContinuationFallback(ctx, { clearHostOverflowRecovery: true });
-      }
-    }) satisfies ExtensionHandler<SessionCompactEvent>,
+    }
+    this.deps.continuation.maybeContinue(ctx);
+  }) satisfies ExtensionHandler<SessionStartEvent>;
 
-    onSessionCompactFailed: (async (event, ctx) => {
-      if (event.reason !== "overflow") return;
-      continuation.clearPostCompactContinuationFallback();
-      continuation.clearContinuationTimer();
-      stateController.pauseForRecovery(ctx,
-        "Native context overflow recovery stopped. Goal follow-ups cannot reset its allowance; reduce context or switch models, then send a genuine user message before /goal resume.");
-    }) satisfies ExtensionHandler<SessionCompactFailedEvent>,
+  onSessionTree = (async (_event, ctx) => {
+    this.deps.continuation.clearPostCompactContinuationFallback();
+    this.deps.providerLimitAutoResume.clear();
+    this.deps.clearActiveAccounting();
+    this.deps.stateController.reloadFromSession(ctx);
+    this.deps.continuation.restoreCompactionRefresh(ctx.sessionManager.getBranch());
+    this.deps.goalAccounting.beginAccounting();
+    if (this.pauseRestoredOverflow(ctx)) {
+      return;
+    }
+    this.deps.continuation.maybeContinue(ctx);
+  }) satisfies ExtensionHandler<SessionTreeEvent>;
 
-    onSessionShutdown: (async (_event, ctx) => {
-      deps.deliveries.invalidate();
-      continuation.clearPostCompactContinuationFallback();
-      deps.providerLimitAutoResume.clear();
-      continuation.clearContinuationTimer();
-      applyStaleQueuedWorkEffects(runtimeState.staleQueuedWorkGuard.planSessionShutdown().effects, ctx, deps);
+  onSessionBeforeCompact = (async (event, ctx) => {
+    filterGoalCompactionInput(event.preparation);
+    if (
+      runStaleQueuedWorkPlan(
+        this.deps.runtimeState.staleQueuedWorkGuard.planSessionBeforeCompact(),
+        ctx,
+        this.deps,
+      )
+    ) {
+      return;
+    }
 
-      goalAccounting.accountProgress(ctx, false, 0, true);
-      stateController.flushGoalPersistence("runtime");
-      if (hasPendingRecoveryAttention(deps)) {
-        pauseForPendingRecoveryShutdown(ctx, deps);
-      } else {
-        resetErrorRecovery();
-      }
-      status.stopStatusRefresh();
-    }) satisfies ExtensionHandler<SessionShutdownEvent>,
-  };
+    this.deps.goalAccounting.accountProgress(ctx, false, 0, true);
+    this.deps.stateController.flushGoalPersistence("runtime");
+  }) satisfies ExtensionHandler<SessionBeforeCompactEvent>;
+
+  onSessionCompact = (async (event, ctx) => {
+    this.deps.continuation.requireFullGoal();
+    if (
+      runStaleQueuedWorkPlan(
+        this.deps.runtimeState.staleQueuedWorkGuard.planSessionCompact(),
+        ctx,
+        this.deps,
+      )
+    ) {
+      return;
+    }
+
+    this.deps.stateController.flushGoalPersistence("runtime");
+    const wasRecoveringFromHostOverflow = recoveryPhaseBlocksContinuation(
+      this.deps.runtimeState.recoveryState.phase,
+    );
+    this.deps.recoveryRuntime.onSessionCompact();
+    this.deps.status.refreshUi(ctx);
+    if (event.willRetry) {
+      this.schedulePostCompactContinuationFallback(ctx, {
+        clearHostOverflowRecovery: wasRecoveringFromHostOverflow,
+      });
+      return;
+    }
+    if (!recoveryPhaseBlocksContinuation(this.deps.runtimeState.recoveryState.phase)) {
+      this.deps.continuation.maybeContinueAfterCurrentEvent(ctx);
+    } else if (wasRecoveringFromHostOverflow) {
+      this.schedulePostCompactContinuationFallback(ctx, { clearHostOverflowRecovery: true });
+    }
+  }) satisfies ExtensionHandler<SessionCompactEvent>;
+
+  onSessionCompactFailed = (async (event, ctx) => {
+    if (event.reason !== "overflow") {
+      return;
+    }
+    this.deps.continuation.clearPostCompactContinuationFallback();
+    this.deps.continuation.clearContinuationTimer();
+    this.deps.stateController.pauseForRecovery(
+      ctx,
+      "Native context overflow recovery stopped. Goal follow-ups cannot reset its allowance; reduce context or switch models, then send a genuine user message before /goal resume.",
+    );
+  }) satisfies ExtensionHandler<SessionCompactFailedEvent>;
+
+  onSessionShutdown = (async (_event, ctx) => {
+    this.deps.deliveries.invalidate();
+    this.deps.continuation.clearPostCompactContinuationFallback();
+    this.deps.providerLimitAutoResume.clear();
+    this.deps.continuation.clearContinuationTimer();
+    applyStaleQueuedWorkEffects(
+      this.deps.runtimeState.staleQueuedWorkGuard.planSessionShutdown().effects,
+      ctx,
+      this.deps,
+    );
+
+    this.deps.goalAccounting.accountProgress(ctx, false, 0, true);
+    this.deps.stateController.flushGoalPersistence("runtime");
+    if (hasPendingRecoveryAttention(this.deps)) {
+      pauseForPendingRecoveryShutdown(ctx, this.deps);
+    } else {
+      this.deps.resetErrorRecovery();
+    }
+    this.deps.status.stopStatusRefresh();
+  }) satisfies ExtensionHandler<SessionShutdownEvent>;
 }
 
 interface PendingRecoveryShutdownContext {
@@ -193,11 +236,16 @@ export function pendingRecoveryShutdownReason({
   return reasonFromRecoveryPendingAttention(recoveryState.attention);
 }
 
-function hasPendingRecoveryAttention({ runtimeState, stateController }: GoalRuntimeSessionHandlerContext): boolean {
-  return pendingRecoveryShutdownReason({
-    recoveryState: runtimeState.recoveryState,
-    getGoal: stateController.getGoal,
-  }) !== null;
+function hasPendingRecoveryAttention({
+  runtimeState,
+  stateController,
+}: GoalRuntimeSessionHandlerContext): boolean {
+  return (
+    pendingRecoveryShutdownReason({
+      recoveryState: runtimeState.recoveryState,
+      getGoal: stateController.getGoal,
+    }) !== null
+  );
 }
 
 function pauseForPendingRecoveryShutdown(
@@ -209,7 +257,7 @@ function pauseForPendingRecoveryShutdown(
     recoveryState: runtimeState.recoveryState,
     getGoal: stateController.getGoal,
   });
-  if (!reason) {
+  if (reason === null || reason.length === 0) {
     return;
   }
 

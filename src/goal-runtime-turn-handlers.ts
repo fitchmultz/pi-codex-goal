@@ -1,6 +1,14 @@
-import type { ExtensionHandler, TurnEndEvent, TurnStartEvent } from "@earendil-works/pi-coding-agent";
+import type {
+  ExtensionHandler,
+  TurnEndEvent,
+  TurnStartEvent,
+} from "@earendil-works/pi-coding-agent";
 
-import { assistantTurnTokens, isAbortedAssistantMessage, isToolUseAssistantMessage } from "./goal-accounting.ts";
+import {
+  assistantTurnTokens,
+  isAbortedAssistantMessage,
+  isToolUseAssistantMessage,
+} from "./goal-accounting.ts";
 import { isAssistantContextOverflow, isErrorAssistantMessage } from "./recovery.ts";
 import {
   getContextWindow,
@@ -9,10 +17,13 @@ import {
 } from "./goal-runtime-event-utils.ts";
 import type {
   GoalRuntimeTurnHandlerContext,
+  GoalRuntimeEventHandlers,
   ToolExecutionEndEvent,
 } from "./goal-runtime-event-handler-types.ts";
 
-export function createTurnEventHandlers(deps: GoalRuntimeTurnHandlerContext) {
+export function createTurnEventHandlers(
+  deps: GoalRuntimeTurnHandlerContext,
+): Pick<GoalRuntimeEventHandlers, "onTurnStart" | "onToolExecutionEnd" | "onTurnEnd"> {
   const { runtimeState, stateController, goalAccounting, recoveryRuntime, status } = deps;
 
   return {
@@ -25,7 +36,9 @@ export function createTurnEventHandlers(deps: GoalRuntimeTurnHandlerContext) {
     }) satisfies ExtensionHandler<TurnStartEvent>,
 
     onToolExecutionEnd: (async (event, ctx) => {
-      if (runStaleQueuedWorkPlan(runtimeState.staleQueuedWorkGuard.planToolExecutionEnd(), ctx, deps)) {
+      if (
+        runStaleQueuedWorkPlan(runtimeState.staleQueuedWorkGuard.planToolExecutionEnd(), ctx, deps)
+      ) {
         return;
       }
 
@@ -57,10 +70,15 @@ export function createTurnEventHandlers(deps: GoalRuntimeTurnHandlerContext) {
         return;
       }
       if (isAssistantContextOverflow(event.message, getContextWindow(ctx))) {
-        stateController.beginOverflowRecovery(ctx, event.message.role !== "assistant" || event.message.stopReason !== "stop");
+        stateController.beginOverflowRecovery(
+          ctx,
+          event.message.role !== "assistant" || event.message.stopReason !== "stop",
+        );
         return;
       }
-      if (event.message.role === "assistant" && event.message.stopReason !== "length") stateController.persistHostOverflowUserReset(false);
+      if (event.message.role === "assistant" && event.message.stopReason !== "length") {
+        stateController.persistHostOverflowUserReset(false);
+      }
       const suppressContinuation = shouldPauseStatusInspectionOnlyContinuation(
         runtimeState.agentRunFromContinuation,
         runtimeState.agentRunToolNames,

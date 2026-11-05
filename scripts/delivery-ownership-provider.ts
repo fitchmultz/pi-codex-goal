@@ -3,21 +3,30 @@ import { appendFileSync } from "node:fs";
 import { fauxProvider, fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
-export default function (pi: ExtensionAPI) {
+export default function (pi: ExtensionAPI): void {
   const trace = process.env.GOAL_PROOF_TRACE;
-  if (!trace) throw new Error("Set GOAL_PROOF_TRACE for the isolated delivery probe");
+  if (trace === undefined || trace.length === 0) {
+    throw new Error("Set GOAL_PROOF_TRACE for the isolated delivery probe");
+  }
   const note = (event: unknown) => appendFileSync(trace, JSON.stringify(event) + "\n");
   let release: (() => void) | undefined;
-  const faux = fauxProvider({ provider: "goal-proof", models: [{ id: "offline", contextWindow: 100_000, maxTokens: 1_000 }] });
+  const faux = fauxProvider({
+    provider: "goal-proof",
+    models: [{ id: "offline", contextWindow: 100_000, maxTokens: 1_000 }],
+  });
   faux.setResponses([
     async (context) => {
       note({ type: "provider", phase: "held", messages: context.messages });
-      await new Promise<void>((resolve) => { release = resolve; });
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
       return fauxAssistantMessage("Offline phase one finished.");
     },
     (context) => {
       note({ type: "provider", phase: "resumed", messages: context.messages });
-      return fauxAssistantMessage(fauxToolCall("update_goal", { status: "complete" }), { stopReason: "toolUse" });
+      return fauxAssistantMessage(fauxToolCall("update_goal", { status: "complete" }), {
+        stopReason: "toolUse",
+      });
     },
     (context) => {
       note({ type: "provider", phase: "final", messages: context.messages });
@@ -29,13 +38,26 @@ export default function (pi: ExtensionAPI) {
     },
   ]);
   pi.registerProvider(faux.provider);
-  pi.registerCommand("proof-release", { description: "Release the isolated offline response", async handler() { release?.(); } });
+  pi.registerCommand("proof-release", {
+    description: "Release the isolated offline response",
+    async handler() {
+      release?.();
+    },
+  });
   pi.registerShortcut("ctrl+shift+y", {
     description: "Record native editor text in the isolated proof",
-    handler(ctx) { note({ type: "editor-snapshot", text: ctx.ui.getEditorText() }); },
+    handler(ctx) {
+      note({ type: "editor-snapshot", text: ctx.ui.getEditorText() });
+    },
   });
   pi.on("session_start", () => note({ type: "ready" }));
-  pi.on("input", (event) => { note(event); });
-  pi.on("message_start", (event) => { if (event.message.role === "user" || event.message.role === "custom") note(event); });
+  pi.on("input", (event) => {
+    note(event);
+  });
+  pi.on("message_start", (event) => {
+    if (event.message.role === "user" || event.message.role === "custom") {
+      note(event);
+    }
+  });
   pi.on("agent_settled", () => note({ type: "settled" }));
 }

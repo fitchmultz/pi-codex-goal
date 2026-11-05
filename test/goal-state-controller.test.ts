@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { isRecord } from "../src/validation.ts";
+import { testUi } from "./support/sdk-fixture.ts";
+import { test as nodeTest } from "node:test";
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
@@ -39,23 +41,41 @@ function createStateControllerTestHarness(goal: ThreadGoal | null = activeGoal) 
   let refreshCount = 0;
   const ctx = {
     mode: "print",
-    ui: { setStatus() {}, setWidget() {}, theme: {} as StatusContext["ui"]["theme"] },
+    ui: testUi(),
   } satisfies StatusContext;
 
   const stateController = createGoalStateController({
     pi,
     persistence,
-    invalidateDeliveries() {},
+    invalidateDeliveries() {
+      /* No queued deliveries in this persistence fixture. */
+    },
     getRecoveryState: () => recoveryState,
     transitionEffectHandlers: {
-      clearContinuation: () => {},
-      clearActiveAccounting: () => {},
-      resetRecovery: () => {},
-      clearBudgetWarning: () => {},
-      clearHostOverflowRecovery: () => {},
-      setRecoveryPausedAttention: () => {},
-      markContinuationQueued: () => {},
-      stopStatusRefresh: () => {},
+      clearContinuation: () => {
+        /* Transition effect ordering is exercised in goal-transition.test.ts. */
+      },
+      clearActiveAccounting: () => {
+        /* Transition effect ordering is exercised in goal-transition.test.ts. */
+      },
+      resetRecovery: () => {
+        /* Transition effect ordering is exercised in goal-transition.test.ts. */
+      },
+      clearBudgetWarning: () => {
+        /* Transition effect ordering is exercised in goal-transition.test.ts. */
+      },
+      clearHostOverflowRecovery: () => {
+        /* Transition effect ordering is exercised in goal-transition.test.ts. */
+      },
+      setRecoveryPausedAttention: () => {
+        /* Transition effect ordering is exercised in goal-transition.test.ts. */
+      },
+      markContinuationQueued: () => {
+        /* Transition effect ordering is exercised in goal-transition.test.ts. */
+      },
+      stopStatusRefresh: () => {
+        /* Transition effect ordering is exercised in goal-transition.test.ts. */
+      },
     },
     refreshUi: () => {
       refreshCount += 1;
@@ -76,7 +96,7 @@ function createStateControllerTestHarness(goal: ThreadGoal | null = activeGoal) 
   };
 }
 
-test("goal snapshots are cloned at persistence and controller boundaries", () => {
+nodeTest("goal snapshots are cloned at persistence and controller boundaries", () => {
   const sourceGoal: ThreadGoal = {
     ...activeGoal,
     goalId: "clone-boundary",
@@ -106,7 +126,7 @@ test("goal snapshots are cloned at persistence and controller boundaries", () =>
   assert.equal(harness.persistence.getGoal()?.usage.activeSeconds, 2);
 });
 
-test("beginOverflowRecovery without an active goal records user reset only", () => {
+nodeTest("beginOverflowRecovery without an active goal records user reset only", () => {
   const harness = createStateControllerTestHarness(null);
 
   harness.stateController.beginOverflowRecovery(harness.ctx);
@@ -120,37 +140,45 @@ test("beginOverflowRecovery without an active goal records user reset only", () 
   assert.equal(harness.entries.length, 1);
 });
 
-test("beginOverflowRecovery with a paused goal records user reset without pending attention", () => {
-  const pausedGoal: ThreadGoal = { ...activeGoal, status: "paused" };
-  const harness = createStateControllerTestHarness(pausedGoal);
+nodeTest(
+  "beginOverflowRecovery with a paused goal records user reset without pending attention",
+  () => {
+    const pausedGoal: ThreadGoal = { ...activeGoal, status: "paused" };
+    const harness = createStateControllerTestHarness(pausedGoal);
 
-  harness.stateController.beginOverflowRecovery(harness.ctx);
-  assert.equal(harness.recoveryState.phase.kind, "hostOverflowNeedsUserStart");
-  assert.equal(harness.recoveryState.attention, null);
-  assert.equal(harness.refreshCount, 0);
-  assert.equal(harness.entries.length, 1);
-  const entry = harness.entries[0] as { kind?: string; active?: boolean };
-  assert.equal(entry.kind, "host_overflow_cap_reset");
-  assert.equal(entry.active, true);
-});
+    harness.stateController.beginOverflowRecovery(harness.ctx);
+    assert.equal(harness.recoveryState.phase.kind, "hostOverflowNeedsUserStart");
+    assert.equal(harness.recoveryState.attention, null);
+    assert.equal(harness.refreshCount, 0);
+    assert.equal(harness.entries.length, 1);
+    const entry = harness.entries[0];
+    assert.ok(isRecord(entry));
+    assert.equal(entry.kind, "host_overflow_cap_reset");
+    assert.equal(entry.active, true);
+  },
+);
 
-test("beginOverflowRecovery with an active goal records pending attention and durable reset", () => {
-  const harness = createStateControllerTestHarness(activeGoal);
+nodeTest(
+  "beginOverflowRecovery with an active goal records pending attention and durable reset",
+  () => {
+    const harness = createStateControllerTestHarness(activeGoal);
 
-  harness.stateController.beginOverflowRecovery(harness.ctx);
-  assert.equal(harness.recoveryState.phase.kind, "hostOverflowRecoveringNeedsUserStart");
-  assert.deepEqual(harness.recoveryState.attention, {
-    kind: "pending",
-    reason: "recovering from context overflow",
-  });
-  assert.equal(harness.refreshCount, 1);
-  assert.equal(harness.entries.length, 1);
-  const entry = harness.entries[0] as { kind?: string; active?: boolean };
-  assert.equal(entry.kind, "host_overflow_cap_reset");
-  assert.equal(entry.active, true);
-});
+    harness.stateController.beginOverflowRecovery(harness.ctx);
+    assert.equal(harness.recoveryState.phase.kind, "hostOverflowRecoveringNeedsUserStart");
+    assert.deepEqual(harness.recoveryState.attention, {
+      kind: "pending",
+      reason: "recovering from context overflow",
+    });
+    assert.equal(harness.refreshCount, 1);
+    assert.equal(harness.entries.length, 1);
+    const entry = harness.entries[0];
+    assert.ok(isRecord(entry));
+    assert.equal(entry.kind, "host_overflow_cap_reset");
+    assert.equal(entry.active, true);
+  },
+);
 
-test("persistHostOverflowUserReset appends only when phase changes", () => {
+nodeTest("persistHostOverflowUserReset appends only when phase changes", () => {
   const harness = createStateControllerTestHarness(null);
 
   harness.stateController.persistHostOverflowUserReset(true);
@@ -161,7 +189,8 @@ test("persistHostOverflowUserReset appends only when phase changes", () => {
 
   harness.stateController.persistHostOverflowUserReset(false);
   assert.equal(harness.entries.length, 2);
-  const cleared = harness.entries[1] as { kind?: string; active?: boolean };
+  const cleared = harness.entries[1];
+  assert.ok(isRecord(cleared));
   assert.equal(cleared.kind, "host_overflow_cap_reset");
   assert.equal(cleared.active, false);
 });

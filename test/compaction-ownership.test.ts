@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
-import { mock, test } from "node:test";
+import { mock, test as nodeTest } from "node:test";
 
 import {
   assistantMessage,
   createRuntimeHarness,
   deliverQueuedMessage,
-  userBeforeAgentStartEvent,
   flushContinuationScheduler,
   sessionBeforeCompactEvent,
   sessionCompactEvent,
@@ -39,12 +38,12 @@ async function startGoal(harness: RuntimeHarness): Promise<void> {
   await harness.runCommand("ship it");
   const queued = harness.sentMessages[0];
   assert.ok(queued);
-  harness.sentMessages.length = 0;
+  harness.clearSentMessages();
   await deliverQueuedMessage(harness, queued);
 }
 
-test("Pi owns compaction decisions at the configured host threshold", async () => {
-  const harness = createRuntimeHarness({
+nodeTest("Pi owns compaction decisions at the configured host threshold", async () => {
+  const harness = await createRuntimeHarness({
     contextUsage: contextUsage(247_783),
     compactBehavior: "error",
   });
@@ -56,10 +55,10 @@ test("Pi owns compaction decisions at the configured host threshold", async () =
   assert.equal(harness.snapshot().goal?.status, "active");
 });
 
-test("host compaction resumes once without a competing extension compaction", async () => {
+nodeTest("host compaction resumes once without a competing extension compaction", async () => {
   mock.timers.enable({ apis: ["setTimeout"] });
   try {
-    const harness = createRuntimeHarness({
+    const harness = await createRuntimeHarness({
       contextUsage: contextUsage(287_256),
       compactBehavior: "error",
     });
@@ -84,10 +83,10 @@ test("host compaction resumes once without a competing extension compaction", as
   }
 });
 
-test("host overflow retry cannot race an extension compaction", async () => {
+nodeTest("host overflow retry cannot race an extension compaction", async () => {
   mock.timers.enable({ apis: ["setTimeout"] });
   try {
-    const harness = createRuntimeHarness({
+    const harness = await createRuntimeHarness({
       contextUsage: contextUsage(287_256),
       compactBehavior: "error",
     });

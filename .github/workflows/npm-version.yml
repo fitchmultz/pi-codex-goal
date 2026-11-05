@@ -11,7 +11,7 @@ on:
     workflows: [npm release]
     types: [completed]
   schedule:
-    - cron: '17 12 * * *'
+    - cron: "17 12 * * *"
   workflow_dispatch:
 
 permissions:

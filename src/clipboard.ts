@@ -22,7 +22,12 @@ function clipboardCommandsForPlatform(platform: NodeJS.Platform): ClipboardComma
       { command: "clip.exe", args: [] },
       {
         command: "powershell.exe",
-        args: ["-NoProfile", "-NonInteractive", "-Command", "Set-Clipboard -Value ([Console]::In.ReadToEnd())"],
+        args: [
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          "Set-Clipboard -Value ([Console]::In.ReadToEnd())",
+        ],
       },
     ];
   }
@@ -34,14 +39,19 @@ function clipboardCommandsForPlatform(platform: NodeJS.Platform): ClipboardComma
   ];
 }
 
-function runClipboardCommand({ command, args }: ClipboardCommand, text: string): Promise<ClipboardCopyResult> {
+function runClipboardCommand(
+  { command, args }: ClipboardCommand,
+  text: string,
+): Promise<ClipboardCopyResult> {
   return new Promise((resolve) => {
     const child = spawn(command, args, { stdio: ["pipe", "ignore", "pipe"] });
     let settled = false;
     let stderr = "";
 
     const finish = (result: ClipboardCopyResult): void => {
-      if (settled) return;
+      if (settled) {
+        return;
+      }
       settled = true;
       clearTimeout(timeout);
       resolve(result);
@@ -56,11 +66,11 @@ function runClipboardCommand({ command, args }: ClipboardCommand, text: string):
       finish({ ok: false, message: error.message });
     });
 
-    child.stderr?.on("data", (chunk: Buffer) => {
+    child.stderr.on("data", (chunk: Buffer) => {
       stderr += chunk.toString("utf8");
     });
 
-    child.stdin?.on("error", () => {
+    child.stdin.on("error", () => {
       // Some clipboard commands close stdin early after accepting input. The
       // process exit code decides success.
     });
@@ -71,10 +81,16 @@ function runClipboardCommand({ command, args }: ClipboardCommand, text: string):
         return;
       }
       const detail = stderr.trim();
-      finish({ ok: false, message: detail ? `${command}: ${detail}` : `${command} exited with code ${code ?? "unknown"}` });
+      finish({
+        ok: false,
+        message:
+          detail.length > 0
+            ? `${command}: ${detail}`
+            : `${command} exited with code ${code ?? "unknown"}`,
+      });
     });
 
-    child.stdin?.end(text);
+    child.stdin.end(text);
   });
 }
 
@@ -87,7 +103,9 @@ export async function copyTextToClipboard(text: string): Promise<ClipboardCopyRe
     if (result.ok) {
       return result;
     }
-    failures.push(`${command.command}${result.message ? ` (${result.message})` : ""}`);
+    failures.push(
+      `${command.command}${result.message !== undefined && result.message.length > 0 ? ` (${result.message})` : ""}`,
+    );
   }
 
   return {

@@ -5,7 +5,11 @@ import {
   createRecoveryPausedAttention,
   HOST_OVERFLOW_RECOVERY_REASON,
 } from "../../src/recovery.ts";
-import { createThreadGoal, reconstructHostOverflowCapNeedsUserReset, setEntry } from "../../src/state.ts";
+import {
+  createThreadGoal,
+  reconstructHostOverflowCapNeedsUserReset,
+  setEntry,
+} from "../../src/state.ts";
 import { CUSTOM_ENTRY_TYPE } from "../../src/types.ts";
 import {
   createRuntimeHarness,
@@ -22,30 +26,32 @@ export function replaceHarnessBranchWithGoal(
   objective: string,
 ): ReturnType<typeof createThreadGoal> {
   const branchGoal = createThreadGoal(objective);
-  harness.entries.length = 0;
-  harness.entries.push({
-    type: "custom",
-    id: `entry-branch-${objective.replace(/\s+/g, "-")}`,
-    parentId: null,
-    timestamp: new Date(0).toISOString(),
-    customType: CUSTOM_ENTRY_TYPE,
-    data: setEntry(branchGoal, "command"),
-  });
+  harness.replaceBranch([
+    {
+      type: "custom",
+      id: `entry-branch-${objective.replace(/\s+/g, "-")}`,
+      parentId: null,
+      timestamp: new Date(0).toISOString(),
+      customType: CUSTOM_ENTRY_TYPE,
+      data: setEntry(branchGoal, "command"),
+    },
+  ]);
   return branchGoal;
 }
 
-export async function givenOverflowPausedGoal(
-  objective = "ship it",
-): Promise<{
+export async function givenOverflowPausedGoal(objective = "ship it"): Promise<{
   harness: RuntimeHarness;
   goal: NonNullable<ReturnType<RuntimeHarness["snapshot"]>["goal"]>;
 }> {
-  const harness = createRuntimeHarness();
+  const harness = await createRuntimeHarness();
   await harness.runCommand(objective);
 
   for (let attempt = 0; attempt < 2; attempt += 1) {
     await emitPersistentAssistantError(harness, attempt, "context_length_exceeded");
-    await harness.emit("session_compact", sessionCompactEvent({ reason: "overflow", willRetry: true }));
+    await harness.emit(
+      "session_compact",
+      sessionCompactEvent({ reason: "overflow", willRetry: true }),
+    );
     if (harness.snapshot().goal?.status === "active") {
       await harness.emit("agent_start", { type: "agent_start" });
     }
@@ -61,9 +67,9 @@ export async function givenOverflowPausedGoal(
 export async function givenPendingTransientRecovery(
   objective = "ship it",
 ): Promise<RuntimeHarness> {
-  const harness = createRuntimeHarness();
+  const harness = await createRuntimeHarness();
   await harness.runCommand(objective);
-  harness.sentMessages.length = 0;
+  harness.clearSentMessages();
   harness.footerStatuses.length = 0;
 
   await emitPersistentAssistantError(harness, 0, "websocket closed");
@@ -71,12 +77,10 @@ export async function givenPendingTransientRecovery(
   return harness;
 }
 
-export async function givenPendingOverflowRecovery(
-  objective = "ship it",
-): Promise<RuntimeHarness> {
-  const harness = createRuntimeHarness({ compactBehavior: "unavailable" });
+export async function givenPendingOverflowRecovery(objective = "ship it"): Promise<RuntimeHarness> {
+  const harness = await createRuntimeHarness({ compactBehavior: "unavailable" });
   await harness.runCommand(objective);
-  harness.sentMessages.length = 0;
+  harness.clearSentMessages();
   harness.footerStatuses.length = 0;
 
   await emitPersistentAssistantError(harness, 0, "context_length_exceeded");
@@ -114,8 +118,8 @@ export async function givenPendingRecoveryWithStaleQueuedAbort(
 ): Promise<{ harness: RuntimeHarness }> {
   const harness =
     kind === "overflow"
-      ? createRuntimeHarness({ compactBehavior: "unavailable" })
-      : createRuntimeHarness();
+      ? await createRuntimeHarness({ compactBehavior: "unavailable" })
+      : await createRuntimeHarness();
 
   await harness.runCommand("old goal");
   const oldQueued = harness.sentMessages[0];
@@ -125,7 +129,7 @@ export async function givenPendingRecoveryWithStaleQueuedAbort(
   await harness.runCommand("ship it");
   const activeGoal = harness.snapshot().goal;
   assert.ok(activeGoal);
-  harness.sentMessages.length = 0;
+  harness.clearSentMessages();
   harness.footerStatuses.length = 0;
 
   const errorMessage = kind === "overflow" ? "context_length_exceeded" : "websocket closed";
@@ -153,8 +157,8 @@ export async function replaceGoalAfterOverflowPause(
   const previousGoal = harness.snapshot().goal;
   assert.ok(previousGoal);
 
-  harness.sentMessages.length = 0;
-  harness.sentUserMessages.length = 0;
+  harness.clearSentMessages();
+  harness.clearSentUserMessages();
   await harness.runCommand(replacementObjective);
   const goal = harness.snapshot().goal;
   assert.ok(goal);

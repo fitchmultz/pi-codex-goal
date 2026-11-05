@@ -11,7 +11,9 @@ npm ci --ignore-scripts
 npm run check
 ```
 
-`npm run check` type-checks source, tests and all TypeScript probes with TypeScript 7 and runs the Node test suite with native type stripping, including source, Git-production, and packed-artifact loading, tool persistence, and SDK compaction/continuation tests. It also runs an `npm pack` dry run. Run it with an empty HOME/agent profile and a short TMPDIR outside your real home ancestry, with no project markers in its ancestors. The selected host must be installed in this checkout's dependency graph; changing only a CLI on PATH does not select its SDK types. No live model is called.
+`npm run check` runs Oxfmt, full semantic Oxlint, TypeScript 7, policy and coverage checks, the Node test suite, native quality controls, and an `npm pack` dry run. Every independent check runs even when another fails. The Node suite includes source, Git-production, and packed-artifact loading, tool persistence, and SDK compaction/continuation tests. Run it with an empty HOME/agent profile and a short TMPDIR outside your real home ancestry, with no project markers in its ancestors. The selected host must be installed in this checkout's dependency graph; changing only a CLI on PATH does not select its SDK types. No live model is called.
+
+The [engineering standard](engineering-standard.md) owns configuration, source profiles, and the three API-contract exceptions. `npm run lint:fix` and `npm run format` edit files. `npm run lint:agent` provides the same lint gate in agent-readable form. `npm run test:quality` qualifies the native Node declaration allowance and directive boundaries. The full quality toolchain needs a platform with published TypeScript and oxlint-tsgolint binaries; these packages do not currently ship Android binaries. Run those checks on a supported host rather than skipping them. Ordinary `npm test` remains runnable on Node 24 in Termux.
 
 To load a development checkout in Pi:
 

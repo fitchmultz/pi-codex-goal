@@ -27,7 +27,19 @@ function formatFooterStatusForRuntime(deps: GoalRuntimeStatusDeps): string | und
   );
 }
 
-export function createGoalRuntimeStatus(deps: GoalRuntimeStatusDeps) {
+interface GoalRuntimeStatus {
+  refreshUi: (ctx: StatusContext) => void;
+  stopStatusRefresh: () => void;
+}
+
+function objectiveColor(goal: ThreadGoal | null): "accent" | "error" | "warning" {
+  if (goal?.status === "active") {
+    return "accent";
+  }
+  return goal?.status === "budgetLimited" ? "error" : "warning";
+}
+
+export function createGoalRuntimeStatus(deps: GoalRuntimeStatusDeps): GoalRuntimeStatus {
   let statusContext: StatusContext | null = null;
   let statusRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -49,7 +61,7 @@ export function createGoalRuntimeStatus(deps: GoalRuntimeStatusDeps) {
         }
         statusContext.ui.setStatus("codex-goal", formatFooterStatusForRuntime(deps));
       }, 1_000);
-      statusRefreshTimer.unref?.();
+      statusRefreshTimer.unref();
       return;
     }
 
@@ -64,11 +76,19 @@ export function createGoalRuntimeStatus(deps: GoalRuntimeStatusDeps) {
     if (ctx.mode === "tui") {
       const goal = deps.getGoalForDisplay();
       const objective = formatGoalObjective(goal);
-      const color = goal?.status === "active" ? "accent" : goal?.status === "budgetLimited" ? "error" : "warning";
-      ctx.ui.setWidget("codex-goal-objective", objective === undefined ? undefined : () => ({
-        render: (width) => [truncateToWidth(ctx.ui.theme.fg(color, objective), width, "…")],
-        invalidate() {},
-      }), { placement: "belowEditor" });
+      const color = objectiveColor(goal);
+      ctx.ui.setWidget(
+        "codex-goal-objective",
+        objective === undefined
+          ? undefined
+          : () => ({
+              render: (width) => [truncateToWidth(ctx.ui.theme.fg(color, objective), width, "…")],
+              invalidate() {
+                /* The render function reads live theme and width; no cached output. */
+              },
+            }),
+        { placement: "belowEditor" },
+      );
     }
     syncStatusRefresh();
   };

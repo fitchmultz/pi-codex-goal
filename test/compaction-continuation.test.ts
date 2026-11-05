@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mock, test } from "node:test";
+import { mock, test as nodeTest } from "node:test";
 
 import {
   createRuntimeHarness,
@@ -14,38 +14,41 @@ async function startQueuedContinuation(harness: RuntimeHarness): Promise<void> {
   await harness.runCommand("ship it");
   const queued = harness.sentMessages[0];
   assert.ok(queued);
-  harness.sentMessages.length = 0;
+  harness.clearSentMessages();
 
   await deliverQueuedMessage(harness, queued);
 }
 
-test("willRetry session compaction falls back after grace when host retry never starts", async () => {
+nodeTest(
+  "willRetry session compaction falls back after grace when host retry never starts",
+  async () => {
+    mock.timers.enable({ apis: ["setTimeout"] });
+    try {
+      const harness = await createRuntimeHarness();
+      await startQueuedContinuation(harness);
+
+      await harness.emit("session_compact", sessionCompactEvent({ willRetry: true }));
+
+      const goal = harness.snapshot().goal;
+      assert.equal(goal?.status, "active");
+      assert.equal(harness.sentMessages.length, 0);
+
+      flushContinuationScheduler();
+      assert.equal(harness.sentMessages.length, 1);
+      assert.partialDeepStrictEqual(harness.sentMessages[0]?.message.details, {
+        kind: "continuation",
+        goalId: goal.goalId,
+      });
+    } finally {
+      mock.timers.reset();
+    }
+  },
+);
+
+nodeTest("willRetry session compaction fallback keeps polling while session is busy", async () => {
   mock.timers.enable({ apis: ["setTimeout"] });
   try {
-    const harness = createRuntimeHarness();
-    await startQueuedContinuation(harness);
-
-    await harness.emit("session_compact", sessionCompactEvent({ willRetry: true }));
-
-    const goal = harness.snapshot().goal;
-    assert.equal(goal?.status, "active");
-    assert.equal(harness.sentMessages.length, 0);
-
-    flushContinuationScheduler();
-    assert.equal(harness.sentMessages.length, 1);
-    assert.partialDeepStrictEqual(harness.sentMessages[0]?.message.details, {
-      kind: "continuation",
-      goalId: goal?.goalId,
-    });
-  } finally {
-    mock.timers.reset();
-  }
-});
-
-test("willRetry session compaction fallback keeps polling while session is busy", async () => {
-  mock.timers.enable({ apis: ["setTimeout"] });
-  try {
-    const harness = createRuntimeHarness({ idle: false });
+    const harness = await createRuntimeHarness({ idle: false });
     await startQueuedContinuation(harness);
 
     await harness.emit("session_compact", sessionCompactEvent({ willRetry: true }));
@@ -61,26 +64,32 @@ test("willRetry session compaction fallback keeps polling while session is busy"
   }
 });
 
-test("willRetry session compaction fallback survives preflight without an agent start", async () => {
+nodeTest(
+  "willRetry session compaction fallback survives preflight without an agent start",
+  async () => {
+    mock.timers.enable({ apis: ["setTimeout"] });
+    try {
+      const harness = await createRuntimeHarness();
+      await startQueuedContinuation(harness);
+
+      await harness.emit("session_compact", sessionCompactEvent({ willRetry: true }));
+      await harness.emit(
+        "before_agent_start",
+        userBeforeAgentStartEvent("preflight that never starts an agent run"),
+      );
+
+      flushContinuationScheduler();
+      assert.equal(harness.sentMessages.length, 1);
+    } finally {
+      mock.timers.reset();
+    }
+  },
+);
+
+nodeTest("willRetry session compaction fallback is cancelled when host retry starts", async () => {
   mock.timers.enable({ apis: ["setTimeout"] });
   try {
-    const harness = createRuntimeHarness();
-    await startQueuedContinuation(harness);
-
-    await harness.emit("session_compact", sessionCompactEvent({ willRetry: true }));
-    await harness.emit("before_agent_start", userBeforeAgentStartEvent("preflight that never starts an agent run"));
-
-    flushContinuationScheduler();
-    assert.equal(harness.sentMessages.length, 1);
-  } finally {
-    mock.timers.reset();
-  }
-});
-
-test("willRetry session compaction fallback is cancelled when host retry starts", async () => {
-  mock.timers.enable({ apis: ["setTimeout"] });
-  try {
-    const harness = createRuntimeHarness();
+    const harness = await createRuntimeHarness();
     await startQueuedContinuation(harness);
 
     await harness.emit("session_compact", sessionCompactEvent({ willRetry: true }));

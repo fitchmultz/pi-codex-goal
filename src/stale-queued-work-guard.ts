@@ -3,7 +3,6 @@ import {
   lifecycleKindFromState,
   reduceStaleQueuedWork,
   type AgentEndMessage,
-  type StaleQueuedWorkEffect,
   type StaleQueuedWorkEvent,
   type StaleQueuedWorkLifecycleKind,
   type StaleQueuedWorkPlan,
@@ -18,21 +17,21 @@ export type {
 } from "./stale-queued-work-reducer.ts";
 
 export interface StaleQueuedWorkGuard {
-  lifecycleKind(): StaleQueuedWorkLifecycleKind;
-  isBlockingContinuation(): boolean;
-  noteRunnableWorkStarted(): void;
-  noteStaleWorkStarted(goalId: string): void;
-  planContextAbort(currentTurnIndex: number | null): StaleQueuedWorkPlan | null;
-  planUserInputClearAbort(): StaleQueuedWorkPlan;
-  planExtensionContinuationClearAbort(): StaleQueuedWorkPlan;
-  planBeforeAgentStartClearAbort(): StaleQueuedWorkPlan;
-  planTurnStart(): StaleQueuedWorkPlan;
-  planToolExecutionEnd(): StaleQueuedWorkPlan;
-  planSessionBeforeCompact(): StaleQueuedWorkPlan;
-  planSessionCompact(): StaleQueuedWorkPlan;
-  planTurnEnd(turnIndex: number | null): StaleQueuedWorkPlan;
-  planAgentEnd(messages: AgentEndMessage[]): StaleQueuedWorkPlan;
-  planSessionShutdown(): StaleQueuedWorkPlan;
+  lifecycleKind: () => StaleQueuedWorkLifecycleKind;
+  isBlockingContinuation: () => boolean;
+  noteRunnableWorkStarted: () => void;
+  noteStaleWorkStarted: (goalId: string) => void;
+  planContextAbort: (currentTurnIndex: number | null) => StaleQueuedWorkPlan | null;
+  planUserInputClearAbort: () => StaleQueuedWorkPlan;
+  planExtensionContinuationClearAbort: () => StaleQueuedWorkPlan;
+  planBeforeAgentStartClearAbort: () => StaleQueuedWorkPlan;
+  planTurnStart: () => StaleQueuedWorkPlan;
+  planToolExecutionEnd: () => StaleQueuedWorkPlan;
+  planSessionBeforeCompact: () => StaleQueuedWorkPlan;
+  planSessionCompact: () => StaleQueuedWorkPlan;
+  planTurnEnd: (turnIndex: number | null) => StaleQueuedWorkPlan;
+  planAgentEnd: (messages: AgentEndMessage[]) => StaleQueuedWorkPlan;
+  planSessionShutdown: () => StaleQueuedWorkPlan;
 }
 
 function emptyPlan(): StaleQueuedWorkPlan {

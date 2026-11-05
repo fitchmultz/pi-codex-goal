@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
+import { test as nodeTest } from "node:test";
 
 import {
   applyGoalTransitionEffects,
@@ -21,11 +21,7 @@ function assertNoDuplicateEffectTypes(
 ): void {
   const seen = new Set<string>();
   for (const effect of effects) {
-    assert.equal(
-      seen.has(effect.type),
-      false,
-      `${label}: duplicate effect type ${effect.type}`,
-    );
+    assert.equal(seen.has(effect.type), false, `${label}: duplicate effect type ${effect.type}`);
     seen.add(effect.type);
   }
 }
@@ -95,12 +91,7 @@ const commandSetTable: CommandSetTableCase[] = [
       return { current, next };
     },
     persist: "set",
-    before: [
-      "clearContinuation",
-      "clearActiveAccounting",
-      "resetRecovery",
-      "clearBudgetWarning",
-    ],
+    before: ["clearContinuation", "clearActiveAccounting", "resetRecovery", "clearBudgetWarning"],
     after: [],
   },
   {
@@ -118,7 +109,7 @@ const commandSetTable: CommandSetTableCase[] = [
 ];
 
 for (const tableCase of commandSetTable) {
-  test(`planGoalTransition command set table: ${tableCase.label}`, () => {
+  nodeTest(`planGoalTransition command set table: ${tableCase.label}`, () => {
     const { current, next } = tableCase.build();
     const plan = planGoalTransition(current, {
       kind: "set",
@@ -133,22 +124,25 @@ for (const tableCase of commandSetTable) {
   });
 }
 
-test("reloadGoalRuntimeEffects keeps same active goal memory", () => {
+nodeTest("reloadGoalRuntimeEffects keeps same active goal memory", () => {
   const goal = createThreadGoal("ship it");
 
   assert.deepEqual(effectTypes(reloadGoalRuntimeEffects(goal.goalId, goal)), ["clearContinuation"]);
 });
 
-test("reloadGoalRuntimeEffects clears active accounting for non-active reconstructed goal", () => {
-  const goal = { ...createThreadGoal("ship it"), status: "paused" as const };
+nodeTest(
+  "reloadGoalRuntimeEffects clears active accounting for non-active reconstructed goal",
+  () => {
+    const goal = { ...createThreadGoal("ship it"), status: "paused" as const };
 
-  assert.deepEqual(effectTypes(reloadGoalRuntimeEffects(goal.goalId, goal)), [
-    "clearContinuation",
-    "clearActiveAccounting",
-  ]);
-});
+    assert.deepEqual(effectTypes(reloadGoalRuntimeEffects(goal.goalId, goal)), [
+      "clearContinuation",
+      "clearActiveAccounting",
+    ]);
+  },
+);
 
-test("reloadGoalRuntimeEffects resets recovery when reconstructed goal id changes", () => {
+nodeTest("reloadGoalRuntimeEffects resets recovery when reconstructed goal id changes", () => {
   const goal = createThreadGoal("ship it");
 
   assert.deepEqual(effectTypes(reloadGoalRuntimeEffects("previous-goal", goal)), [
@@ -157,7 +151,7 @@ test("reloadGoalRuntimeEffects resets recovery when reconstructed goal id change
   ]);
 });
 
-test("planGoalTransition clear persists clear with full memory reset", () => {
+nodeTest("planGoalTransition clear persists clear with full memory reset", () => {
   const goal = createThreadGoal("ship it");
   const plan = planGoalTransition(goal, { kind: "clear", source: "command" });
 
@@ -173,7 +167,7 @@ test("planGoalTransition clear persists clear with full memory reset", () => {
   assert.deepEqual(effectTypes(plan.afterPersist), ["stopStatusRefresh"]);
 });
 
-test("abort_pause derives paused goal from active current", () => {
+nodeTest("abort_pause derives paused goal from active current", () => {
   withUnixTime(100, () => {
     const goal = createThreadGoal("ship it", 10);
     const plan = planGoalTransition(goal, { kind: "abort_pause" });
@@ -197,7 +191,7 @@ test("abort_pause derives paused goal from active current", () => {
   });
 });
 
-test("resume_active derives active goal from paused current", () => {
+nodeTest("resume_active derives active goal from paused current", () => {
   withUnixTime(100, () => {
     const current = { ...createThreadGoal("ship it", 10), status: "paused" as const };
     const plan = planGoalTransition(current, { kind: "resume_active" });
@@ -207,12 +201,16 @@ test("resume_active derives active goal from paused current", () => {
     assert.equal(plan.nextGoal.status, "active");
     assert.equal(plan.nextGoal.goalId, current.goalId);
     assert.equal(plan.nextGoal.updatedAt, 100);
-    assert.deepEqual(effectTypes(plan.beforePersist), ["clearContinuation", "resetRecovery", "clearBudgetWarning"]);
+    assert.deepEqual(effectTypes(plan.beforePersist), [
+      "clearContinuation",
+      "resetRecovery",
+      "clearBudgetWarning",
+    ]);
     assert.deepEqual(plan.afterPersist, []);
   });
 });
 
-test("resume_active keeps over-budget paused goals budgetLimited", () => {
+nodeTest("resume_active keeps over-budget paused goals budgetLimited", () => {
   withUnixTime(100, () => {
     const current = {
       ...createThreadGoal("ship it", 10),
@@ -232,7 +230,7 @@ test("resume_active keeps over-budget paused goals budgetLimited", () => {
   });
 });
 
-test("resume_active can be followed immediately by runtime accounting", () => {
+nodeTest("resume_active can be followed immediately by runtime accounting", () => {
   withUnixTime(100, () => {
     const paused = { ...createThreadGoal("ship it", 10), status: "paused" as const };
     const plan = planGoalTransition(paused, { kind: "resume_active" });
@@ -257,7 +255,7 @@ test("resume_active can be followed immediately by runtime accounting", () => {
   });
 });
 
-test("pause and recovery transitions use wall-clock updatedAt without future drift", () => {
+nodeTest("pause and recovery transitions use wall-clock updatedAt without future drift", () => {
   withUnixTime(100, () => {
     const active = createThreadGoal("ship it", 10);
     const plans = [
@@ -279,7 +277,7 @@ test("pause and recovery transitions use wall-clock updatedAt without future dri
   });
 });
 
-test("recovery_pause derives paused goal and carries attention reason", () => {
+nodeTest("recovery_pause derives paused goal and carries attention reason", () => {
   const goal = createThreadGoal("ship it");
   const plan = planGoalTransition(goal, {
     kind: "recovery_pause",
@@ -297,7 +295,7 @@ test("recovery_pause derives paused goal and carries attention reason", () => {
   ]);
 });
 
-test("recovery_shutdown_pause derives paused goal and clears host overflow recovery", () => {
+nodeTest("recovery_shutdown_pause derives paused goal and clears host overflow recovery", () => {
   const goal = createThreadGoal("ship it");
   const plan = planGoalTransition(goal, {
     kind: "recovery_shutdown_pause",
@@ -316,14 +314,17 @@ test("recovery_shutdown_pause derives paused goal and clears host overflow recov
   ]);
 });
 
-for (const kind of ["abort_pause", "resume_active", "recovery_pause", "recovery_shutdown_pause"] as const) {
-  test(`${kind} rejects null current`, () => {
+for (const kind of [
+  "abort_pause",
+  "resume_active",
+  "recovery_pause",
+  "recovery_shutdown_pause",
+] as const) {
+  nodeTest(`${kind} rejects null current`, () => {
     const request =
-      kind === "recovery_pause"
-        ? { kind, recoveryReason: "x" as const }
-        : kind === "recovery_shutdown_pause"
-          ? { kind, recoveryReason: "x" as const }
-          : { kind };
+      kind === "recovery_pause" || kind === "recovery_shutdown_pause"
+        ? { kind, recoveryReason: "x" }
+        : { kind };
     assert.throws(
       () => planGoalTransition(null, request),
       new RegExp(`Invalid ${kind} transition: current goal is required`),
@@ -331,7 +332,7 @@ for (const kind of ["abort_pause", "resume_active", "recovery_pause", "recovery_
   });
 }
 
-test("abort_pause rejects non-active current", () => {
+nodeTest("abort_pause rejects non-active current", () => {
   const paused = { ...createThreadGoal("ship it"), status: "paused" as const };
   assert.throws(
     () => planGoalTransition(paused, { kind: "abort_pause" }),
@@ -339,7 +340,7 @@ test("abort_pause rejects non-active current", () => {
   );
 });
 
-test("resume_active rejects non-paused current", () => {
+nodeTest("resume_active rejects non-paused current", () => {
   const active = createThreadGoal("ship it");
   assert.throws(
     () => planGoalTransition(active, { kind: "resume_active" }),
@@ -347,7 +348,7 @@ test("resume_active rejects non-paused current", () => {
   );
 });
 
-test("recovery_pause rejects non-active current", () => {
+nodeTest("recovery_pause rejects non-active current", () => {
   const paused = { ...createThreadGoal("ship it"), status: "paused" as const };
   assert.throws(
     () =>
@@ -359,53 +360,59 @@ test("recovery_pause rejects non-active current", () => {
   );
 });
 
-test("planGoalTransition runtime accounting defers persistence for active usage updates", () => {
-  const goal = createThreadGoal("ship it");
-  const next = {
-    ...cloneGoal(goal),
-    usage: { tokensUsed: 5, activeSeconds: 3 },
-    updatedAt: goal.updatedAt + 1,
-  };
+nodeTest(
+  "planGoalTransition runtime accounting defers persistence for active usage updates",
+  () => {
+    const goal = createThreadGoal("ship it");
+    const next = {
+      ...cloneGoal(goal),
+      usage: { tokensUsed: 5, activeSeconds: 3 },
+      updatedAt: goal.updatedAt + 1,
+    };
 
-  const plan = planGoalTransition(goal, {
-    kind: "runtime_accounting",
-    nextGoal: next,
-  });
+    const plan = planGoalTransition(goal, {
+      kind: "runtime_accounting",
+      nextGoal: next,
+    });
 
-  assertDisjointPrimitivePlan(plan, "runtime defer");
-  assert.equal(plan.persist, "defer");
-  assert.deepEqual(effectTypes(plan.beforePersist), ["clearBudgetWarning"]);
-  assert.deepEqual(plan.afterPersist, []);
-});
+    assertDisjointPrimitivePlan(plan, "runtime defer");
+    assert.equal(plan.persist, "defer");
+    assert.deepEqual(effectTypes(plan.beforePersist), ["clearBudgetWarning"]);
+    assert.deepEqual(plan.afterPersist, []);
+  },
+);
 
-test("planGoalTransition runtime accounting persists immediately when budget is crossed", () => {
-  const goal = createThreadGoal("ship it", 10);
-  const limited = {
-    ...cloneGoal(goal),
-    status: "budgetLimited" as const,
-    usage: { tokensUsed: 10, activeSeconds: 1 },
-    updatedAt: goal.updatedAt + 1,
-  };
+nodeTest(
+  "planGoalTransition runtime accounting persists immediately when budget is crossed",
+  () => {
+    const goal = createThreadGoal("ship it", 10);
+    const limited = {
+      ...cloneGoal(goal),
+      status: "budgetLimited" as const,
+      usage: { tokensUsed: 10, activeSeconds: 1 },
+      updatedAt: goal.updatedAt + 1,
+    };
 
-  const plan = planGoalTransition(goal, {
-    kind: "runtime_accounting",
-    nextGoal: limited,
-  });
+    const plan = planGoalTransition(goal, {
+      kind: "runtime_accounting",
+      nextGoal: limited,
+    });
 
-  assertDisjointPrimitivePlan(plan, "runtime budget cross");
-  assert.equal(plan.persist, "set");
-  assert.deepEqual(effectTypes(plan.beforePersist), [
-    "clearContinuation",
-    "clearActiveAccounting",
-    "resetRecovery",
-  ]);
-});
+    assertDisjointPrimitivePlan(plan, "runtime budget cross");
+    assert.equal(plan.persist, "set");
+    assert.deepEqual(effectTypes(plan.beforePersist), [
+      "clearContinuation",
+      "clearActiveAccounting",
+      "resetRecovery",
+    ]);
+  },
+);
 
 function runtimeRequest(nextGoal: ThreadGoal) {
   return { kind: "runtime_accounting" as const, nextGoal };
 }
 
-test("runtime_accounting rejects null current", () => {
+nodeTest("runtime_accounting rejects null current", () => {
   const next = createThreadGoal("ship it", 10);
   assert.throws(
     () => planGoalTransition(null, runtimeRequest(next)),
@@ -413,7 +420,7 @@ test("runtime_accounting rejects null current", () => {
   );
 });
 
-test("runtime_accounting rejects different goal id", () => {
+nodeTest("runtime_accounting rejects different goal id", () => {
   const current = createThreadGoal("current", 10);
   const next = createThreadGoal("next", 10);
   assert.throws(
@@ -422,7 +429,7 @@ test("runtime_accounting rejects different goal id", () => {
   );
 });
 
-test("runtime_accounting rejects unchanged payload", () => {
+nodeTest("runtime_accounting rejects unchanged payload", () => {
   const goal = createThreadGoal("ship it", 10);
   assert.throws(
     () => planGoalTransition(goal, runtimeRequest(goal)),
@@ -430,7 +437,7 @@ test("runtime_accounting rejects unchanged payload", () => {
   );
 });
 
-test("runtime_accounting rejects timestamp-only payload", () => {
+nodeTest("runtime_accounting rejects timestamp-only payload", () => {
   const goal = createThreadGoal("ship it", 10);
   const next = { ...cloneGoal(goal), updatedAt: goal.updatedAt + 1 };
   assert.throws(
@@ -439,7 +446,7 @@ test("runtime_accounting rejects timestamp-only payload", () => {
   );
 });
 
-test("runtime_accounting rejects objective mutation", () => {
+nodeTest("runtime_accounting rejects objective mutation", () => {
   const current = createThreadGoal("ship it", 10);
   const next = {
     ...cloneGoal(current),
@@ -453,7 +460,7 @@ test("runtime_accounting rejects objective mutation", () => {
   );
 });
 
-test("runtime_accounting rejects tokenBudget mutation", () => {
+nodeTest("runtime_accounting rejects tokenBudget mutation", () => {
   const current = createThreadGoal("ship it", 10);
   const next = {
     ...cloneGoal(current),
@@ -467,7 +474,7 @@ test("runtime_accounting rejects tokenBudget mutation", () => {
   );
 });
 
-test("runtime_accounting rejects createdAt mutation", () => {
+nodeTest("runtime_accounting rejects createdAt mutation", () => {
   const current = createThreadGoal("ship it", 10);
   const next = {
     ...cloneGoal(current),
@@ -481,7 +488,7 @@ test("runtime_accounting rejects createdAt mutation", () => {
   );
 });
 
-test("runtime_accounting rejects updatedAt rewind", () => {
+nodeTest("runtime_accounting rejects updatedAt rewind", () => {
   const current = createThreadGoal("ship it", 10);
   const next = {
     ...cloneGoal(current),
@@ -494,7 +501,7 @@ test("runtime_accounting rejects updatedAt rewind", () => {
   );
 });
 
-test("runtime_accounting rejects usage decrease", () => {
+nodeTest("runtime_accounting rejects usage decrease", () => {
   const current = {
     ...createThreadGoal("ship it", 10),
     usage: { tokensUsed: 5, activeSeconds: 2 },
@@ -511,7 +518,7 @@ test("runtime_accounting rejects usage decrease", () => {
   );
 });
 
-test("runtime_accounting rejects under-budget budgetLimited next", () => {
+nodeTest("runtime_accounting rejects under-budget budgetLimited next", () => {
   const current = createThreadGoal("ship it", 10);
   const next = {
     ...cloneGoal(current),
@@ -526,7 +533,7 @@ test("runtime_accounting rejects under-budget budgetLimited next", () => {
   );
 });
 
-test("runtime_accounting rejects budgetLimited to active", () => {
+nodeTest("runtime_accounting rejects budgetLimited to active", () => {
   const current = {
     ...createThreadGoal("ship it", 10),
     status: "budgetLimited" as const,
@@ -545,7 +552,7 @@ test("runtime_accounting rejects budgetLimited to active", () => {
   );
 });
 
-test("runtime_accounting rejects inactive current statuses", () => {
+nodeTest("runtime_accounting rejects inactive current statuses", () => {
   for (const status of ["paused", "complete"] satisfies GoalStatus[]) {
     const current = { ...createThreadGoal("ship it", 10), status };
     const next = {
@@ -562,7 +569,7 @@ test("runtime_accounting rejects inactive current statuses", () => {
   }
 });
 
-test("runtime_accounting rejects paused or complete next status", () => {
+nodeTest("runtime_accounting rejects paused or complete next status", () => {
   const current = createThreadGoal("ship it", 10);
   for (const status of ["paused", "complete"] satisfies GoalStatus[]) {
     const next = {
@@ -579,7 +586,7 @@ test("runtime_accounting rejects paused or complete next status", () => {
   }
 });
 
-test("applyGoalTransitionEffects invokes handlers in effect order", () => {
+nodeTest("applyGoalTransitionEffects invokes handlers in effect order", () => {
   const calls: string[] = [];
   applyGoalTransitionEffects(
     [

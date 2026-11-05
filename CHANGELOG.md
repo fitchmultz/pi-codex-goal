@@ -10,8 +10,8 @@
 - Skip no-op releases and restate malformed remediation dispositions (#125) ([2a285fc](https://github.com/fitchmultz/pi-codex-goal/commit/2a285fc0046ff6934582f53e25f8fed2186335f7))
 
 ### What's Changed
-* Skip no-op releases and restate malformed remediation dispositions by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/125
 
+- Skip no-op releases and restate malformed remediation dispositions by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/125
 
 **Full Changelog**: https://github.com/fitchmultz/pi-codex-goal/compare/v0.7.6...v0.7.7
 
@@ -32,9 +32,9 @@
 - Merge pull request #121 from fitchmultz/npm-version-queue-1 ([77bc43d](https://github.com/fitchmultz/pi-codex-goal/commit/77bc43d1d0185b774ef5671972b223d4b8a5ac62))
 
 ### What's Changed
-* Coalesce queued npm version runs by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/121
-* Restore queue: max and the final newline in npm-version.yml by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/122
 
+- Coalesce queued npm version runs by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/121
+- Restore queue: max and the final newline in npm-version.yml by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/122
 
 **Full Changelog**: https://github.com/fitchmultz/pi-codex-goal/compare/v0.7.4...v0.7.5
 
@@ -46,8 +46,8 @@
 - Recheck unreported Cursor reviews in automatic releases (#119) ([b883a00](https://github.com/fitchmultz/pi-codex-goal/commit/b883a001e0a07af0e76a6cc56f0c280e1aa2eab8))
 
 ### What's Changed
-* Recheck unreported Cursor reviews in automatic releases by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/119
 
+- Recheck unreported Cursor reviews in automatic releases by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/119
 
 **Full Changelog**: https://github.com/fitchmultz/pi-codex-goal/compare/v0.7.3...v0.7.4
 
@@ -59,8 +59,8 @@
 - Raise the Pi floor to 1.5.0 (#117) ([423753a](https://github.com/fitchmultz/pi-codex-goal/commit/423753a660590611842c4fbd98f567e47d2d1b3a))
 
 ### What's Changed
-* Raise the Pi floor to 1.5.0 by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/117
 
+- Raise the Pi floor to 1.5.0 by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/117
 
 **Full Changelog**: https://github.com/fitchmultz/pi-codex-goal/compare/v0.7.2...v0.7.3
 
@@ -72,8 +72,8 @@
 - Skip inference for Goal release-harness changes (#115) ([45099c0](https://github.com/fitchmultz/pi-codex-goal/commit/45099c01307e33d8453dce7b7f892d903189fff1))
 
 ### What's Changed
-* Skip inference for Goal release-harness changes by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/115
 
+- Skip inference for Goal release-harness changes by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/115
 
 **Full Changelog**: https://github.com/fitchmultz/pi-codex-goal/compare/v0.7.1...v0.7.2
 
@@ -85,10 +85,10 @@
 - Automate qualified Goal npm releases (3/3) (#113) ([73440d2](https://github.com/fitchmultz/pi-codex-goal/commit/73440d28a039eb42bb8941aa18fb91f0d7c4c24f))
 
 ### What's Changed
-* Automate native Goal release qualification (1/3) by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/111
-* Use Z.ai for interactive Goal qualification (2/3) by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/112
-* Automate qualified Goal npm releases (3/3) by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/113
 
+- Automate native Goal release qualification (1/3) by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/111
+- Use Z.ai for interactive Goal qualification (2/3) by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/112
+- Automate qualified Goal npm releases (3/3) by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/113
 
 **Full Changelog**: https://github.com/fitchmultz/pi-codex-goal/compare/v0.7.0...v0.7.1
 
@@ -420,7 +420,6 @@
 
 - Updated the local pi package baseline to `@earendil-works/*` `0.75.3` and refreshed the npm lockfile.
 - Removed tracked CueLoop runtime state from the package and ignored local `.cueloop/` artifacts.
-
 
 ## 0.1.9 - 2026-05-09
 

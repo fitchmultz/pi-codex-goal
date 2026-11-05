@@ -4,7 +4,15 @@ interface ProviderLimitAutoResumeDeps {
   onTimer: (goalId: string) => boolean;
 }
 
-export function createProviderLimitAutoResumeScheduler(deps: ProviderLimitAutoResumeDeps) {
+interface ProviderLimitAutoResumeScheduler {
+  clear: () => void;
+  isScheduledFor: (goalId: string) => boolean;
+  schedule: (goalId: string) => void;
+}
+
+export function createProviderLimitAutoResumeScheduler(
+  deps: ProviderLimitAutoResumeDeps,
+): ProviderLimitAutoResumeScheduler {
   let scheduledGoalId: string | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let generation = 0;
@@ -36,7 +44,7 @@ export function createProviderLimitAutoResumeScheduler(deps: ProviderLimitAutoRe
         scheduledGoalId = null;
       }
     }, delayMs);
-    timer.unref?.();
+    timer.unref();
   };
 
   const schedule = (goalId: string): void => {

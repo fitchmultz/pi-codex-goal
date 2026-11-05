@@ -1,10 +1,8 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import { testUi } from "./support/sdk-fixture.ts";
+import { test as nodeTest } from "node:test";
 
-import {
-  createGoalRecoveryMachine,
-  setRecoveryPausedAttention,
-} from "../src/recovery-machine.ts";
+import { createGoalRecoveryMachine } from "../src/recovery-machine.ts";
 import type { StatusContext } from "../src/goal-runtime-status.ts";
 import { createGoalRecoveryRuntime } from "../src/recovery-runtime.ts";
 import { CONTEXT_OVERFLOW_SIGNATURE } from "../src/recovery.ts";
@@ -21,21 +19,23 @@ const activeGoal: ThreadGoal = {
 };
 
 function createRecoveryTestRuntime(goal: ThreadGoal | null = activeGoal) {
-  let recoveryState = createGoalRecoveryMachine();
+  const recoveryState = createGoalRecoveryMachine();
   let continueCount = 0;
   let refreshCount = 0;
 
   const ctx = {
     mode: "print",
-    ui: { setStatus() {}, setWidget() {}, theme: {} as StatusContext["ui"]["theme"] },
+    ui: testUi(),
   } satisfies StatusContext;
 
   const runtime = createGoalRecoveryRuntime<StatusContext>({
     getGoal: () => goal,
     getRecoveryState: () => recoveryState,
-    clearContinuationState: () => {},
+    clearContinuationState: () => {
+      /* This fixture has no queued continuation. */
+    },
     pauseGoalForRecovery: (_ctx, reason) => {
-      setRecoveryPausedAttention(recoveryState, reason);
+      recoveryState.setRecoveryPausedAttention(reason);
     },
     refreshUi: () => {
       refreshCount += 1;
@@ -43,7 +43,9 @@ function createRecoveryTestRuntime(goal: ThreadGoal | null = activeGoal) {
     maybeContinue: () => {
       continueCount += 1;
     },
-    scheduleProviderLimitAutoResume: () => {},
+    scheduleProviderLimitAutoResume: () => {
+      /* No provider-limit timer is owned here. */
+    },
   });
 
   return {
@@ -61,23 +63,26 @@ function createRecoveryTestRuntime(goal: ThreadGoal | null = activeGoal) {
   };
 }
 
-test("persistent provider errors plan pending attention without scheduling hidden continuation", () => {
-  const harness = createRecoveryTestRuntime();
+nodeTest(
+  "persistent provider errors plan pending attention without scheduling hidden continuation",
+  () => {
+    const harness = createRecoveryTestRuntime();
 
-  harness.runtime.handlePersistentAssistantError(
-    { role: "assistant", stopReason: "error", errorMessage: "websocket closed" },
-    harness.ctx,
-  );
+    harness.runtime.handlePersistentAssistantError(
+      { role: "assistant", stopReason: "error", errorMessage: "websocket closed" },
+      harness.ctx,
+    );
 
-  assert.equal(harness.continueCount, 0);
-  assert.equal(harness.recoveryState.counters.transientAttempts, 1);
-  assert.deepEqual(harness.recoveryState.attention, {
-    kind: "pending",
-    reason: "provider error (websocket closed)",
-  });
-});
+    assert.equal(harness.continueCount, 0);
+    assert.equal(harness.recoveryState.counters.transientAttempts, 1);
+    assert.deepEqual(harness.recoveryState.attention, {
+      kind: "pending",
+      reason: "provider error (websocket closed)",
+    });
+  },
+);
 
-test("persistent overflow errors do not invoke extension compaction hooks", () => {
+nodeTest("persistent overflow errors do not invoke extension compaction hooks", () => {
   const harness = createRecoveryTestRuntime();
   const ctx: StatusContext & { compact?: () => void } = harness.ctx;
   let compactCalls = 0;
@@ -96,7 +101,7 @@ test("persistent overflow errors do not invoke extension compaction hooks", () =
   assert.equal(harness.recoveryState.counters.signature, CONTEXT_OVERFLOW_SIGNATURE);
 });
 
-test("successful toolUse turns reset recovery counters without continuing the goal", () => {
+nodeTest("successful toolUse turns reset recovery counters without continuing the goal", () => {
   const harness = createRecoveryTestRuntime();
 
   harness.runtime.handlePersistentAssistantError(
@@ -117,7 +122,7 @@ test("successful toolUse turns reset recovery counters without continuing the go
   assert.equal(harness.recoveryState.counters.signature, null);
 });
 
-test("overflow compaction attempts survive intervening transient errors before pausing", () => {
+nodeTest("overflow compaction attempts survive intervening transient errors before pausing", () => {
   const harness = createRecoveryTestRuntime();
 
   harness.runtime.handlePersistentAssistantError(
@@ -152,68 +157,78 @@ test("overflow compaction attempts survive intervening transient errors before p
   });
 });
 
-test("recovery pause delegates reason without clearing continuation in recovery runtime", () => {
-  let continuationCleared = false;
-  let pauseReason: string | null = null;
-  let refreshCount = 0;
-  const recoveryState = createGoalRecoveryMachine();
+nodeTest(
+  "recovery pause delegates reason without clearing continuation in recovery runtime",
+  () => {
+    let continuationCleared = false;
+    const pauses: string[] = [];
+    let refreshCount = 0;
+    const recoveryState = createGoalRecoveryMachine();
 
-  const runtime = createGoalRecoveryRuntime<StatusContext>({
-    getGoal: () => activeGoal,
-    getRecoveryState: () => recoveryState,
-    clearContinuationState: () => {
-      continuationCleared = true;
-    },
-    pauseGoalForRecovery: (_ctx, reason) => {
-      pauseReason = reason;
-    },
-    refreshUi: () => {
-      refreshCount += 1;
-    },
-    maybeContinue: () => {},
-    scheduleProviderLimitAutoResume: () => {},
-  });
+    const runtime = createGoalRecoveryRuntime<StatusContext>({
+      getGoal: () => activeGoal,
+      getRecoveryState: () => recoveryState,
+      clearContinuationState: () => {
+        continuationCleared = true;
+      },
+      pauseGoalForRecovery: (_ctx, reason) => {
+        pauses.push(reason);
+      },
+      refreshUi: () => {
+        refreshCount += 1;
+      },
+      maybeContinue: () => {
+        /* This case inspects the pause callback, not continuation. */
+      },
+      scheduleProviderLimitAutoResume: () => {
+        /* No provider-limit timer is owned here. */
+      },
+    });
 
-  const ctx = {
-    mode: "print",
-    ui: { setStatus() {}, setWidget() {}, theme: {} as StatusContext["ui"]["theme"] },
-  } satisfies StatusContext;
+    const ctx = {
+      mode: "print",
+      ui: testUi(),
+    } satisfies StatusContext;
 
-  runtime.handlePersistentAssistantError(
-    { role: "assistant", stopReason: "error", errorMessage: "context_length_exceeded" },
-    ctx,
-  );
-  runtime.onSessionCompact();
-  continuationCleared = false;
-  runtime.handlePersistentAssistantError(
-    { role: "assistant", stopReason: "error", errorMessage: "context_length_exceeded" },
-    ctx,
-  );
+    runtime.handlePersistentAssistantError(
+      { role: "assistant", stopReason: "error", errorMessage: "context_length_exceeded" },
+      ctx,
+    );
+    runtime.onSessionCompact();
+    continuationCleared = false;
+    runtime.handlePersistentAssistantError(
+      { role: "assistant", stopReason: "error", errorMessage: "context_length_exceeded" },
+      ctx,
+    );
 
-  assert.equal(continuationCleared, false);
-  assert.match(pauseReason ?? "", /context window recovery failed/);
-  assert.equal(refreshCount, 0);
-});
+    assert.equal(continuationCleared, false);
+    assert.match(pauses.at(-1) ?? "", /context window recovery failed/);
+    assert.equal(refreshCount, 0);
+  },
+);
 
-test("session compact after pending transient error preserves attention without continuing", () => {
-  const harness = createRecoveryTestRuntime();
+nodeTest(
+  "session compact after pending transient error preserves attention without continuing",
+  () => {
+    const harness = createRecoveryTestRuntime();
 
-  harness.runtime.handlePersistentAssistantError(
-    { role: "assistant", stopReason: "error", errorMessage: "websocket closed" },
-    harness.ctx,
-  );
-  assert.equal(harness.continueCount, 0);
+    harness.runtime.handlePersistentAssistantError(
+      { role: "assistant", stopReason: "error", errorMessage: "websocket closed" },
+      harness.ctx,
+    );
+    assert.equal(harness.continueCount, 0);
 
-  harness.runtime.onSessionCompact();
+    harness.runtime.onSessionCompact();
 
-  assert.equal(harness.continueCount, 0);
-  assert.equal(harness.recoveryState.counters.transientAttempts, 1);
-  assert.deepEqual(harness.recoveryState.attention, {
-    kind: "pending",
-    reason: "provider error (websocket closed)",
-  });
-});
-test("successful non-toolUse turns reset recovery counters and continue the goal", () => {
+    assert.equal(harness.continueCount, 0);
+    assert.equal(harness.recoveryState.counters.transientAttempts, 1);
+    assert.deepEqual(harness.recoveryState.attention, {
+      kind: "pending",
+      reason: "provider error (websocket closed)",
+    });
+  },
+);
+nodeTest("successful non-toolUse turns reset recovery counters and continue the goal", () => {
   const harness = createRecoveryTestRuntime();
 
   harness.runtime.handlePersistentAssistantError(

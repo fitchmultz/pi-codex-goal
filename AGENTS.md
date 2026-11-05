@@ -25,7 +25,7 @@ Those write duplicate package entries under `.pi/` for the current project, caus
 npm run check
 ```
 
-Runs the full Node test suite (`test/*.test.ts`, via Node's native type stripping), `tsc`, and an `npm pack` dry run. Relative imports use `.ts`; there is no build step, and the npm artifact ships `extensions/` and `src/` as TypeScript.
+Runs formatting, full native semantic lint, `tsc`, policy and coverage checks, Node tests, native quality controls, and an `npm pack` dry run. Independent checks all run and any failure fails acceptance. Follow [the engineering standard](docs/engineering-standard.md), including its evidence-based, operation-bound exception process. Relative imports use `.ts`; there is no build step, and the npm artifact ships `extensions/` and `src/` as TypeScript.
 
 ## Pi contracts
 
@@ -37,12 +37,12 @@ Release channels are the owned npm package `pi-codex-goal` and GitHub releases. 
 
 ## Layout
 
-| Area | Modules |
-|------|---------|
-| Wiring | `src/index.ts`, `goal-runtime-controller.ts` |
-| User / model API | `commands.ts`, `tools.ts`, `prompts.ts`, `format.ts`, `clipboard.ts`, `prompts/create-goal.md` |
-| Runtime events | `goal-runtime-event-handlers.ts`, `goal-runtime-*-handlers.ts` |
-| Transitions | `goal-transition.ts`, `goal-transition-effects.ts`, `goal-state-controller.ts` |
-| Stale continuations | `stale-queued-work-*.ts` |
-| Recovery | `recovery*.ts` |
-| Domain | `state.ts`, `types.ts`, `goal-persistence.ts` |
+| Area                | Modules                                                                                        |
+| ------------------- | ---------------------------------------------------------------------------------------------- |
+| Wiring              | `src/index.ts`, `goal-runtime-controller.ts`                                                   |
+| User / model API    | `commands.ts`, `tools.ts`, `prompts.ts`, `format.ts`, `clipboard.ts`, `prompts/create-goal.md` |
+| Runtime events      | `goal-runtime-event-handlers.ts`, `goal-runtime-*-handlers.ts`                                 |
+| Transitions         | `goal-transition.ts`, `goal-transition-effects.ts`, `goal-state-controller.ts`                 |
+| Stale continuations | `stale-queued-work-*.ts`                                                                       |
+| Recovery            | `recovery*.ts`                                                                                 |
+| Domain              | `state.ts`, `types.ts`, `goal-persistence.ts`                                                  |

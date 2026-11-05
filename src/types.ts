@@ -4,20 +4,20 @@ export const MAX_OBJECTIVE_CHARS = 8000;
 export type GoalStatus = "active" | "paused" | "blocked" | "waiting" | "budgetLimited" | "complete";
 
 export interface GoalUsage {
-	tokensUsed: number;
-	activeSeconds: number;
+  tokensUsed: number;
+  activeSeconds: number;
 }
 
 export interface ThreadGoal {
-	goalId: string;
-	objective: string;
-	status: GoalStatus;
-	blockedReason?: string;
-	waitingReason?: string;
-	tokenBudget: number | null;
-	usage: GoalUsage;
-	createdAt: number;
-	updatedAt: number;
+  goalId: string;
+  objective: string;
+  status: GoalStatus;
+  blockedReason?: string | undefined;
+  waitingReason?: string | undefined;
+  tokenBudget: number | null;
+  usage: GoalUsage;
+  createdAt: number;
+  updatedAt: number;
 }
 
 export type GoalEntrySource = "command" | "tool" | "runtime";
@@ -25,50 +25,50 @@ export type GoalEntrySource = "command" | "tool" | "runtime";
 export type RuntimeUsageGoalStatus = Extract<GoalStatus, "active" | "budgetLimited">;
 
 export type GoalCustomEntry =
-	| {
-			version: 1;
-			kind: "set";
-			source: GoalEntrySource;
-			goal: ThreadGoal;
-			at: number;
-	  }
-	| {
-			version: 1;
-			kind: "usage";
-			source: "runtime";
-			goalId: string;
-			status: RuntimeUsageGoalStatus;
-			usage: GoalUsage;
-			updatedAt: number;
-			at: number;
-	  }
-	| {
-			version: 1;
-			kind: "clear";
-			source: GoalEntrySource;
-			clearedGoalId: string | null;
-			at: number;
-	  }
-	| {
-			version: 1;
-			kind: "host_overflow_cap_reset";
-			active: boolean;
-			at: number;
-	  };
+  | {
+      version: 1;
+      kind: "set";
+      source: GoalEntrySource;
+      goal: ThreadGoal;
+      at: number;
+    }
+  | {
+      version: 1;
+      kind: "usage";
+      source: "runtime";
+      goalId: string;
+      status: RuntimeUsageGoalStatus;
+      usage: GoalUsage;
+      updatedAt: number;
+      at: number;
+    }
+  | {
+      version: 1;
+      kind: "clear";
+      source: GoalEntrySource;
+      clearedGoalId: string | null;
+      at: number;
+    }
+  | {
+      version: 1;
+      kind: "host_overflow_cap_reset";
+      active: boolean;
+      at: number;
+    };
 
 export interface GoalResult {
-	ok: boolean;
-	message: string;
-	goal: ThreadGoal | null;
+  ok: boolean;
+  message: string;
+  goal: ThreadGoal | null;
 }
 
 export interface GoalSnapshot {
-	goal: ThreadGoal | null;
-	hasGoal: boolean;
+  goal: ThreadGoal | null;
+  hasGoal: boolean;
 }
 
 export interface SessionEntryLike {
-	type: string;
-	customType?: string;
-	data?: unknown;
+  type: string;
+  customType?: string;
+  data?: unknown;
 }
