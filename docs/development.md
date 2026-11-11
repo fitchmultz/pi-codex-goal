@@ -133,7 +133,7 @@ If a run appears stuck on `Working...` after a built-in `read` result, capture t
 
 ## Automatic npm releases
 
-The [shared release workflow](https://github.com/fitchmultz/.github#automatic-npm-releases) creates a reviewed patch-version PR after changes merge to `main`, then publishes matching npm and GitHub releases. Compatibility checks and candidate-tarball qualification must pass before publication.
+The [shared release workflow](https://github.com/fitchmultz/.github#automatic-npm-releases) creates a reviewed patch-version PR after changes merge to `main`, then publishes matching npm and GitHub releases. A version PR opens when a merge changes the package users install; a merge that changes only CI, tests or development tooling ships with the next release. Compatibility checks and candidate-tarball qualification must pass before publication.
 
 The package release qualification checks the prepared tarball and source identities, rebuilds the two selected host graphs, and matches their CLI, SDK, cohort, companion, lockfile and runtime-graph identities to the candidate receipt. The delivery-identity and role probes and the regular, draft-restoration and fullscreen PTY probes run against that tarball on both hosts without inference.
 
