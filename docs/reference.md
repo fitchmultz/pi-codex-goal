@@ -4,7 +4,7 @@
 
 ## Installation options
 
-Requires Pi 1.5.0 or later (official releases and the [fitchmultz Pi fork](https://github.com/fitchmultz/pi)) and Node.js 24 or later.
+Requires Pi 1.5.0 or later (official releases and the [fitchmultz Pi fork](https://github.com/fitchmultz/pi)) and Node.js 24.22.3 or newer in the 24.x line, or 26.13.1 and newer.
 
 ```sh
 # Latest npm release
