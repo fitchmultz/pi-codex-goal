@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.7.9 - 2026-11-12
+
+<!-- npm-release:unreleased:start -->
+<!-- npm-release:unreleased:end -->
+
+- Wake the version workflow only for release events and drop the duplicate main CI run (#129) ([6e8dc6e](https://github.com/fitchmultz/pi-codex-goal/commit/6e8dc6ec240f2b62834863a2c3c8f56d5cedbeb3))
+
+### What's Changed
+
+- Wake the version workflow only for release events and drop the duplicate main CI run by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/129
+- ci: align shared automation pins and wire release supersession inputs by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/130
+- fix: require patched Node security releases by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/131
+
+**Full Changelog**: https://github.com/fitchmultz/pi-codex-goal/compare/v0.7.8...v0.7.9
+
 ## 0.7.8 - 2026-11-05
 
 <!-- npm-release:unreleased:start -->
