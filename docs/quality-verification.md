@@ -52,5 +52,3 @@ The base contains 87 maintained JS/TS files and no suppression comments or lint 
 The three API-contract exceptions are QX-001 for Node-owned test registration, QX-002 for Pi's two preparation assignments, and QX-003 for Pi's two five-argument tool callbacks. The comparisons include a real failed hook-scheduling run, failed preparation-copy consumers, and two compiler failures from the four-argument callback alternative. No unsafe-type or formatting exception is used.
 
 `tsconfig.json` retains `skipLibCheck: true` for third-party declarations. There are no owned declarations to skip. Adding one fails coverage until its checked project is provided.
-
-The [shared compatibility workflow](https://github.com/fitchmultz/.github/blob/8fa3c0629e895ed47a8e0e78d05a0d932c5a5793/.github/workflows/pi-compatibility.yml#L155-L156) retains the owner's Windows diagnostic-lane waiver at lines 155–156. Its Linux and macOS lanes remain required and run the full package acceptance. The shared qualifier itself returns a failure status on every platform. This change does not alter that separate, owner-waived platform policy or use it to suppress repository lint/compiler findings.
