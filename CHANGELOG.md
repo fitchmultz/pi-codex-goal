@@ -2,7 +2,22 @@
 
 ## Unreleased
 
+## 0.7.10 - 2026-11-14
+
+<!-- npm-release:unreleased:start -->
+
 - Require Pi 1.5.2 or later, use Pi's clipboard helper for `/goal copy`, and align transient provider-error recovery with Pi 1.5.2.
+
+<!-- npm-release:unreleased:end -->
+
+- docs: remove obsolete Windows qualification waiver (#133) ([34e083f](https://github.com/fitchmultz/pi-codex-goal/commit/34e083f2d1c32dd3a76fb9f7c8ae0ea7af4fb7a5))
+
+### What's Changed
+
+- docs: remove obsolete Windows qualification waiver by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/133
+- Raise the Pi floor to 1.5.2 and use native Pi clipboard and retry helpers by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/134
+
+**Full Changelog**: https://github.com/fitchmultz/pi-codex-goal/compare/v0.7.9...v0.7.10
 
 ## 0.7.9 - 2026-11-12
 
