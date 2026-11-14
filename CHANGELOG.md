@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Require Pi 1.5.2 or later, use Pi's clipboard helper for `/goal copy`, and align transient provider-error recovery with Pi 1.5.2.
+
 ## 0.7.9 - 2026-11-12
 
 <!-- npm-release:unreleased:start -->
