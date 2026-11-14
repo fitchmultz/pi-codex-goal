@@ -1,4 +1,4 @@
-import { stripTerminalSequences } from "@earendil-works/pi-tui";
+import { replaceControlCharacters, stripTerminalSequences } from "@earendil-works/pi-tui";
 
 import { formatRecoveryAttention, type RecoveryAttention } from "./recovery.ts";
 import type { GoalStatus, ThreadGoal } from "./types.ts";
@@ -143,8 +143,7 @@ export function formatGoalObjective(goal: ThreadGoal | null): string | undefined
   }
 
   // Objectives are untrusted text, not terminal markup. Keep the widget on one line.
-  const objective = stripTerminalSequences(goal.objective)
-    .replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
+  const objective = replaceControlCharacters(stripTerminalSequences(goal.objective))
     .replace(/\s+/g, " ")
     .trim();
   return `Goal (${statusLabel(goal.status)}): ${objective}`;
@@ -173,8 +172,7 @@ function formatGoalInterruption(
     case "blocked":
       return "Goal blocked (/goal for reason; /goal resume)";
     case "waiting": {
-      const reason = stripTerminalSequences(goal.waitingReason ?? "")
-        .replace(/[\u0000-\u001f\u007f-\u009f]/g, " ")
+      const reason = replaceControlCharacters(stripTerminalSequences(goal.waitingReason ?? ""))
         .replace(/\s+/g, " ")
         .trim();
       return `Goal waiting: ${reason} (/goal resume)`;

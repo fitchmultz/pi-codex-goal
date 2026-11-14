@@ -89,6 +89,9 @@ nodeTest("isRetryableTransientError mirrors host retry classification", () => {
     isRetryableTransientError("exceeded request buffer limit while retrying upstream"),
     true,
   );
+  assert.equal(isRetryableTransientError("cut short after the reply had begun"), true);
+  assert.equal(isRetryableTransientError("Invalid tool call id req_abc429def"), false);
+  assert.equal(isRetryableTransientError("max_tokens 50000 invalid"), false);
   assert.equal(isRetryableTransientError("context_length_exceeded"), false);
   assert.equal(isRetryableTransientError("invalid api key"), false);
 });
