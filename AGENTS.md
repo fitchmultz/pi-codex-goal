@@ -25,7 +25,7 @@ Those write duplicate package entries under `.pi/` for the current project, caus
 npm run check
 ```
 
-Runs formatting, full native semantic lint, `tsc`, policy and coverage checks, Node tests, native quality controls, and an `npm pack` dry run. Independent checks all run and any failure fails acceptance. Follow [the engineering standard](docs/engineering-standard.md), including its evidence-based, operation-bound exception process (`QX-001`–`QX-004`, with `tsrs@7.1.0-beta.tsrs2` adopted under amended Section 5.1 while keeping canonical `tsc 7.0.2` checks independent). Relative imports use `.ts`; there is no build step, and the npm artifact ships `extensions/` and `src/` as TypeScript.
+Runs formatting, full native semantic lint, `tsc`, policy and coverage checks, Node tests, native quality controls, and an `npm pack` dry run. Independent checks all run and any failure fails acceptance. Follow [the engineering standard](docs/engineering-standard.md), including its evidence-based, operation-bound exception process (`QX-001`–`QX-004`, with `tsrs@7.1.0-beta.tsrs2` documented under `QX-004` while keeping canonical `tsc 7.0.2` checks independent). Relative imports use `.ts`; there is no build step, and the npm artifact ships `extensions/` and `src/` as TypeScript.
 
 ## Pi contracts
 

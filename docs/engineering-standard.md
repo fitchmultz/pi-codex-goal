@@ -1,6 +1,6 @@
 # Strict Oxlint and Oxfmt Engineering Standard
 
-**Version 5.2 · 3 November 2026 (amended 18 November 2026 for `tsrs` rollout)**
+**Version 5.2 · 3 November 2026**
 
 This standard defines linting, formatting, typechecking, and verification requirements for JavaScript and TypeScript projects. It applies to engineers, reviewers, and coding agents.
 
@@ -259,7 +259,7 @@ Native runtime type stripping is not typechecking and does not implement arbitra
 
 ### 5.1 Published tools and compatibility
 
-Use the latest stable published releases of Oxlint and Oxfmt, together with the owner-standardized `tsrs` type-aware backend (`7.1.0-beta.tsrs2`, replacing `oxlint-tsgolint` per `fitchmultz/pi-agent-skills#128` and `fitchmultz/.github#182` until `tsrs` publishes a stable release), and any additional quality-tooling packages introduced by this standard. Resolve current releases when adopting or upgrading the toolchain. This standard prescribes no package version numbers or upgrade waiting period. Keep the canonical compiler/framework checker as a separate required gate.
+Use the latest stable published releases of Oxlint, `oxlint-tsgolint`, Oxfmt, and any additional quality-tooling packages introduced by this standard. Resolve current releases when adopting or upgrading the toolchain. This standard prescribes no package version numbers or upgrade waiting period. Keep the canonical compiler/framework checker as a separate required gate.
 
 Keep dependencies current through the repository's update workflow. Commit the updated dependency declarations and lockfile with each upgrade so local development, agents, CI, and supported editor integrations use the same resolved dependency tree. The lockfile records the current installation for reproducibility; it does not restrict how frequently dependencies may be updated. Automated and frequent upgrades are permitted.
 
@@ -1024,7 +1024,7 @@ This repository adopts version 5.2. Node 24 runs the shipped TypeScript through 
 
 Source profiles: `src/`, `extensions/`, and `scripts/` are production. `test/` contains tests and exclusively test-used support. All maintained JS and TS belongs to `tsconfig.json`, including checked JavaScript. Oxfmt owns all its supported maintained formats. There are no handwritten declarations or committed generated code.
 
-The root Oxlint configuration uses Appendix A, the defined test profile for `test/support/`, and only the decisions below. Tool versions are locked in `package-lock.json`: Oxlint 1.94.0, tsrs 7.1.0-beta.tsrs2 (Section 5.1 amended backend record QX-004 below), Oxfmt 0.79.0, and oxc-parser 0.157.0.
+The root Oxlint configuration uses Appendix A, the defined test profile for `test/support/`, and only the decisions below. Tool versions are locked in `package-lock.json`: Oxlint 1.94.0, tsrs 7.1.0-beta.tsrs2 (QX-004 below), Oxfmt 0.79.0, and oxc-parser 0.157.0.
 
 ### QX-001: Node owns test registration promises
 
@@ -1078,13 +1078,13 @@ The comparison was self-reviewed against the installed SDK declaration, the two 
 
 ### QX-004: Prerelease `tsrs` type-aware backend in place of `oxlint-tsgolint`
 
-- **ID and title:** `QX-004` — adoption of prerelease `tsrs@7.1.0-beta.tsrs2` (`tsrs-lint`) as Oxlint's type-aware backend under amended Section 5.1 (`fitchmultz/pi-agent-skills#128`, `fitchmultz/.github#182`).
-- **Rule, option, or threshold; installed tool versions:** Section 5.1 (2026-11-18 `tsrs` amendment); `oxlint 1.94.0` (`2026-11-16T12:26Z`), `tsrs 7.1.0-beta.tsrs2` (`2026-11-16T11:59Z`, `TypeScript 7.1.0-beta` `microsoft/TypeScript@3e9236361fa9`), `oxfmt 0.79.0` (`2026-11-16T12:27Z`), `typescript 7.0.2`.
+- **ID and title:** `QX-004` — prerelease `tsrs@7.1.0-beta.tsrs2` (`tsrs-lint`) as Oxlint's type-aware backend in place of `oxlint-tsgolint`.
+- **Rule, option, or threshold; installed tool versions:** Section 5.1 (`oxlint-tsgolint`); `oxlint 1.94.0` (`2026-11-16T12:26Z`), `tsrs 7.1.0-beta.tsrs2` (`2026-11-16T11:59Z`, `TypeScript 7.1.0-beta` `microsoft/TypeScript@3e9236361fa9`), `oxfmt 0.79.0` (`2026-11-16T12:27Z`), `typescript 7.0.2`.
 - **Scope:** `package.json` and `package-lock.json` `devDependencies` and type-aware lint execution (`oxlint` auto-discovers `node_modules/.bin/tsrs-lint`).
 - **Directive selectors/inventory and optional duplication bounds:** none; backend substitution only (`.oxlintrc.json`, Appendix A rules, `tsconfig.json`, and `QX-001`–`QX-003` controls remain unchanged).
 - **Diagnostic and required contract:** Section 5.1 originally named `oxlint-tsgolint` before Oxc released `tsrs`; `tsrs` currently publishes prereleases only (`dist-tags.latest` is `0.25.0-ts7.1.0-beta`; `7.1.0-beta.tsrs2` is an untagged newer prerelease), while `oxlint-tsgolint@7.0.2007` remains published on npm.
 - **Actual compliant alternative and demonstrated quality cost:** keeping legacy `oxlint-tsgolint@7.0.2007` matches `TypeScript 7.0.2` without prerelease pin skew, at higher runtime cost. In a matched A/B benchmark on `mitchs-m5-mbp` (Darwin arm64, `oxlint 1.94.0` running `oxlint --deny-warnings .`, median of 3 warm runs each via `OXLINT_TSGOLINT_PATH`), `oxlint-tsgolint@7.0.2007` took `0.50s` wall time and `688.2 MiB` maximum RSS, whereas `tsrs@7.1.0-beta.tsrs2` took `0.17s` wall time and `242.1 MiB` maximum RSS (`tsrs` was `2.94x` faster with `2.84x` / `446.1 MiB` lower peak RSS; both exited `0`).
-- **Eligibility ground:** amended Section 5.1 alignment with the Pi ecosystem standard (`fitchmultz/pi-agent-skills#128`, `fitchmultz/.github#182`) and Section 1.1 Efficiency (`2.94x` faster, `2.84x` lower peak RSS), retaining Appendix B transparency for prerelease `tsrs` version skew rather than claiming a repository-specific RSS ceiling.
+- **Eligibility ground:** explicit maintainer-directed efficiency migration adopting `tsrs@7.1.0-beta.tsrs2` across maintained `fitchmultz` Pi packages (aligned with `fitchmultz/.github#182` `QX-001` and `fitchmultz/pi-agent-skills#128`, keeping normative Section 5.1 wording intact and retaining `tsc@7.0.2` as the canonical compiler gate). Neither `docs/` nor `AGENTS.md` establishes a numeric lint RSS or duration ceiling; this exception rests on owner approval and the measured `2.94x` speedup / `2.84x` RSS reduction (`446.1 MiB` saved) rather than claiming Section 2.1(1) contract violation.
 - **Chosen adjustment and why its scope is appropriate:** replace `oxlint-tsgolint` with `tsrs@7.1.0-beta.tsrs2` in `package.json` / `package-lock.json` only; `oxlint 1.94.0` discovers `tsrs-lint` natively and fails closed if absent.
 - **Structural comparison or unsafe-type evidence:** not applicable. On `d858138`, both `./node_modules/.bin/tsc --noEmit` (`7.0.2`) and `./node_modules/.bin/tsrs --noEmit` (`7.1.0-beta`) exited `0` with zero diagnostics.
 - **Verification commands, relevant tests, and results:** at code/lockfile revision `d858138` (`2026-11-18`), `npm run check:compat` (including `npm run test:quality` native `§6.4`/directive controls, `npm run policy:check`, `lint`, `format:check`, `typecheck`, `test`, `pack:check`) and `./node_modules/.bin/tsrs --noEmit` all exited `0`.
