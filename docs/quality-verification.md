@@ -16,7 +16,7 @@ npm run test:quality
 npm run pack:check
 ```
 
-Local verification uses Node 24 on macOS with an isolated HOME, agent directory, and TMPDIR. TypeScript and oxlint-tsgolint do not publish Android binaries. Node behavior tests and Oxfmt also run on Termux. There is no emitted build. The dry run and existing native source, Git-production, and npm-artifact tests verify the shipped TypeScript package.
+Local verification uses Node 24 on macOS with an isolated HOME, agent directory, and TMPDIR. TypeScript and tsrs do not publish Android binaries. Node behavior tests and Oxfmt also run on Termux. There is no emitted build. The dry run and existing native source, Git-production, and npm-artifact tests verify the shipped TypeScript package.
 
 `.gitattributes` keeps text checkouts at LF to match Oxfmt, including when `core.autocrlf=true`. Git retains binary-file detection. The checkout control uses the real repository and the normal formatter and policy commands.
 
@@ -49,6 +49,6 @@ There is no React, DOM, Jest, or Vitest context. There are no handwritten declar
 
 The base contains 87 maintained JS/TS files and no suppression comments or lint baseline. Its four `.mjs` scripts lack compiler ownership. They now run as checked `.ts` scripts, and workflow JavaScript lives in `scripts/release-verify-evidence.ts`. Workflow JSON-field reads use the Ubuntu runner's supplied `jq`.
 
-The three API-contract exceptions are QX-001 for Node-owned test registration, QX-002 for Pi's two preparation assignments, and QX-003 for Pi's two five-argument tool callbacks. The comparisons include a real failed hook-scheduling run, failed preparation-copy consumers, and two compiler failures from the four-argument callback alternative. No unsafe-type or formatting exception is used.
+The four recorded exceptions are QX-001 for Node-owned test registration, QX-002 for Pi's two preparation assignments, QX-003 for Pi's two five-argument tool callbacks, and QX-004 (in [the engineering standard Appendix B](engineering-standard.md#qx-004-prerelease-tsrs-type-aware-backend-in-place-of-stable-oxlint-tsgolint)) for adopting prerelease `tsrs@7.1.0-beta.tsrs2` under Section 5.1. The comparisons include a real failed hook-scheduling run, failed preparation-copy consumers, and two compiler failures from the four-argument callback alternative. No unsafe-type or formatting exception is used. All gates and `test/quality/*.test.ts` controls were requalified with `npm run check:compat` on 2026-11-18 under `oxlint 1.94.0` + `tsrs 7.1.0-beta.tsrs2` + `oxfmt 0.79.0`.
 
 `tsconfig.json` retains `skipLibCheck: true` for third-party declarations. There are no owned declarations to skip. Adding one fails coverage until its checked project is provided.
