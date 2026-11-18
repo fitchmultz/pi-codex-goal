@@ -1024,11 +1024,11 @@ This repository adopts version 5.2. Node 24 runs the shipped TypeScript through 
 
 Source profiles: `src/`, `extensions/`, and `scripts/` are production. `test/` contains tests and exclusively test-used support. All maintained JS and TS belongs to `tsconfig.json`, including checked JavaScript. Oxfmt owns all its supported maintained formats. There are no handwritten declarations or committed generated code.
 
-The root Oxlint configuration uses Appendix A, the defined test profile for `test/support/`, and only the decisions below. Tool versions are locked in `package-lock.json`: Oxlint 1.91.0, oxlint-tsgolint 7.0.2005, Oxfmt 0.76.0, and oxc-parser 0.157.0.
+The root Oxlint configuration uses Appendix A, the defined test profile for `test/support/`, and only the decisions below. Tool versions are locked in `package-lock.json`: Oxlint 1.94.0, tsrs 7.1.0-beta.tsrs2 (QX-004 below), Oxfmt 0.79.0, and oxc-parser 0.157.0.
 
 ### QX-001: Node owns test registration promises
 
-- **Finding:** Oxlint 1.91.0 / oxlint-tsgolint 7.0.2005, `typescript/no-floating-promises`, with every Appendix A option unchanged. Unawaited `nodeTest(...)` registrations report the rule.
+- **Finding:** Oxlint 1.94.0 / tsrs 7.1.0-beta.tsrs2, `typescript/no-floating-promises`, with every Appendix A option unchanged. Unawaited `nodeTest(...)` registrations report the rule.
 - **Contract:** `@types/node/test.d.ts:95–99` distinguishes top-level/suite registration from context subtests. Node owns registration and reports test failures through the test process; awaiting a registration changes when module-level hooks can register.
 - **Comparison:** In a real Node 24 run, `nodeTest("hook", () => assert.equal(ready, true)); before(() => { ready = true; });` passes. Adding `await` before that registration fails with `ERR_ASSERTION: false !== true`. Awaiting every registration would alter the test runner's scheduling, rather than fix unowned asynchronous work.
 - **Adjustment:** Only `test/**/*.test.ts` allows the local import name `nodeTest` from the installed `node:test` declarations. Tests use `import { test as nodeTest } from "node:test"`. No Promise-type allowance, void allowance, test-wide rule disable, or diagnostic filtering is used.
@@ -1038,7 +1038,7 @@ The root Oxlint configuration uses Appendix A, the defined test profile for `tes
 
 ### QX-002: Pi owns compaction preparation
 
-Oxlint 1.91.0 reports `no-param-reassign` with `props: true` for the two assignments in `src/goal-compaction.ts`. The authorized operations are `filterGoalCompactionInput` assigning `preparation.messagesToSummarize` and `preparation.turnPrefixMessages`. Each has one next-line directive. Other mutations remain checked.
+Oxlint 1.94.0 reports `no-param-reassign` with `props: true` for the two assignments in `src/goal-compaction.ts`. The authorized operations are `filterGoalCompactionInput` assigning `preparation.messagesToSummarize` and `preparation.turnPrefixMessages`. Each has one next-line directive. Other mutations remain checked.
 
 Pi passes this preparation to extension hooks and then consumes the same object. The official 1.5.0 source shows the manual path in `dist/core/agent-session.js:2261–2305` and the automatic path at `2551–2580`. A custom summarizer can request the same filter through the existing event bus.
 
@@ -1066,7 +1066,7 @@ The comparison was self-reviewed against the SDK implementation and runtime resu
 
 ### QX-003: Pi supplies tool context fifth
 
-Oxlint 1.91.0 reports `max-params` at five parameters against the production limit of four. The two authorized operations are the `create_goal` and `update_goal` `execute` methods passed directly to `pi.registerTool` in `registerGoalTools`, in `src/tools.ts`.
+Oxlint 1.94.0 reports `max-params` at five parameters against the production limit of four. The two authorized operations are the `create_goal` and `update_goal` `execute` methods passed directly to `pi.registerTool` in `registerGoalTools`, in `src/tools.ts`.
 
 Pi 1.5.0 declares `execute(toolCallId, params, signal, onUpdate, ctx)` in `dist/core/extensions/types.d.ts:533`. These methods need the fifth argument to persist goal state and account for the calling tool. The intermediate signal and onUpdate parameters cannot be removed from the calling convention.
 
@@ -1075,6 +1075,21 @@ The actual four-parameter alternative changes the methods to `execute(toolCallId
 This exception prevents supported-signature harm. The measured parameter count stays five at these two SDK methods, rather than four with the wrong context. Two next-line directives leave all other production functions at four. Policy binds the directives to the two named registrations and requires exactly five parameters, so adding a sixth does not inherit authorization. All type, async, mutation, complexity, and other structural checks remain active. Normal native controls retain the five-parameter diagnostic at unrelated functions and reject copied authorization.
 
 The comparison was self-reviewed against the installed SDK declaration, the two TS2345 errors, and the real tool tests. Revisit when Pi changes its callback signature or the native rule can qualify this SDK origin directly.
+
+### QX-004: Prerelease `tsrs` type-aware backend in place of `oxlint-tsgolint`
+
+- **ID and title:** `QX-004` — prerelease `tsrs@7.1.0-beta.tsrs2` (`tsrs-lint`) as Oxlint's type-aware backend in place of `oxlint-tsgolint`.
+- **Rule, option, or threshold; installed tool versions:** Section 5.1 (`oxlint-tsgolint`); `oxlint 1.94.0` (`2026-11-16T12:26Z`), `tsrs 7.1.0-beta.tsrs2` (`2026-11-16T11:59Z`, `TypeScript 7.1.0-beta` `microsoft/TypeScript@3e9236361fa9`), `oxfmt 0.79.0` (`2026-11-16T12:27Z`), `typescript 7.0.2`.
+- **Scope:** `package.json` and `package-lock.json` `devDependencies` and type-aware lint execution (`oxlint` auto-discovers `node_modules/.bin/tsrs-lint`).
+- **Directive selectors/inventory and optional duplication bounds:** none; backend substitution only (`.oxlintrc.json`, Appendix A rules, `tsconfig.json`, and `QX-001`–`QX-003` controls remain unchanged).
+- **Diagnostic and required contract:** Section 5.1 originally named `oxlint-tsgolint` before Oxc released `tsrs`; `tsrs` currently publishes prereleases only (`dist-tags.latest` is `0.25.0-ts7.1.0-beta`; `7.1.0-beta.tsrs2` is an untagged newer prerelease), while `oxlint-tsgolint@7.0.2007` remains published on npm.
+- **Actual compliant alternative and demonstrated quality cost:** keeping legacy `oxlint-tsgolint@7.0.2007` matches `TypeScript 7.0.2` without prerelease pin skew, at higher runtime cost. In a matched A/B benchmark on `mitchs-m5-mbp` (Darwin arm64, `oxlint 1.94.0` running `oxlint --deny-warnings .`, median of 3 warm runs each via `OXLINT_TSGOLINT_PATH`), `oxlint-tsgolint@7.0.2007` took `0.50s` wall time and `688.2 MiB` maximum RSS, whereas `tsrs@7.1.0-beta.tsrs2` took `0.17s` wall time and `242.1 MiB` maximum RSS (`tsrs` was `2.94x` faster with `2.84x` / `446.1 MiB` lower peak RSS; both exited `0`).
+- **Eligibility ground:** explicit maintainer-directed efficiency migration adopting `tsrs@7.1.0-beta.tsrs2` across maintained `fitchmultz` Pi packages (aligned with `fitchmultz/.github#182` `QX-001` and `fitchmultz/pi-agent-skills#128`, keeping normative Section 5.1 wording intact and retaining `tsc@7.0.2` as the canonical compiler gate). Neither `docs/` nor `AGENTS.md` establishes a numeric lint RSS or duration ceiling; this exception rests on owner approval and the measured `2.94x` speedup / `2.84x` RSS reduction (`446.1 MiB` saved) rather than claiming Section 2.1(1) contract violation.
+- **Chosen adjustment and why its scope is appropriate:** replace `oxlint-tsgolint` with `tsrs@7.1.0-beta.tsrs2` in `package.json` / `package-lock.json` only; `oxlint 1.94.0` discovers `tsrs-lint` natively and fails closed if absent.
+- **Structural comparison or unsafe-type evidence:** not applicable. On `d858138`, both `./node_modules/.bin/tsc --noEmit` (`7.0.2`) and `./node_modules/.bin/tsrs --noEmit` (`7.1.0-beta`) exited `0` with zero diagnostics.
+- **Verification commands, relevant tests, and results:** at code/lockfile revision `d858138` (`2026-11-18`), `npm run check:compat` (including `npm run test:quality` native `§6.4`/directive controls, `npm run policy:check`, `lint`, `format:check`, `typecheck`, `test`, `pack:check`) and `./node_modules/.bin/tsrs --noEmit` all exited `0`.
+- **Retained protection, lost detection, and established assumptions:** all Appendix A type-aware rules, `QX-001`–`QX-003` controls, and canonical `tsc 7.0.2 --noEmit` checks stay active. Lost detection and established assumptions: `tsrs@7.1.0-beta.tsrs2` targets `TypeScript 7.1.0-beta` rather than pinned `TypeScript 7.0.2`, so edge-case type-aware lint inference could diverge from `oxlint-tsgolint@7.0.2007` or `tsc 7.0.2`, and routine `npm run check` runs exercise `tsrs` only without re-checking parity against `oxlint-tsgolint@7.0.2007`. Canonical `tsc 7.0.2 --noEmit` guards compilation independently.
+- **Review and revisit trigger:** first stable `tsrs` release, any `oxlint` upgrade changing backend discovery, any TypeScript bump changing version alignment, or any type-aware diagnostic regression.
 
 ### Coverage and acceptance ownership
 
@@ -1088,6 +1103,6 @@ There are no handwritten declarations or augmentations. `skipLibCheck: true` app
 
 Oxfmt owns maintained supported formats, including this document. Python PTY probes retain their existing Python execution checks. The PNG and editable SVG under `.github/readme/` are documentation assets, not JavaScript implementations. `package-lock.json` records npm's dependency resolution. Both pinned shared compatibility workflows validate the source lock with native `npm ci --ignore-scripts` or its non-installing `--dry-run` before selecting host graphs. No generated implementation or invalid diagnostic fixture is committed.
 
-The pre-adoption tree `bb237d97d549c03308871a53ed47691dfdf408b2` has no lint baseline or suppression directives. Its compiler globs omit checked JavaScript. Adoption removes that coverage gap and replaces source-text hygiene checks with native semantic checks and parser-bound policy. There are no grandfathered finding counts, skipped maintained sources, unsafe-type exceptions, or formatter exceptions. QX-001 through QX-003 are the complete contract-exception inventory.
+The pre-adoption tree `bb237d97d549c03308871a53ed47691dfdf408b2` has no lint baseline or suppression directives. Its compiler globs omit checked JavaScript. Adoption removes that coverage gap and replaces source-text hygiene checks with native semantic checks and parser-bound policy. There are no grandfathered finding counts, skipped maintained sources, unsafe-type exceptions, or formatter exceptions. QX-001 through QX-004 are the complete exception inventory.
 
 Compatibility CI runs this acceptance against the selected official and fork hosts and retains the exact source revision, SDK/CLI hashes, and results. Those `host-qualification` artifacts and the corresponding required check runs are the integrated verification record. Local adoption controls and their results are summarized in the change's verification record; hosted completion requires the checks on the actual reviewed head.
