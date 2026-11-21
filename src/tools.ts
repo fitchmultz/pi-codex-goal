@@ -42,7 +42,7 @@ function createGoalParams(policy: TokenBudgetPolicy) {
         }),
       ),
     },
-    policy === "disabled" ? { additionalProperties: false } : {},
+    { additionalProperties: false },
   );
 }
 

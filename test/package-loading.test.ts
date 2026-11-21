@@ -179,7 +179,14 @@ async function checkPackage(
       objective: "Too small after native conversion",
       token_budget: minimumBudget - 0.5,
     });
-    assert.partialDeepStrictEqual(createGoal.parameters, { required: ["objective"] });
+    assert.partialDeepStrictEqual(createGoal.parameters, {
+      additionalProperties: false,
+      required: ["objective"],
+    });
+    assert.throws(
+      () => validateCreate({ objective: "Misspelled budget", tokens_budget: minimumBudget }),
+      /tokens_budget: unknown field/,
+    );
     if (!disabled) {
       assert.partialDeepStrictEqual(createGoal.parameters, {
         properties: { token_budget: { type: "integer", minimum: minimumBudget } },

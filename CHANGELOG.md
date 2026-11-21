@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Reject unknown `create_goal` arguments (such as misspelled `token_budget` fields) in schema validation instead of silently creating an unlimited goal.
+
 ## 0.7.10 - 2026-11-14
 
 <!-- npm-release:unreleased:start -->
