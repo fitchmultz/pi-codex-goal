@@ -2,7 +2,27 @@
 
 ## Unreleased
 
+## 0.7.11 - 2026-11-21
+
+<!-- npm-release:unreleased:start -->
+
 - Reject unknown `create_goal` arguments (such as misspelled `token_budget` fields) in schema validation instead of silently creating an unlimited goal.
+
+<!-- npm-release:unreleased:end -->
+
+- ci: release through direct signed version commits (PEA-211) (#136) ([974e34c](https://github.com/fitchmultz/pi-codex-goal/commit/974e34c80e6fc2abcd6f0e8d12a0b1b1827be0f8))
+
+### What's Changed
+
+- ci: release through direct signed version commits (PEA-211) (1/1) by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/136
+- chore(quality): adopt tsrs@7.1.0-beta.tsrs2 and bump oxlint/oxfmt by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/137
+- chore: bump Pi floor to 1.6.0 (PEA-222) by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/138
+- ci: refresh the shared automation pin to cad44b2 (PEA-225) by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/139
+- ci: refresh the shared automation pin to 1f78bd6 (PEA-225) by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/140
+- ci: pin shared automation to 788061a and pass RELEASE_APP_PRIVATE_KEY by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/141
+- fix: reject unknown fields on create_goal schema by @fitchmultz in https://github.com/fitchmultz/pi-codex-goal/pull/142
+
+**Full Changelog**: https://github.com/fitchmultz/pi-codex-goal/compare/v0.7.10...v0.7.11
 
 ## 0.7.10 - 2026-11-14
 
