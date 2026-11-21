@@ -321,3 +321,81 @@ nodeTest(
     }
   },
 );
+
+nodeTest(
+  "SDK runtime rejects misspelled create_goal budget field instead of creating an unbounded goal",
+  async () => {
+    const modelRuntime = await ModelRuntime.create({
+      allowModelNetwork: false,
+      credentials: new InMemoryCredentialStore(),
+      modelsPath: null,
+    });
+    const loader = new DefaultResourceLoader({
+      cwd: process.cwd(),
+      agentDir: getAgentDir(),
+      noContextFiles: true,
+      noExtensions: true,
+      extensionFactories: [goalExtension],
+    });
+    await loader.reload();
+    modelRuntime.registerProvider("sdk-smoke", { apiKey: "test" });
+    const { session } = await createAgentSession({
+      cwd: process.cwd(),
+      agentDir: getAgentDir(),
+      model: {
+        provider: "sdk-smoke",
+        id: "unknown-field",
+        name: "SDK Unknown Field Smoke",
+        api: "openai-completions",
+        baseUrl: "http://localhost",
+        reasoning: false,
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 1_000_000,
+        maxTokens: 1_000,
+      },
+      modelRuntime,
+      noTools: "builtin",
+      resourceLoader: loader,
+      sessionManager: SessionManager.inMemory(process.cwd()),
+      settingsManager: SettingsManager.inMemory({ compaction: { enabled: false } }),
+    });
+    let requests = 0;
+    session.agent.streamFunction = (model) => {
+      requests += 1;
+      if (requests === 1) {
+        return assistantResponse(model, 100, [
+          {
+            type: "toolCall",
+            id: "create-misspelled",
+            name: "create_goal",
+            arguments: { objective: "Bounded work", tokens_budget: 500_000 },
+          },
+        ]);
+      }
+      if (requests > 2) {
+        assert.fail("rejected create_goal must not create an active goal or queue continuations");
+      }
+      return assistantResponse(model, 50, "Stopped after validation error");
+    };
+    try {
+      await session.prompt("Start a bounded goal");
+      const entries = session.sessionManager.getBranch();
+      assert.equal(reconstructGoal(entries).goal, null);
+      const toolResult = entries.find(
+        (entry) =>
+          entry.type === "message" &&
+          entry.message.role === "toolResult" &&
+          entry.message.toolName === "create_goal",
+      );
+      assert.ok(
+        toolResult && toolResult.type === "message" && toolResult.message.role === "toolResult",
+      );
+      assert.equal(toolResult.message.isError, true);
+      assert.match(JSON.stringify(toolResult.message.content), /tokens_budget: unknown field/);
+      assert.equal(requests, 2);
+    } finally {
+      session.dispose();
+    }
+  },
+);

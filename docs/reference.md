@@ -36,7 +36,7 @@ Objectives are limited to 8000 Unicode characters. Token budgets are set through
 
 Starts a goal with an `objective` and an optional `token_budget`. It fails if a non-complete goal already exists unless `replace_existing: true` is provided. After a goal is complete, `create_goal` replaces it with a new active goal.
 
-Omit `token_budget` for an unlimited goal. By default, new explicit budgets must be safe integers of at least 500,000 tokens, including replacements. Smaller budgets are rejected rather than raised automatically. Existing saved goals retain their original budgets and usage.
+Omit `token_budget` for an unlimited goal. Unknown `create_goal` fields are rejected by the tool schema so misspelled options do not silently create an unlimited goal. By default, new explicit budgets must be safe integers of at least 500,000 tokens, including replacements. Smaller budgets are rejected rather than raised automatically. Existing saved goals retain their original budgets and usage.
 
 Set `PI_CODEX_GOAL_TOKEN_BUDGET_POLICY` before starting Pi to choose a different minimum or reject all explicit budgets:
 
