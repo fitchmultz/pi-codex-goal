@@ -22,21 +22,21 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  PI_AUTOMATION_REF: 1f78bd6585d8a5570f0226cca0b6877c9f4dd9c2 # main
+  PI_AUTOMATION_REF: 788061a362a34e0912b7c464d0ff0d854edb1805 # main
 
 jobs:
   resolve:
-    uses: fitchmultz/.github/.github/workflows/resolve-hosts.yml@1f78bd6585d8a5570f0226cca0b6877c9f4dd9c2 # main
+    uses: fitchmultz/.github/.github/workflows/resolve-hosts.yml@788061a362a34e0912b7c464d0ff0d854edb1805 # main
     with:
-      automation-ref: 1f78bd6585d8a5570f0226cca0b6877c9f4dd9c2 # main
+      automation-ref: 788061a362a34e0912b7c464d0ff0d854edb1805 # main
       official-version: ${{ inputs.official-version }}
       fork-ref: ${{ inputs.fork-ref }}
 
   fleet:
     needs: resolve
-    uses: fitchmultz/.github/.github/workflows/pi-compatibility.yml@1f78bd6585d8a5570f0226cca0b6877c9f4dd9c2 # main
+    uses: fitchmultz/.github/.github/workflows/pi-compatibility.yml@788061a362a34e0912b7c464d0ff0d854edb1805 # main
     with:
-      automation-ref: 1f78bd6585d8a5570f0226cca0b6877c9f4dd9c2 # main
+      automation-ref: 788061a362a34e0912b7c464d0ff0d854edb1805 # main
       repository: fitchmultz/pi-codex-goal
       source-ref: ${{ github.event.pull_request.head.sha || github.sha }}
       official-version: ${{ needs.resolve.outputs.official-version }}
