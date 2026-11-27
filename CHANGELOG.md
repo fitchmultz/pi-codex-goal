@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Require Pi 1.6.1 or later (PEA-238).
+- Require Pi 1.7.0 or later (PEA-240).
 
 ## 0.7.11 - 2026-11-21
 
